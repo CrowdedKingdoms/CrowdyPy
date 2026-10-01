@@ -374,8 +374,7 @@ inline nb::tuple row_tuple(const NotificationBatch& b, std::size_t i) {
 
 // ------------------------------------------------------------------ the connection
 
-// Defined in replication_binding.cpp, so this header pulls in no platform socket headers
-// (<windows.h>'s far and near macros break CrowdyCPP's headers included after it).
+// Defined in replication_binding.cpp, so this header pulls in no platform socket headers.
 void write_wake(std::int64_t fd);
 void prepare_wake_fd(std::int64_t fd);
 
