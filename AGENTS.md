@@ -122,8 +122,12 @@ names, a tag that is not the tree's version, and a default origin for another ti
 builds every wheel and the sdist, scans them, publishes `X.Y.Z.devN` (dev), `X.Y.ZrcN` (test)
 or `X.Y.Z` (prod) to PyPI by trusted publishing, downloads the published wheel back to read
 its origin again, and creates the GitHub release with the same files. PyPI publishing runs
-only when the repository variable `PYPI_PUBLISHING` is `enabled`, which the operator sets
-once the PyPI trusted publisher (workflow `release.yml`, environment `pypi`) is registered.
+only when the repository variable `PYPI_PUBLISHING` is `enabled` (it is, since 2026-10-01),
+through the trusted publisher on PyPI project `crowdypy` (owner CrowdedKingdoms, repository
+CrowdyPy, workflow `release.yml`, environment `pypi`). The first version there,
+`0.4.0.dev1`, was uploaded by hand from the `dev/v0.4.0` release's assets before the
+publisher existed; every later one comes from its tag. PyPI accepts a version once, so a
+re-run takes the next N (`scripts/ci/resolve_pypi_version.py` reads what PyPI already has).
 
 Merging a PR from the command line: `gh pr merge` fails its preflight on this org, so use
 `gh api -X PUT repos/CrowdedKingdoms/CrowdyPy/pulls/<n>/merge -f merge_method=merge`.
