@@ -1,0 +1,15 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+if(@CROWDY_CONFIG_NEEDS_CURL@ AND NOT TARGET CURL::libcurl)
+  find_dependency(CURL)
+endif()
+if(@CROWDY_CONFIG_NEEDS_OPENSSL@ AND NOT TARGET OpenSSL::Crypto)
+  find_dependency(OpenSSL)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/CrowdyCPPTargets.cmake")
+
+# Convenience alias: link CrowdyCPP::crowdy for the full SDK.
+check_required_components(CrowdyCPP)

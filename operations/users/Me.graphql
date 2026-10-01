@@ -1,0 +1,17 @@
+query Me {
+  me {
+    userId
+    email
+    gamertag
+    disambiguation
+    state
+    isConfirmed
+    createdAt
+    grantEarlyAccess
+    grantEarlyAccessOverride
+    orgId
+    externalId
+    userType
+    isSuperAdmin
+  }
+}

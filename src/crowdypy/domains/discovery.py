@@ -1,0 +1,74 @@
+"""Where each app lives: the call a client makes before it authenticates (``client.discovery``).
+
+The shared origin is answered by every datacenter, so a cold client's first request
+lands wherever DNS sent it, often not the datacenter that hosts its app. Signing in
+there writes the session in the wrong place and mints the app token across a WAN. A
+client knows its app id before it has any credential, so it can ask this first, move to
+the returned origin and sign in there; that is why the query takes no token.
+
+Resolve every app a launcher might switch to in one call and cache the answer: placement
+changes rarely, and only an operator changes it. An app with no placement comes back
+with ``None`` endpoints, which means "stay on the shared origin", not "this app is
+broken".
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
+import msgspec
+
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain
+from crowdypy.utils import bigint
+
+__all__ = ["AppEndpoint", "DiscoveryDomain"]
+
+
+class AppEndpoint(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """Where one app is placed."""
+
+    #: The app this entry describes (decimal string).
+    app_id: str
+    #: The datacenter code (e.g. ``or``, ``va``); ``None`` when the app has no placement.
+    datacenter_code: str | None = None
+    #: The HTTPS GraphQL origin of the app's own datacenter; ``None`` when unplaced.
+    game_api_url: str | None = None
+    #: The WebSocket form of ``game_api_url``.
+    game_api_ws_url: str | None = None
+
+
+class DiscoveryDomain(Domain):
+    """Resolve app placement on the shared origin, with no token."""
+
+    async def apps(self, app_ids: Sequence[str | int]) -> list[AppEndpoint]:
+        """Where one or more apps are placed. No authentication.
+
+        Call it on the shared origin: every datacenter answers that name, and it is the
+        only one a client can rely on before it knows where it belongs.
+        """
+        if isinstance(app_ids, str):
+            raise TypeError("app_ids is a sequence of app ids, not one string")
+        entries: list[dict[str, Any]] = await self._request(
+            ops.APP_DISCOVERY, {"appIds": [bigint(app_id) for app_id in app_ids]}
+        )
+        return [
+            AppEndpoint(
+                app_id=str(entry["appId"]),
+                datacenter_code=entry.get("datacenterCode"),
+                game_api_url=entry.get("gameApiUrl"),
+                game_api_ws_url=entry.get("gameApiWsUrl"),
+            )
+            for entry in entries
+        ]
+
+    async def app(self, app_id: str | int) -> AppEndpoint | None:
+        """Where one app is placed, or ``None`` when it has no placement.
+
+        Prefer :meth:`apps` for more than one: one round trip rather than one per app.
+        """
+        entries = await self.apps([app_id])
+        if not entries or not entries[0].game_api_url:
+            return None
+        return entries[0]

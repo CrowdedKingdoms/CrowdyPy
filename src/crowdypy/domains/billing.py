@@ -1,0 +1,92 @@
+"""Org wallets and per-app budgets (``client.billing``).
+
+Every method needs an identity session. Reads need the org's (or app's) ``view_billing``
+permission; :meth:`BillingAPI.set_app_budget` needs ``manage_billing``.
+
+Wallet money is micro-USD (``*Microusd``, 1 USD = 1,000,000) as decimal strings, and
+nothing is rounded. The ``*Cents`` fields are deprecated derived values (micro-USD /
+10,000, truncated toward zero). Budget caps (``monthlyLimitCents``) stay in cents: they
+are limits, not money of record.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+__all__ = ["BillingAPI"]
+
+
+class BillingAPI(Domain):
+    """An organization's wallet and the spend budgets of its apps."""
+
+    async def wallet_balance(self, org_id: str | int) -> dict[str, Any]:
+        """An org's wallet: ``balanceMicrousd`` and ``holdsMicrousd`` (spendable is the difference).
+
+        Needs ``view_billing``.
+        """
+        result: dict[str, Any] = await self._request(ops.WALLET_BALANCE, {"orgId": bigint(org_id)})
+        return result
+
+    async def wallet_transactions(
+        self, org_id: str | int, limit: int | None = None, offset: int | None = None
+    ) -> list[dict[str, Any]]:
+        """An org's wallet transactions, newest first. Needs ``view_billing``.
+
+        ``limit`` defaults to 50. Prefer :meth:`wallet_transactions_connection`.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.WALLET_TRANSACTIONS,
+            omit_none({"orgId": bigint(org_id), "limit": limit, "offset": offset}),
+        )
+        return result
+
+    async def app_budget(self, org_id: str | int, app_id: str | int) -> dict[str, Any] | None:
+        """One app's monthly spend cap and this month's usage, or ``None`` when unset.
+
+        Needs the app's ``view_billing``.
+        """
+        result: dict[str, Any] | None = await self._request(
+            ops.APP_BUDGET, {"orgId": bigint(org_id), "appId": bigint(app_id)}
+        )
+        return result
+
+    async def app_budgets(self, org_id: str | int) -> list[dict[str, Any]]:
+        """The spend budget of every app under an org. Needs ``view_billing``."""
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_BUDGETS, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def set_app_budget(
+        self, org_id: str | int, app_id: str | int, monthly_limit_cents: str | int
+    ) -> dict[str, Any]:
+        """Set (or clear) an app's monthly spend cap in cents; ``0`` disables it.
+
+        Records the cap only: no money moves. Needs the app's ``manage_billing``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.SET_APP_BUDGET,
+            {
+                "orgId": bigint(org_id),
+                "appId": bigint(app_id),
+                "monthlyLimitCents": bigint(monthly_limit_cents),
+            },
+        )
+        return result
+
+    async def wallet_transactions_connection(
+        self, org_id: str | int, first: int | None = None, after: str | None = None
+    ) -> dict[str, Any]:
+        """An org's wallet transactions as a cursor connection. Needs ``view_billing``.
+
+        Page with ``first`` and the previous page's ``pageInfo.endCursor`` as ``after``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.WALLET_TRANSACTIONS_CONNECTION,
+            omit_none({"orgId": bigint(org_id), "first": first, "after": after}),
+        )
+        return result
