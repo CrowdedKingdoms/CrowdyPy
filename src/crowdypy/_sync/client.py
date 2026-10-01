@@ -49,6 +49,7 @@ from crowdypy._sync.domains.shared_environment import SharedEnvironmentAPI
 from crowdypy._sync.domains.state import StateAPI
 from crowdypy._sync.domains.teams import TeamsAPI
 from crowdypy._sync.domains.teleport import TeleportAPI
+from crowdypy._sync.domains.udp import UdpAPI
 from crowdypy._sync.domains.usage import UsageAPI
 from crowdypy._sync.domains.users import UsersAPI
 from crowdypy._sync.domains.voxels import VoxelsAPI
@@ -57,6 +58,7 @@ from crowdypy._sync.graphql import GraphQLClient, graphql_endpoint
 from crowdypy._sync.grid_scope import GridScope
 from crowdypy.lb_cookie import LbCookieStore
 from crowdypy._sync.rediscover import RediscoverFn, create_bootstrap_rediscover
+from crowdypy.replication import ConnState, token_material
 from crowdypy.session import TokenStore
 
 __all__ = ["CrowdyClient", "create_crowdy_client"]
@@ -157,6 +159,10 @@ class CrowdyClient:
             shared_environment=self.shared_environment,
             grids=self.game_apps,
         )
+        #: Native UDP replication for this client's app (CrowdyCPP's connection).
+        self.udp = UdpAPI(self)
+        #: The app token this client last installed or refreshed, with what native UDP needs.
+        self.app_token: AppTokenResponse | None = None
 
     # ------------------------------------------------------------------ the token
 
@@ -166,12 +172,33 @@ class CrowdyClient:
     def get_token(self) -> str | None:
         return self.session.get_token()
 
+    def set_app_token(self, token: AppTokenResponse) -> None:
+        """Install a minted app token: the bearer, plus the token id and expiry ``udp`` signs
+        with. Prefer it to ``set_token(minted.token)`` on a game client."""
+        self.app_token = token
+        self.session.set_token(token.token)
+
     def refresh_gameplay_token(self) -> AppTokenResponse:
         """Refresh this game client's app token; concurrent callers share one refresh."""
         return self._refresh_flight.run(self._perform_gameplay_token_refresh)
 
     def _perform_gameplay_token_refresh(self) -> AppTokenResponse:
-        return self.portal.refresh()
+        # A live UDP connection is quiesced first and resumed under the new token, so nothing
+        # leaves signed with a key the server no longer accepts once the bearer has changed.
+        connection = self.udp.connection
+        resume = connection is not None and connection.state in (
+            ConnState.CONNECTING,
+            ConnState.CONNECTED,
+            ConnState.RECONNECTING,
+        )
+        if connection is not None and resume:
+            connection.disconnect()
+        token = self.portal.refresh()
+        self.app_token = token
+        if connection is not None and resume:
+            connection.set_token(token_material(token))
+            connection.connect()
+        return token
 
     def wait_for_gameplay_token_refresh(self) -> None:
         """Wait for an in-flight refresh, if any, ignoring its outcome."""
@@ -184,7 +211,7 @@ class CrowdyClient:
 
         The box is learned from the first :meth:`GridScope.mint_token`, or pass it here.
         """
-        return GridScope(self.grids, self.channels, app_id, grid_id, box)
+        return GridScope(self.grids, self.channels, app_id, grid_id, box, self.udp)
 
     # -------------------------------------------------------- moving the endpoint
 
@@ -208,6 +235,10 @@ class CrowdyClient:
         self.graphql.set_endpoint(endpoint)
         if ws:
             self.ws_endpoint = ws
+        if self.udp.connection is not None:
+            # Assignment comes through the API client, so it now answers from the new
+            # datacenter; without this the UDP session would stay in the old one.
+            self.udp.connection.request_reassignment()
         self._logger.info("moved to %s", move.app_datacenter or endpoint)
         return True
 
@@ -252,7 +283,8 @@ class CrowdyClient:
     # ------------------------------------------------------------------ lifecycle
 
     def close(self) -> None:
-        """Close the HTTP transport and forget the token held in memory."""
+        """Close the UDP connection and the HTTP transport, and forget the token held in memory."""
+        self.udp.disconnect()
         self.graphql.close()
         self.session.set_token(None, persist=False)
 

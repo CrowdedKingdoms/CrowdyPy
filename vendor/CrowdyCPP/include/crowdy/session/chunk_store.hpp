@@ -2,7 +2,10 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <functional>
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -59,6 +62,31 @@ struct ChunkWriteBackFailure {
   graphql::GraphQLOutcome error;
 };
 
+/// One stored chunk, as a chunk source reports it.
+struct StoredChunk {
+  ChunkCoord coord{};
+  /// Dense 16^3 voxel types (kChunkVolume bytes); any other size is ignored.
+  std::vector<std::uint8_t> voxels;
+};
+
+/// Where a ChunkStore hydrates from and writes back to. The Game API's chunks
+/// surface is the default (the ChunksAPI constructor); an engine or a language
+/// binding supplies its own transport. Called on the thread that calls
+/// ensureAround(), tick(), pruneBeyond() and flush().
+class IChunkSource {
+ public:
+  virtual ~IChunkSource() = default;
+  /// Every stored chunk within `distance` (Chebyshev, 1-8) of `center`. May
+  /// throw; the exception surfaces from ensureAround().
+  virtual std::vector<StoredChunk> chunksAround(const std::string& appId,
+                                                const ChunkCoord& center, int distance) = 0;
+  /// Persist one chunk's voxels. The outcome classifies a failure exactly as a
+  /// ChunksAPI write does: refused (dropped after one attempt) or able to clear
+  /// (retried with backoff).
+  virtual graphql::GraphQLOutcome writeChunk(const std::string& appId, const ChunkCoord& coord,
+                                             Bytes voxels) = 0;
+};
+
 /// What ChunkStore::flush() did.
 struct ChunkFlushResult {
   /// Chunks persisted.
@@ -89,13 +117,23 @@ class ChunkStore {
     std::function<void(std::int64_t ms)> sleep;
   };
 
+  /// Hydrate and write back through the Game API. `chunksApi` may be null
+  /// (offline / tests): then there is no durable store.
   ChunkStore(replication::Connection& conn, domains::ChunksAPI* chunksApi, std::string appId,
+             Options options);
+  /// Hydrate and write back through `source` (null: no durable store). The
+  /// source must outlive the store.
+  ChunkStore(replication::Connection& conn, IChunkSource* source, std::string appId,
              Options options)
-      : conn_(conn), chunksApi_(chunksApi), appId_(std::move(appId)), options_(options) {}
+      : conn_(conn), source_(source), appId_(std::move(appId)), options_(std::move(options)) {}
+  /// No durable store; keeps a literal `nullptr` unambiguous between the two above.
+  ChunkStore(replication::Connection& conn, std::nullptr_t, std::string appId, Options options)
+      : ChunkStore(conn, static_cast<IChunkSource*>(nullptr), std::move(appId),
+                   std::move(options)) {}
 
   /// Load every stored chunk within `distance` of `center` from the durable
-  /// store (one GraphQL round trip). Coordinates already cached are refreshed.
-  /// Requires a ChunksAPI (throws GraphQL errors on failure).
+  /// store (one round trip). Coordinates already cached are refreshed. Does
+  /// nothing without a durable store; the source's errors propagate.
   std::size_t ensureAround(const ChunkCoord& center, int distance);
 
   /// Look up a cached chunk (nullptr when absent).
@@ -163,7 +201,7 @@ class ChunkStore {
     for (const ChunkCoord& coord : far) {
       auto it = chunks_.find(coord);
       if (it == chunks_.end()) continue;
-      if (it->second.dirty && chunksApi_) {
+      if (it->second.dirty && source_) {
         if (attemptWriteBack(it->second, lastTickMs_, nullptr) == WriteBack::Retry) continue;
         // The callbacks it fired may have changed the store.
         it = chunks_.find(coord);
@@ -279,7 +317,6 @@ class ChunkStore {
 
   /// One write-back attempt through the durable store; on Dropped the chunk is no
   /// longer dirty, the failure is reported, and copied to `dropped` when given.
-  /// Defined in world_session.cpp (keeps the header free of domain includes).
   WriteBack attemptWriteBack(ChunkData& chunk, std::int64_t nowMs,
                              std::vector<ChunkWriteBackFailure>* dropped);
 
@@ -289,7 +326,9 @@ class ChunkStore {
   }
 
   replication::Connection& conn_;
-  domains::ChunksAPI* chunksApi_;  // may be null (offline / tests): no hydrate/write-back
+  /// The adapter the ChunksAPI constructor builds; empty when a source was injected.
+  std::unique_ptr<IChunkSource> ownedSource_;
+  IChunkSource* source_ = nullptr;  // null (offline / tests): no hydrate/write-back
   std::string appId_;
   Options options_;
   std::unordered_map<ChunkCoord, ChunkData, ChunkCoordHash> chunks_;

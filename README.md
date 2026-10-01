@@ -11,13 +11,14 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.1.0: the GraphQL client and the wire codec.** Every portable CrowdyJS 18.0.4 domain
-(`AsyncCrowdyClient`, plus the blocking `crowdypy.sync.CrowdyClient` generated from it), the
-error hierarchy, the datacenter move, the load-balancer cookie, endpoint re-discovery,
-`client.grid()`, and `crowdypy.wire`, CrowdyCPP's codec, byte-identical to CrowdyJS's on the
-shared fixtures. The replication connection arrives in 0.2.0, the World Stores, ck-exec
-gateway and Game Kit in 0.3.0, and the headless Studio in 0.4.0; until then
-[`docs/parity-matrix.md`](docs/parity-matrix.md) lists each of them as a portable gap. See
+**v0.2.0: native UDP replication.** `client.udp` has CrowdyJS's UdpAPI methods, sent as
+signed datagrams by CrowdyCPP's native client. The lifecycle runs natively: assignment,
+refresh that keeps the server, re-assignment after a datacenter move. Python takes events
+in batches with zero-copy columns, sends many entities in one call, and is woken through a
+socket. Video frames are in `crowdypy.media`. 0.1.0 brought the GraphQL client (every
+portable CrowdyJS 18.0.4 domain, async and blocking) and `crowdypy.wire`. The World Stores,
+ck-exec gateway and Game Kit arrive in 0.3.0, and the headless Studio in 0.4.0; until then
+[`docs/parity-matrix.md`](docs/parity-matrix.md) lists them as portable gaps. See
 [MIGRATION.md](MIGRATION.md).
 
 ## Install
@@ -63,7 +64,7 @@ async def main() -> None:
     async with crowdypy.AsyncCrowdyClient(
         http_url=minted.game_api_url or API, discovery_url=minted.discovery_url
     ) as game:
-        game.set_token(minted.token)
+        game.set_app_token(minted)
         print(await game.server_status.server_with_least_clients())
 
 
@@ -117,14 +118,43 @@ is not serving) and `CrowdyUserCodeFaultError` (a player module faulted;
 `player_fault_of(error)` reads the fault) mirror CrowdyJS. A `WRONG_DATACENTER` refusal
 moves the client to the app's datacenter and retries once, by itself.
 
+## Replication
+
+```python
+minted = await identity.portal.mint_app_token("42")
+async with crowdypy.AsyncCrowdyClient(
+    http_url=minted.game_api_url or API, discovery_url=minted.discovery_url
+) as game:
+    await game.udp.connect(minted)  # assign a server, open the socket
+    game.udp.subscribe({"actor_update": lambda n: print(n.uuid, n.chunk, n.payload)})
+    await game.udp.send_actor_update((0, 0, 0), my_uuid, pose_bytes)
+    echo = await game.udp.send_actor_update_and_wait((0, 0, 0), my_uuid, pose_bytes)
+```
+
+For a game loop, use the connection underneath: send a frame's entities in one call, and
+read whole batches.
+
+```python
+conn = game.udp.connection
+conn.send_actor_updates(chunks, uuids, poses, stride=88)  # numpy (n, 3) int64, n x 32 octets
+async for batch in conn.batches():
+    actors = batch.types == crowdypy.wire.MessageType.ACTOR_UPDATE_NOTIFICATION
+    positions = batch.chunks[actors]  # a view, not a copy
+```
+
+`crowdypy.replication.ReplicationConnection` is the same for code without an event loop:
+`wait()` and then `poll()` from your own loop.
+
 ## Performance
 
-The replication hot path is built so that Python does no per-datagram work: receive, verify,
-decode and dispatch batching run in CrowdyCPP's native thread, which never takes the GIL.
-Python sees batched notifications (columnar, with zero-copy numpy views when numpy is
-installed), sends in batches with the GIL released, and an asyncio loop is woken through a
-socket instead of polling. The connection lands in 0.2.0, with benchmarks against CrowdyCPP's
-own numbers.
+Python does no work per datagram. Receive, HMAC verification and decoding happen on
+CrowdyCPP's network thread, which never takes the GIL; Python sees one batch object per
+poll. Sends release the GIL, and a batch releases it once for the whole batch. An asyncio
+loop is woken through a socket, not by polling. Measured against CrowdyCPP on the same
+machine ([`benchmarks/README.md`](benchmarks/README.md)): a 200-entity batch costs 1.06x
+CrowdyCPP's own send path per entity, Python takes in two million verified notifications a
+second, a notification reaches an asyncio handler 47 µs after it hits the wire (p50), and a
+60 Hz loop stays within 0.2 ms of its schedule while receiving 60,000 a second.
 
 ## Development
 
