@@ -51,6 +51,7 @@ from crowdypy.domains.teleport import TeleportAPI
 from crowdypy.domains.usage import UsageAPI
 from crowdypy.domains.users import UsersAPI
 from crowdypy.domains.voxels import VoxelsAPI
+from crowdypy.estate import is_same_estate
 from crowdypy.graphql import AsyncGraphQLClient, graphql_endpoint
 from crowdypy.grid_scope import GridScope
 from crowdypy.lb_cookie import LbCookieStore
@@ -194,16 +195,29 @@ class AsyncCrowdyClient:
         """Follow a ``WRONG_DATACENTER`` refusal: move HTTP and realtime endpoints together.
 
         Returns ``False`` (and moves nothing) when the endpoint is the one already held,
-        so the transport's single retry cannot loop.
+        so the transport's single retry cannot loop, and when a target is outside this
+        client's estate (:func:`crowdypy.estate.is_same_estate`).
         """
         endpoint = graphql_endpoint(move.game_api_url) or move.game_api_url
         if endpoint == self.graphql.get_endpoint():
             return False
-        self.graphql.set_endpoint(endpoint)
         ws = graphql_endpoint(move.game_api_ws_url)
+        if not self._within_estate(endpoint, ws):
+            return False
+        self.graphql.set_endpoint(endpoint)
         if ws:
             self.ws_endpoint = ws
         self._logger.info("moved to %s", move.app_datacenter or endpoint)
+        return True
+
+    def _within_estate(self, *targets: str | None) -> bool:
+        # A move target comes from the server over an authenticated connection; this bounds
+        # what one compromised instance may ASK for, since the bearer token follows the move.
+        current = self.graphql.get_endpoint()
+        for target in targets:
+            if target and not is_same_estate(current, target):
+                self._logger.warning("refused a move to %s: outside this client's estate", target)
+                return False
         return True
 
     async def rediscover_endpoint(self, app_id: str | None) -> bool:
@@ -219,12 +233,14 @@ class AsyncCrowdyClient:
             found = await rediscover(app_id)
             if found is None:
                 return False
-            moved = False
             http = graphql_endpoint(found.http_url)
+            ws = graphql_endpoint(found.ws_url)
+            if not self._within_estate(http, ws):
+                return False
+            moved = False
             if http and http != self.graphql.get_endpoint():
                 self.graphql.set_endpoint(http)
                 moved = True
-            ws = graphql_endpoint(found.ws_url)
             if ws and ws != self.ws_endpoint:
                 self.ws_endpoint = ws
                 moved = True

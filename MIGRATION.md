@@ -31,6 +31,10 @@ The first release. CrowdyPy follows CrowdyJS 18.0.4 (the pinned commit in
   connection in 0.2.0.
 - **A response without its root field** raises `CrowdyProtocolError`, where CrowdyJS hands
   back `undefined`.
+- **Moves stay in the estate.** A `WRONG_DATACENTER` move or a re-discovery answer is
+  followed only to a host in the current endpoint's estate (`crowdypy.estate`), since the
+  bearer token follows the move; anything else is refused and the error surfaces. CrowdyCPP
+  bounds moves the same way; CrowdyJS bounds only its relay reconnects.
 - **Licenses.** The wheels link OpenSSL statically, so the distribution is
   `MIT AND Apache-2.0`; every license ships in the wheel's metadata.
 - **Not in a non-browser SDK** (as in CrowdyCPP): hosted browser sign-in navigation
