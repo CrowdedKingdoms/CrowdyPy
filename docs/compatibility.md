@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.1.0`
+- CrowdyPy `0.2.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason, and every portable gap with the release that closes it

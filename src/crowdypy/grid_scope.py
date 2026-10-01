@@ -15,10 +15,13 @@ from crowdypy._grid import GridBox, chunk_coords
 from crowdypy.errors import GridScopeError
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from crowdypy.domains.channels import ChannelsAPI
     from crowdypy.domains.grids import GridsAPI
+    from crowdypy.domains.udp import UdpAPI
 
-__all__ = ["GridChannels", "GridScope"]
+__all__ = ["GridChannels", "GridScope", "GridSends"]
 
 
 class GridScope:
@@ -31,13 +34,16 @@ class GridScope:
         app_id: str | int,
         grid_id: str | int,
         box: GridBox | None = None,
+        udp: UdpAPI | None = None,
     ) -> None:
         self.app_id = str(app_id)
         self.grid_id = str(grid_id)
         self._grids = grids
         self._box = box
         #: Grid channels: the only channels this grid's modules may post into.
-        self.channels = GridChannels(self, grids, channels)
+        self.channels = GridChannels(self, grids, channels, udp)
+        #: Replication that originates in the grid, on ``client.udp``.
+        self.send = GridSends(self, udp)
 
     @property
     def bounds(self) -> GridBox | None:
@@ -71,10 +77,13 @@ class GridScope:
 class GridChannels:
     """The channels of one grid (``scope.channels``)."""
 
-    def __init__(self, scope: GridScope, grids: GridsAPI, channels: ChannelsAPI) -> None:
+    def __init__(
+        self, scope: GridScope, grids: GridsAPI, channels: ChannelsAPI, udp: UdpAPI | None
+    ) -> None:
         self._scope = scope
         self._grids = grids
         self._channels = channels
+        self._udp = udp
 
     async def list(self) -> builtins.list[dict[str, Any]]:
         return await self._grids.channels(self._scope.app_id, self._scope.grid_id)
@@ -105,3 +114,52 @@ class GridChannels:
 
     async def leave(self, channel_id: str | int) -> bool:
         return await self._channels.leave(channel_id)
+
+    async def send(self, channel_id: str | int, uuid: str, payload: Any) -> int:
+        """Publish to one of the grid's channels over ``client.udp``; returns the sequence."""
+        return await _udp(self._udp).send_channel_message(channel_id, uuid, payload)
+
+
+class GridSends:
+    """Each send checks its chunk against the grid box, then goes out as the ordinary
+    ``client.udp`` send; how far it replicates still follows ``distance``."""
+
+    def __init__(self, scope: GridScope, udp: UdpAPI | None) -> None:
+        self._scope = scope
+        self._udp = udp
+
+    async def actor_update(
+        self, chunk: Sequence[int], uuid: str, state: Any = b"", **options: Any
+    ) -> int:
+        self._scope.assert_contains(chunk)
+        return await _udp(self._udp).send_actor_update(chunk, uuid, state, **options)
+
+    async def voxel_update(
+        self,
+        chunk: Sequence[int],
+        uuid: str,
+        voxel: Sequence[int],
+        voxel_type: int,
+        voxel_state: Any = b"",
+        **options: Any,
+    ) -> int:
+        self._scope.assert_contains(chunk)
+        return await _udp(self._udp).send_voxel_update(
+            chunk, uuid, voxel, voxel_type, voxel_state, **options
+        )
+
+    async def text(self, chunk: Sequence[int], uuid: str, text: str | bytes, **options: Any) -> int:
+        self._scope.assert_contains(chunk)
+        return await _udp(self._udp).send_text_packet(chunk, uuid, text, **options)
+
+    async def client_event(
+        self, chunk: Sequence[int], uuid: str, event_type: int, state: Any = b"", **options: Any
+    ) -> int:
+        self._scope.assert_contains(chunk)
+        return await _udp(self._udp).send_client_event(chunk, uuid, event_type, state, **options)
+
+
+def _udp(udp: UdpAPI | None) -> UdpAPI:
+    if udp is None:
+        raise GridScopeError("this grid scope has no replication connection: use client.grid()")
+    return udp

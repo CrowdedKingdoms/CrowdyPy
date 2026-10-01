@@ -9,7 +9,7 @@ data, ck-exec) and a native UDP replication core, CrowdyCPP's, bound with nanobi
     await identity.auth.login("player@example.com", "correct-horse-battery")
     minted = await identity.portal.mint_app_token(app_id)
     game = crowdypy.AsyncCrowdyClient(http_url=minted.game_api_url, discovery_url=minted.discovery_url)
-    game.set_token(minted.token)
+    game.set_app_token(minted)
 
 Names resolve lazily, so ``import crowdypy`` stays cheap; ``crowdypy.sync`` is the blocking
 client.
@@ -125,8 +125,17 @@ _LAZY: dict[str, str] = {
     "UsageAPI": "crowdypy.domains.usage",
     "UsersAPI": "crowdypy.domains.users",
     "VoxelsAPI": "crowdypy.domains.voxels",
+    "UdpAPI": "crowdypy.domains.udp",
+    "ConnectionStatus": "crowdypy.domains.udp",
+    # native replication
+    "AsyncReplicationConnection": "crowdypy.replication",
+    "ReplicationConnection": "crowdypy.replication",
+    "NotificationBatch": "crowdypy.replication",
+    "Notification": "crowdypy.replication",
+    "ConnState": "crowdypy.replication",
+    "TokenMaterial": "crowdypy.replication",
 }
-_SUBMODULES = {"enums", "errors", "inputs", "sync", "wire"}
+_SUBMODULES = {"enums", "errors", "inputs", "media", "replication", "sync", "wire"}
 
 __all__ = [
     "CROWDY_DEFAULT_HOST",
@@ -311,6 +320,12 @@ if TYPE_CHECKING:
     from crowdypy.domains.teleport import (
         TeleportAPI as TeleportAPI,
     )
+    from crowdypy.domains.udp import (
+        ConnectionStatus as ConnectionStatus,
+    )
+    from crowdypy.domains.udp import (
+        UdpAPI as UdpAPI,
+    )
     from crowdypy.domains.usage import (
         UsageAPI as UsageAPI,
     )
@@ -394,6 +409,24 @@ if TYPE_CHECKING:
     )
     from crowdypy.rediscover import (
         create_mint_rediscover as create_mint_rediscover,
+    )
+    from crowdypy.replication import (
+        AsyncReplicationConnection as AsyncReplicationConnection,
+    )
+    from crowdypy.replication import (
+        ConnState as ConnState,
+    )
+    from crowdypy.replication import (
+        Notification as Notification,
+    )
+    from crowdypy.replication import (
+        NotificationBatch as NotificationBatch,
+    )
+    from crowdypy.replication import (
+        ReplicationConnection as ReplicationConnection,
+    )
+    from crowdypy.replication import (
+        TokenMaterial as TokenMaterial,
     )
     from crowdypy.session import (
         FileTokenStore as FileTokenStore,

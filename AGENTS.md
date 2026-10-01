@@ -120,8 +120,8 @@ Merging a PR from the command line: `gh pr merge` fails its preflight on this or
 
 ## Performance rules for the native binding
 
-The replication system saturates the local network stack, so the binding (from 0.2.0) is
-held to these:
+The replication system saturates the local network stack, so the binding
+(`native/replication_binding.cpp`, `src/crowdypy/replication.py`) is held to these:
 
 - No Python runs per datagram: receive, HMAC verify, decode and queueing stay in CrowdyCPP's
   thread, and Python receives batches.
@@ -131,4 +131,5 @@ held to these:
 - Sends are batched, and the GIL is released while a batch is encoded and sent.
 - An asyncio loop is woken through `Config::onEventsReady` and a socket pair, never by a
   sleep-poll.
-- Every change to the hot path reruns `benchmarks/` and compares with CrowdyCPP's numbers.
+- Every change to the hot path reruns `benchmarks/bench_replication.py` and CrowdyCPP's
+  `bench_send` on the same machine, and updates `benchmarks/README.md`.

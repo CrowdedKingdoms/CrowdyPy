@@ -32,6 +32,7 @@ NAMES = {
     "AsyncCrowdyClient": "CrowdyClient",
     "AsyncGraphQLClient": "GraphQLClient",
     "AsyncSingleFlight": "SingleFlight",
+    "AsyncReplicationConnection": "ReplicationConnection",
     "AsyncClient": "Client",
     "aclose": "close",
     "__aenter__": "__enter__",

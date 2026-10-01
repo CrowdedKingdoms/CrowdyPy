@@ -231,9 +231,9 @@ class CrowdyRealtimeError(CrowdyError):
 class CrowdyReplicationError(CrowdyError):
     """The native replication client refused an operation.
 
-    ``code`` is the CrowdyCPP error name (``NotConnected``, ``InvalidArgument``,
-    ``CryptoUnavailable``, ...). Sends on the hot path return status codes instead of
-    raising; this is for setup and argument errors.
+    ``code`` is the CrowdyCPP error name: ``NotConnected``, ``InvalidArgument``, ``Timeout``,
+    ``SocketError``, ``WouldBlock`` (the kernel's send buffer was full and nothing was sent;
+    retry shortly), ...
     """
 
     def __init__(self, message: str, *, code: str | None = None) -> None:

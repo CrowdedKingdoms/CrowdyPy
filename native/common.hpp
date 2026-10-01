@@ -60,6 +60,16 @@ inline nb::bytes to_bytes(crowdy::Bytes b) {
 }
 
 inline crowdy::wire::Token64 token_from(nb::handle obj) {
+  if (PyUnicode_Check(obj.ptr())) {
+    Py_ssize_t len = 0;
+    const char* text = PyUnicode_AsUTF8AndSize(obj.ptr(), &len);
+    if (!text) throw nb::python_error();
+    if (len != static_cast<Py_ssize_t>(crowdy::wire::kTokenOctets))
+      raise(crowdy::Errc::InvalidArgument, "an app token is exactly 64 octets");
+    crowdy::wire::Token64 token;
+    std::memcpy(token.octets, text, crowdy::wire::kTokenOctets);
+    return token;
+  }
   BufferView view(obj);
   if (view.size() != crowdy::wire::kTokenOctets)
     raise(crowdy::Errc::InvalidArgument, "an app token is exactly 64 octets");
@@ -68,9 +78,20 @@ inline crowdy::wire::Token64 token_from(nb::handle obj) {
   return token;
 }
 
-/// Actor uuids are 32 ASCII octets on the wire. Shorter values are NUL-padded and
-/// longer ones refused, which is CrowdyJS's serializer contract for the uuid slot.
+/// Actor uuids are 32 ASCII octets on the wire, given as a str or bytes-like object.
+/// Shorter values are NUL-padded and longer ones refused, which is CrowdyJS's
+/// serializer contract for the uuid slot.
 inline crowdy::core::ActorUuid uuid_from(nb::handle obj) {
+  if (PyUnicode_Check(obj.ptr())) {
+    Py_ssize_t len = 0;
+    const char* text = PyUnicode_AsUTF8AndSize(obj.ptr(), &len);
+    if (!text) throw nb::python_error();
+    if (len > static_cast<Py_ssize_t>(crowdy::wire::kUuidSize))
+      raise(crowdy::Errc::InvalidArgument, "an actor uuid is at most 32 octets");
+    crowdy::core::ActorUuid uuid{};
+    std::memcpy(uuid.data(), text, static_cast<std::size_t>(len));
+    return uuid;
+  }
   BufferView view(obj);
   if (view.size() > crowdy::wire::kUuidSize)
     raise(crowdy::Errc::InvalidArgument, "an actor uuid is at most 32 octets");
@@ -87,5 +108,6 @@ inline nb::bytes uuid_bytes(const char* uuid) {
 }
 
 void register_wire(nb::module_& m);
+void register_replication(nb::module_& m);
 
 }  // namespace crowdypy
