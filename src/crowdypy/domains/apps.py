@@ -19,6 +19,7 @@ import msgspec
 from crowdypy._generated import inputs
 from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import CodeAdmissionMode
+from crowdypy._operation import inline_operation
 from crowdypy.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
@@ -53,6 +54,31 @@ def _route_from_app_row(row: object) -> AppRoute | None:
         deployment_target=deployment_target if isinstance(deployment_target, str) else None,
         game_api_url=game_api_url if isinstance(game_api_url, str) and game_api_url else None,
     )
+
+
+_BUDGET_FIELDS = "appId unitsPerMinute enforce note updatedAt"
+# CrowdyCPP carries these documents; CrowdyJS sends none of them.
+APP_COMPUTE_BUDGET = inline_operation(
+    "AppComputeBudget",
+    "query",
+    "appComputeBudget",
+    f"query AppComputeBudget($appId: BigInt!) {{ appComputeBudget(appId: $appId) {{ {_BUDGET_FIELDS} }} }}",
+)
+SET_APP_COMPUTE_BUDGET = inline_operation(
+    "SetAppComputeBudget",
+    "mutation",
+    "setAppComputeBudget",
+    "mutation SetAppComputeBudget($appId: BigInt!, $unitsPerMinute: Int!, $enforce: Boolean, "
+    "$note: String) { setAppComputeBudget(appId: $appId, unitsPerMinute: $unitsPerMinute, "
+    f"enforce: $enforce, note: $note) {{ {_BUDGET_FIELDS} }} }}",
+)
+CLEAR_APP_COMPUTE_BUDGET = inline_operation(
+    "ClearAppComputeBudget",
+    "mutation",
+    "clearAppComputeBudget",
+    "mutation ClearAppComputeBudget($appId: BigInt!) { clearAppComputeBudget(appId: $appId) }",
+)
+INLINE_OPERATIONS = (APP_COMPUTE_BUDGET, SET_APP_COMPUTE_BUDGET, CLEAR_APP_COMPUTE_BUDGET)
 
 
 class AppsAPI(Domain):
@@ -236,3 +262,38 @@ class AppsAPI(Domain):
         """
         result: dict[str, Any] = await self._request(ops.ARCHIVE_APP, {"appId": bigint(app_id)})
         return result
+
+    async def compute_budget(self, app_id: str | int) -> dict[str, Any] | None:
+        """The app's compute allowance, or ``None`` when none is set (its ck-exec code is
+        then never paused for budget). App admin."""
+        result: dict[str, Any] | None = await self._request(
+            APP_COMPUTE_BUDGET, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def set_compute_budget(
+        self,
+        app_id: str | int,
+        units_per_minute: int,
+        *,
+        enforce: bool | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Set the app's compute allowance in units per minute (one unit is a millisecond of
+        measured execution). With ``enforce``, code over budget is paused."""
+        result: dict[str, Any] = await self._request(
+            SET_APP_COMPUTE_BUDGET,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "unitsPerMinute": units_per_minute,
+                    "enforce": enforce,
+                    "note": note,
+                }
+            ),
+        )
+        return result
+
+    async def clear_compute_budget(self, app_id: str | int) -> bool:
+        """Remove the app's compute allowance. ``True`` when one was removed."""
+        return bool(await self._request(CLEAR_APP_COMPUTE_BUDGET, {"appId": bigint(app_id)}))

@@ -32,6 +32,7 @@ from crowdypy._sync.domains.billing import BillingAPI
 from crowdypy._sync.domains.channels import ChannelsAPI
 from crowdypy._sync.domains.chunks import ChunksAPI
 from crowdypy._sync.domains.crowdy_studio import CrowdyStudioAPI
+from crowdypy._sync.domains.crowdy_studio_agent import CrowdyStudioAgentAPI
 from crowdypy._sync.domains.crowdy_studio_github import CrowdyStudioGitHubTransport
 from crowdypy._sync.domains.discovery import DiscoveryDomain
 from crowdypy._sync.domains.exec import ExecAPI
@@ -146,6 +147,7 @@ class CrowdyClient:
         self.exec = ExecAPI(self.graphql)
         self.crowdy_studio = CrowdyStudioAPI(self.graphql)
         self.crowdy_studio_github = CrowdyStudioGitHubTransport(self.graphql)
+        self.crowdy_studio_agent = CrowdyStudioAgentAPI(self.graphql)
         self.player_wallet = PlayerWalletAPI(self.graphql)
         self.marketplace = MarketplaceAPI(self.graphql)
         self.avatars = AvatarsAPI(self.graphql)

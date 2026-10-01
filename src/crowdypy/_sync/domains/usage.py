@@ -11,10 +11,39 @@ from __future__ import annotations
 from typing import Any
 
 from crowdypy._generated import operations as ops
+from crowdypy._operation import inline_operation
 from crowdypy._sync.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
 __all__ = ["UsageAPI"]
+
+
+# CrowdyCPP's UsageAPI sends these; CrowdyJS wraps neither.
+ORG_USAGE_SUMMARY = inline_operation(
+    "OrgUsageSummary",
+    "query",
+    "orgUsageSummary",
+    "query OrgUsageSummary($orgId: BigInt!, $since: DateTime) { orgUsageSummary(orgId: $orgId, "
+    "since: $since) { orgId replicationSendBytes replicationRecvBytes graphqlSendBytes "
+    "graphqlRecvBytes totalOps } }",
+)
+APP_USAGE_PROJECTION = inline_operation(
+    "AppUsageProjection",
+    "query",
+    "appUsageProjection",
+    "query AppUsageProjection($orgId: BigInt!, $appId: BigInt!) { appUsageProjection(orgId: "
+    "$orgId, appId: $appId) { appId currentEgressBytes sufficientData daysElapsed "
+    "projectedBytes freeAllowanceBytes projectedPctOfFree onTrackToExceed } }",
+)
+ORG_USAGE_PROJECTION = inline_operation(
+    "OrgUsageProjection",
+    "query",
+    "orgUsageProjection",
+    "query OrgUsageProjection($orgId: BigInt!) { orgUsageProjection(orgId: $orgId) { "
+    "sufficientData daysElapsed totalProjectedBytes totalFreeAllowanceBytes apps { appId "
+    "appName currentEgressBytes projectedBytes onTrackToExceed } } }",
+)
+INLINE_OPERATIONS = (ORG_USAGE_SUMMARY, APP_USAGE_PROJECTION, ORG_USAGE_PROJECTION)
 
 
 class UsageAPI(Domain):
@@ -66,4 +95,26 @@ class UsageAPI(Domain):
         studios.
         """
         result: dict[str, Any] = self._request(ops.PLAYER_PULSE, {"orgId": bigint(org_id)})
+        return result
+
+    def org_summary(self, org_id: str | int, since: str | None = None) -> dict[str, Any]:
+        """Replication and GraphQL byte totals and operation counts across the org's apps."""
+        result: dict[str, Any] = self._request(
+            ORG_USAGE_SUMMARY, omit_none({"orgId": bigint(org_id), "since": since})
+        )
+        return result
+
+    def app_projection(self, org_id: str | int, app_id: str | int) -> dict[str, Any]:
+        """A shared app's linear end-of-month egress projection from the month so far.
+
+        ``sufficientData`` is false until three days of the month have elapsed.
+        """
+        result: dict[str, Any] = self._request(
+            APP_USAGE_PROJECTION, {"orgId": bigint(org_id), "appId": bigint(app_id)}
+        )
+        return result
+
+    def org_projection(self, org_id: str | int) -> dict[str, Any]:
+        """The org's per-app monthly egress projections against the free allowance."""
+        result: dict[str, Any] = self._request(ORG_USAGE_PROJECTION, {"orgId": bigint(org_id)})
         return result

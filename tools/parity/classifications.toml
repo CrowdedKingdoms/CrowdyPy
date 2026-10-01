@@ -18,31 +18,6 @@ GraphQLClient = "AsyncGraphQLClient"
 [roots]
 # GraphQL root fields no CrowdyPy code sends.
 
-# --- portable-gap
-"mutation.clearAppComputeBudget" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's operations/computeUnits covers it. Port before the strict gate" }
-"mutation.confirmEmail" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AuthAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioCommonPublish" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioLibrarySetArchived" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioProjectSaveFiles" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioProjectSaveMetadata" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioProjectSetArchived" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAPI covers it. Port before the strict gate" }
-"mutation.crowdyStudioSetProviderConsent" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio: CrowdyJS sends it from the Studio agent pane's transport (src/crowdy-dsh/transport.ts); CrowdyCPP covers it in CrowdyStudioAgentAPI" }
-"mutation.resendConfirmationEmail" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AuthAPI covers it. Port before the strict gate" }
-"mutation.setAppComputeBudget" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's operations/computeUnits covers it. Port before the strict gate" }
-"mutation.setCrowdyStudioAgentPolicy" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's operations/crowdyStudioAgent covers it. Port before the strict gate" }
-"query.appComputeBudget" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's operations/computeUnits covers it. Port before the strict gate" }
-"query.appPlayerCodeListingVersions" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's own operation document covers it. Port before the strict gate" }
-"query.appUsageProjection" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AdminAPI (inline document) covers it. Port before the strict gate" }
-"query.checkouts" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AdminAPI covers it. Port before the strict gate" }
-"query.crowdyStudioAgentEffectivePolicy" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAgentAPI covers it. Port before the strict gate" }
-"query.crowdyStudioAgentPolicy" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAgentAPI covers it. Port before the strict gate" }
-"query.crowdyStudioAgentUsage" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's CrowdyStudioAgentAPI covers it. Port before the strict gate" }
-"query.crowdyStudioModelUsage" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio: CrowdyJS sends it from the Studio agent pane's transport (src/crowdy-dsh/transport.ts); CrowdyCPP covers it in CrowdyStudioAgentAPI" }
-"query.crowdyStudioProviderConsent" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio: CrowdyJS sends it from the Studio agent pane's transport (src/crowdy-dsh/transport.ts); CrowdyCPP covers it in CrowdyStudioAgentAPI" }
-"query.orgUsageProjection" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AdminAPI (inline document) covers it. Port before the strict gate" }
-"query.orgUsageSummary" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's AdminAPI (inline document) covers it. Port before the strict gate" }
-"query.paymentEvents" = { kind = "portable-gap", reason = "CrowdyJS 18.0.4 sends no operation for this root; CrowdyCPP's own operation document covers it. Port before the strict gate" }
-
 # --- native-equivalent
 "mutation.connectUdpProxy" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.disconnectUdpProxy" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
@@ -89,6 +64,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.billingExemptOrgs" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.billingRateCard" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.billingWriteOffs" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
+"query.checkouts" = { kind = "browser-exclusion", reason = "super-admin only (cross-tenant audit); the SDK wraps nothing for platform roles (tooling calls it directly). CrowdyCPP waives it as deprecated offset pagination" }
 "query.checkoutsConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.cpBillingInvariantRuns" = { kind = "browser-exclusion", reason = "operator-only ledger reads; not a game-client surface" }
 "query.cpBillingReconciliations" = { kind = "browser-exclusion", reason = "operator-only ledger reads; not a game-client surface" }
@@ -102,6 +78,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.hostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.meteredRateCard" = { kind = "browser-exclusion", reason = "public price list for the pricing page and dashboard; a game client has no use for it" }
 "query.myHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.paymentEvents" = { kind = "browser-exclusion", reason = "super-admin only (cross-tenant audit); the SDK wraps nothing for platform roles (tooling calls it directly). CrowdyCPP waives it as deprecated offset pagination" }
 "query.paymentEventsConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.retiredOrganizations" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle reads; not a game-client surface" }
 "query.usersConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -112,7 +89,6 @@ GraphQLClient = "AsyncGraphQLClient"
 
 # --- portable-gap
 "CrowdyStudioController" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio" }
-"StudioLayoutController" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio" }
 
 # --- browser-exclusion
 "BrowserSessionPkceStore" = { kind = "browser-exclusion", reason = "sessionStorage-backed PKCE verifier store; a Python application keeps verifiers in MemoryPkceStore or its own PkceStore" }

@@ -20,10 +20,11 @@ given for a model uses its camelCase keys, as CrowdyJS objects do.
 
 from __future__ import annotations
 
+import enum
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 import msgspec
 
@@ -31,7 +32,7 @@ from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import CrowdyStudioImportSource as _ImportSource
 from crowdypy._generated.enums import CrowdyStudioPairingPreference as _ApiPairing
 from crowdypy._generated.enums import CrowdyStudioProjectSource as _ApiSource
-from crowdypy._operation import Operation
+from crowdypy._operation import Operation, inline_operation
 from crowdypy.domains._base import Domain
 from crowdypy.domains.crowdy_studio_github import (
     CrowdyStudioGitHubLayout,
@@ -49,6 +50,7 @@ from crowdypy.graphql import AsyncGraphQLClient
 from crowdypy.utils import bigint
 
 __all__ = [
+    "UNCHANGED",
     "CrowdyStudioAPI",
     "CrowdyStudioOfflineError",
     "CrowdyStudioPairingPreference",
@@ -467,6 +469,84 @@ def _studio_file_to_repo_path(
     return f"{base}/{rest}" if rest else base
 
 
+class _Unchanged(enum.Enum):
+    UNCHANGED = enum.auto()
+
+
+#: A metadata patch field left as it is (``None`` clears a nullable field).
+UNCHANGED: Final = _Unchanged.UNCHANGED
+
+
+def _fragment(operation: Operation, name: str) -> str:
+    """A fragment CrowdyJS's generated document carries, for a document of our own that
+    must decode the same way."""
+    return operation.document[operation.document.index(f"fragment {name} ") :]
+
+
+_PROJECT_FIELDS = _fragment(ops.CROWDY_STUDIO_PROJECT_SAVE, "CrowdyStudioProjectFields")
+_LIBRARY_FIELDS = (
+    "libraryFileId appId ownerUserId title pathHint target tags content revision archived "
+    "archivedAt createdAt updatedAt"
+)
+_COMMON_FIELDS = (
+    "commonFileId appId slug title description path target tags status versionId versionNo "
+    "content contentSha256 publishedByUserId publishedAt createdAt updatedAt"
+)
+
+# CrowdyCPP's narrow project and reference-file mutations (CrowdyJS saves through
+# crowdyStudioProjectSave only).
+PROJECT_SAVE_METADATA = inline_operation(
+    "CrowdyStudioProjectSaveMetadata",
+    "mutation",
+    "crowdyStudioProjectSaveMetadata",
+    "mutation CrowdyStudioProjectSaveMetadata($input: SaveCrowdyStudioProjectMetadataInput!) "
+    "{ crowdyStudioProjectSaveMetadata(input: $input) { ...CrowdyStudioProjectFields } }\n"
+    + _PROJECT_FIELDS,
+)
+PROJECT_SAVE_FILES = inline_operation(
+    "CrowdyStudioProjectSaveFiles",
+    "mutation",
+    "crowdyStudioProjectSaveFiles",
+    "mutation CrowdyStudioProjectSaveFiles($input: SaveCrowdyStudioProjectFilesInput!) "
+    "{ crowdyStudioProjectSaveFiles(input: $input) { ...CrowdyStudioProjectFields } }\n"
+    + _PROJECT_FIELDS,
+)
+PROJECT_SET_ARCHIVED = inline_operation(
+    "CrowdyStudioProjectSetArchived",
+    "mutation",
+    "crowdyStudioProjectSetArchived",
+    "mutation CrowdyStudioProjectSetArchived($input: SetCrowdyStudioProjectArchivedInput!) "
+    "{ crowdyStudioProjectSetArchived(input: $input) { ...CrowdyStudioProjectFields } }\n"
+    + _PROJECT_FIELDS,
+)
+LIBRARY_SET_ARCHIVED = inline_operation(
+    "CrowdyStudioLibrarySetArchived",
+    "mutation",
+    "crowdyStudioLibrarySetArchived",
+    "mutation CrowdyStudioLibrarySetArchived($input: SetCrowdyStudioLibraryFileArchivedInput!) "
+    f"{{ crowdyStudioLibrarySetArchived(input: $input) {{ {_LIBRARY_FIELDS} }} }}",
+)
+COMMON_PUBLISH = inline_operation(
+    "CrowdyStudioCommonPublish",
+    "mutation",
+    "crowdyStudioCommonPublish",
+    "mutation CrowdyStudioCommonPublish($input: PublishCrowdyStudioCommonFileInput!) "
+    f"{{ crowdyStudioCommonPublish(input: $input) {{ {_COMMON_FIELDS} }} }}",
+)
+INLINE_OPERATIONS = (
+    PROJECT_SAVE_METADATA,
+    PROJECT_SAVE_FILES,
+    PROJECT_SET_ARCHIVED,
+    LIBRARY_SET_ARCHIVED,
+    COMMON_PUBLISH,
+)
+
+
+def _patch(input_: dict[str, Any], key: str, value: object) -> None:
+    if value is not UNCHANGED:
+        input_[key] = value
+
+
 class CrowdyStudioAPI(Domain):
     """Private Crowdy Studio projects and reusable files, and how a save reaches them."""
 
@@ -735,6 +815,160 @@ class CrowdyStudioAPI(Domain):
             input_["destinationPath"] = normalize_crowdy_studio_path(destination_path)
         payload = await self._request(ops.CROWDY_STUDIO_PROJECT_IMPORT_FILE, {"input": input_})
         return self._remember(_from_project_dto(payload, str(grid_id)))
+
+    async def save_project_metadata(
+        self,
+        app_id: str | int,
+        project_id: str,
+        expected_revision_id: str | int,
+        *,
+        grid_id: str | int | _Unchanged | None = UNCHANGED,
+        name: str | _Unchanged = UNCHANGED,
+        description: str | _Unchanged | None = UNCHANGED,
+        server_module_name: str | _Unchanged | None = UNCHANGED,
+        client_module_name: str | _Unchanged | None = UNCHANGED,
+        pairing_preference: _ApiPairing | str | _Unchanged = UNCHANGED,
+        sdk_version: str | _Unchanged = UNCHANGED,
+        abi_version: int | _Unchanged = UNCHANGED,
+        idempotency_key: str | None = None,
+    ) -> CrowdyStudioProject:
+        """Patch a project's metadata under optimistic revision control, leaving its files.
+
+        Fields left ``UNCHANGED`` keep their value; ``None`` clears a nullable one.
+        ``pairing_preference`` is the API's (``SERVER_ONLY``, ``CLIENT_ONLY``, ``PAIRED``
+        or ``INDEPENDENT``). A stale ``expected_revision_id`` raises the platform's
+        conflict error.
+        """
+        input_: dict[str, Any] = {
+            "appId": bigint(app_id),
+            "projectId": project_id,
+            "expectedRevision": bigint(expected_revision_id),
+        }
+        _patch(input_, "gridId", bigint(grid_id) if isinstance(grid_id, (str, int)) else grid_id)
+        _patch(input_, "name", name)
+        _patch(input_, "description", description)
+        _patch(input_, "serverModuleName", server_module_name)
+        _patch(input_, "clientModuleName", client_module_name)
+        _patch(input_, "pairingPreference", pairing_preference)
+        _patch(input_, "sdkVersion", sdk_version)
+        _patch(input_, "abiVersion", abi_version)
+        if idempotency_key:
+            input_["idempotencyKey"] = idempotency_key
+        payload = await self._request(PROJECT_SAVE_METADATA, {"input": input_})
+        return self._remember(_from_project_dto(payload, self._grid_of(project_id, payload)))
+
+    async def save_project_files(
+        self,
+        app_id: str | int,
+        project_id: str,
+        expected_revision_id: str | int,
+        upserts: Sequence[CrowdyStudioProjectFile | Mapping[str, Any]] = (),
+        deletes: Sequence[tuple[CrowdyStudioTarget, str]] = (),
+        *,
+        idempotency_key: str | None = None,
+    ) -> CrowdyStudioProject:
+        """Upsert and delete project files in one transaction under one expected revision.
+
+        ``deletes`` are ``(target, path)`` pairs; paths are normalized as a save normalizes
+        them.
+        """
+        input_: dict[str, Any] = {
+            "appId": bigint(app_id),
+            "projectId": project_id,
+            "expectedRevision": bigint(expected_revision_id),
+            "upserts": [_to_api_file(file) for file in _project_files(upserts)],
+            "deletes": [
+                {"target": target, "path": normalize_crowdy_studio_path(path)}
+                for target, path in deletes
+            ],
+        }
+        if idempotency_key:
+            input_["idempotencyKey"] = idempotency_key
+        payload = await self._request(PROJECT_SAVE_FILES, {"input": input_})
+        return self._remember(_from_project_dto(payload, self._grid_of(project_id, payload)))
+
+    async def set_project_archived(
+        self,
+        app_id: str | int,
+        project_id: str,
+        expected_revision_id: str | int,
+        archived: bool = True,
+        *,
+        idempotency_key: str | None = None,
+    ) -> CrowdyStudioProject:
+        """Archive or restore a project; nothing is deleted."""
+        input_: dict[str, Any] = {
+            "appId": bigint(app_id),
+            "projectId": project_id,
+            "expectedRevision": bigint(expected_revision_id),
+            "archived": archived,
+        }
+        if idempotency_key:
+            input_["idempotencyKey"] = idempotency_key
+        payload = await self._request(PROJECT_SET_ARCHIVED, {"input": input_})
+        return self._remember(_from_project_dto(payload, self._grid_of(project_id, payload)))
+
+    async def set_personal_library_file_archived(
+        self,
+        app_id: str | int,
+        library_file_id: str,
+        expected_revision_id: str | int,
+        archived: bool = True,
+        *,
+        idempotency_key: str | None = None,
+    ) -> CrowdyStudioReferenceFile:
+        """Archive or restore one of the signed-in player's personal-library files."""
+        input_: dict[str, Any] = {
+            "appId": bigint(app_id),
+            "libraryFileId": library_file_id,
+            "expectedRevision": bigint(expected_revision_id),
+            "archived": archived,
+        }
+        if idempotency_key:
+            input_["idempotencyKey"] = idempotency_key
+        return _from_library_dto(await self._request(LIBRARY_SET_ARCHIVED, {"input": input_}))
+
+    async def publish_common_file(
+        self,
+        app_id: str | int,
+        slug: str,
+        title: str,
+        target: CrowdyStudioTarget,
+        path: str,
+        content: str,
+        *,
+        common_file_id: str | None = None,
+        description: str | None = None,
+        tags: Sequence[str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> CrowdyStudioReferenceFile:
+        """Publish a new immutable version of a curated common file and make it current.
+
+        Needs ``manage_compute`` on the app. Pass ``common_file_id`` to version an existing
+        file.
+        """
+        input_: dict[str, Any] = {
+            "appId": bigint(app_id),
+            "slug": slug,
+            "title": title,
+            "target": target,
+            "path": normalize_crowdy_studio_path(path),
+            "content": content,
+            "tags": [] if tags is None else list(tags),
+        }
+        if common_file_id:
+            input_["commonFileId"] = common_file_id
+        if description is not None:
+            input_["description"] = description
+        if idempotency_key:
+            input_["idempotencyKey"] = idempotency_key
+        return _from_common_dto(await self._request(COMMON_PUBLISH, {"input": input_}))
+
+    def _grid_of(self, project_id: str, payload: Mapping[str, Any]) -> str:
+        if payload.get("gridId") is not None:
+            return str(payload["gridId"])
+        baseline = self._baselines.get(project_id)
+        return baseline.grid_id if baseline is not None else ""
 
     def _remember(self, project: CrowdyStudioProject) -> CrowdyStudioProject:
         self._baselines[project.project_id] = msgspec.structs.replace(

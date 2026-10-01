@@ -209,7 +209,21 @@ UNLINK_IDENTITY = inline_operation(
     "mutation UnlinkIdentity($identityId: String!) { unlinkIdentity(identityId: $identityId) }",
 )
 
-#: Documents this module declares inline (CrowdyJS declares the same ones inline).
+CONFIRM_EMAIL = inline_operation(
+    "ConfirmEmail",
+    "mutation",
+    "confirmEmail",
+    "mutation ConfirmEmail($token: String!) { confirmEmail(token: $token) }",
+)
+RESEND_CONFIRMATION_EMAIL = inline_operation(
+    "ResendConfirmationEmail",
+    "mutation",
+    "resendConfirmationEmail",
+    "mutation ResendConfirmationEmail($email: String!) { resendConfirmationEmail(email: $email) }",
+)
+
+#: Documents this module declares inline: the ones CrowdyJS declares inline, and the email
+#: confirmation pair CrowdyCPP's AuthAPI sends.
 INLINE_OPERATIONS = (
     REQUEST_LOGIN_LINK,
     COMPLETE_LOGIN_LINK,
@@ -226,6 +240,8 @@ INLINE_OPERATIONS = (
     MY_IDENTITIES,
     LINK_IDENTITY,
     UNLINK_IDENTITY,
+    CONFIRM_EMAIL,
+    RESEND_CONFIRMATION_EMAIL,
 )
 
 
@@ -304,6 +320,16 @@ class AuthAPI(Domain):
                 {"resetPasswordInput": {"token": token, "newPassword": new_password}},
             )
         )
+
+    async def confirm_email(self, token: str) -> bool:
+        """Confirm an email address with the emailed token, which also enables password
+        sign-in. ``False`` for an invalid or expired token."""
+        return bool(await self._request(CONFIRM_EMAIL, {"token": token}))
+
+    async def resend_confirmation_email(self, email: str) -> bool:
+        """Send the confirmation link again. Answers ``True`` whether or not the account
+        exists or is already confirmed."""
+        return bool(await self._request(RESEND_CONFIRMATION_EMAIL, {"email": email}))
 
     async def change_password(self, current_password: str, new_password: str) -> bool:
         """Change the password, proving the current one."""

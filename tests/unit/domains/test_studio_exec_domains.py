@@ -117,6 +117,12 @@ PORTED: dict[type, set[str]] = {
         "save_personal_library_file",
         "list_common_files",
         "import_reference_file",
+        # CrowdyCPP's narrow mutations
+        "save_project_metadata",
+        "save_project_files",
+        "set_project_archived",
+        "set_personal_library_file_archived",
+        "publish_common_file",
     },
     CrowdyStudioGitHubTransport: {
         "status",

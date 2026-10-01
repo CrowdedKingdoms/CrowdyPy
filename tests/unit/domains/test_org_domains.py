@@ -23,6 +23,8 @@ from conftest import MockApi
 from crowdypy._generated import enums, inputs
 from crowdypy._generated import operations as ops
 from crowdypy._operation import Operation
+from crowdypy.domains import apps as apps_domain
+from crowdypy.domains import usage as usage_domain
 from crowdypy.domains._base import Domain
 from crowdypy.domains.admin import AdminAPI
 from crowdypy.domains.app_access import AppAccessAPI
@@ -128,10 +130,23 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
     DiscoveryDomain: ["apps", "app"],
 }
 
+#: Methods CrowdyCPP carries and CrowdyJS does not, under their Python names.
+CROWDYCPP_METHODS: dict[type[Domain], set[str]] = {
+    AppsAPI: {"compute_budget", "set_compute_budget", "clear_compute_budget"},
+    UsageAPI: {"org_summary", "app_projection", "org_projection"},
+}
+
 #: The document each operation is sent with: the generated one, or the inline one.
 DOCUMENTS: dict[str, str] = {
     **{value.name: value.document for value in vars(ops).values() if isinstance(value, Operation)},
-    **{op.name: op.document for op in INLINE_OPERATIONS},
+    **{
+        op.name: op.document
+        for op in (
+            *INLINE_OPERATIONS,
+            *apps_domain.INLINE_OPERATIONS,
+            *usage_domain.INLINE_OPERATIONS,
+        )
+    },
 }
 
 SINCE = "2026-09-01T00:00:00.000Z"
@@ -166,6 +181,7 @@ RUNTIME: dict[str, Any] = {"appId": "42", "runtimeStatus": "ACTIVE", "dailyLimit
 AUTO_BILLING: dict[str, Any] = {"orgId": "12", "enabled": True, "limitCents": None}
 SUBSCRIPTION: dict[str, Any] = {"appId": "42", "planId": "3", "status": "CANCELED"}
 ROW: dict[str, Any] = {"id": "1"}
+COMPUTE: dict[str, Any] = {"appId": "42", "unitsPerMinute": 600, "enforce": True}
 
 
 @dataclass(frozen=True)
@@ -883,6 +899,36 @@ CASES: list[Case] = [
         [{"appId": "42", "datacenterCode": "va", "gameApiUrl": "game-api-va"}],
         returns=AppEndpoint(app_id="42", datacenter_code="va", game_api_url="game-api-va"),
     ),
+    # -- CrowdyCPP's ------------------------------------------------------------------
+    Case(AppsAPI, "compute_budget", (42,), "AppComputeBudget", {"appId": "42"}, COMPUTE),
+    Case(
+        AppsAPI,
+        "set_compute_budget",
+        (42, 600),
+        "SetAppComputeBudget",
+        {"appId": "42", "unitsPerMinute": 600, "enforce": True},
+        COMPUTE,
+        kwargs={"enforce": True},
+    ),
+    Case(AppsAPI, "clear_compute_budget", ("42",), "ClearAppComputeBudget", {"appId": "42"}, True),
+    Case(
+        UsageAPI,
+        "org_summary",
+        (12,),
+        "OrgUsageSummary",
+        {"orgId": "12", "since": SINCE},
+        ROW,
+        kwargs={"since": SINCE},
+    ),
+    Case(
+        UsageAPI,
+        "app_projection",
+        (12, 42),
+        "AppUsageProjection",
+        {"orgId": "12", "appId": "42"},
+        ROW,
+    ),
+    Case(UsageAPI, "org_projection", ("12",), "OrgUsageProjection", {"orgId": "12"}, ROW),
 ]
 
 
@@ -902,7 +948,9 @@ def _public_methods(domain: type[Domain]) -> set[str]:
 def test_method_set_is_crowdyjs_snake_cased_and_every_method_is_covered(
     domain: type[Domain],
 ) -> None:
-    ported = {_snake(name) for name in CROWDYJS_METHODS[domain]}
+    ported = {_snake(name) for name in CROWDYJS_METHODS[domain]} | CROWDYCPP_METHODS.get(
+        domain, set()
+    )
     assert _public_methods(domain) == ported
     assert {case.method for case in CASES if case.domain is domain} == ported
 

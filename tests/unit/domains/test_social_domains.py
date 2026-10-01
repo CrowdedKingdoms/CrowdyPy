@@ -24,7 +24,7 @@ from crowdypy._generated import operations as ops
 from crowdypy._operation import Operation
 from crowdypy.domains._base import Domain
 from crowdypy.domains.channels import ChannelsAPI
-from crowdypy.domains.marketplace import MarketplaceAPI
+from crowdypy.domains.marketplace import APP_LISTING_VERSIONS, MarketplaceAPI
 from crowdypy.domains.player_wallet import PlayerWalletAPI
 from crowdypy.domains.teams import TeamsAPI
 from crowdypy.errors import CrowdyProtocolError
@@ -108,8 +108,12 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
 }
 
 GENERATED: dict[str, Operation] = {
-    value.name: value for value in vars(ops).values() if isinstance(value, Operation)
+    **{value.name: value for value in vars(ops).values() if isinstance(value, Operation)},
+    APP_LISTING_VERSIONS.name: APP_LISTING_VERSIONS,
 }
+
+#: Methods CrowdyCPP carries and CrowdyJS does not, under their Python names.
+CROWDYCPP_METHODS: dict[type[Domain], set[str]] = {MarketplaceAPI: {"app_listing_versions"}}
 
 GROUP: dict[str, Any] = {"groupId": "5", "appId": "42", "name": "general"}
 MEMBER: dict[str, Any] = {"groupMemberId": "9", "groupId": "5", "userId": "7", "status": "active"}
@@ -485,6 +489,14 @@ CASES: list[Case] = [
         {"appId": "42"},
         "123456789",
     ),
+    Case(
+        MarketplaceAPI,
+        "app_listing_versions",
+        (42, "l-1"),
+        "MarketplaceAppListingVersions",
+        {"appId": "42", "listingId": "l-1"},
+        [{"versionId": "v-1"}],
+    ),
 ]
 
 
@@ -504,7 +516,9 @@ def _public_methods(domain: type[Domain]) -> set[str]:
 def test_method_set_is_crowdyjs_snake_cased_and_every_method_is_covered(
     domain: type[Domain],
 ) -> None:
-    ported = {_snake(name) for name in CROWDYJS_METHODS[domain]}
+    ported = {_snake(name) for name in CROWDYJS_METHODS[domain]} | CROWDYCPP_METHODS.get(
+        domain, set()
+    )
     assert _public_methods(domain) == ported
     covered = {case.method for case in CASES if case.domain is domain}
     if domain is PlayerWalletAPI:
