@@ -1,0 +1,18 @@
+query AppAccessTiers($appId: BigInt!) {
+  appAccessTiers(appId: $appId) {
+    tierId
+    appId
+    name
+    tierOrder
+    isFree
+    isDefault
+    priceCents
+    currency
+    billingPeriod
+    description
+    permissionKeys
+    status
+    createdAt
+    updatedAt
+  }
+}

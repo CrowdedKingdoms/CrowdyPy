@@ -1,0 +1,83 @@
+{
+  "contractVersion": "crowdy.studio-diagnostics/1",
+  "crowdyJs": {
+    "version": "18.0.4",
+    "commit": "c8634082689dbc9c11d720eaf4e05e828ad775d9"
+  },
+  "cases": [
+    {
+      "name": "human-lines-crlf-utf8-and-deduplication",
+      "defaultTarget": "CLIENT",
+      "output": "error[E0425]: cannot find value `missing` in this scope\r\n  --> /build/server/src/lib.rs:12:9\rwarning: unused variable: `dt`\n  --> src/tick.rs:4:17\nsrc/direct.rs:8:3: error[E0308]: mismatched types\nsrc/direct.rs:8:3: error[E0308]: mismatched types\nnote: café 値\n  --> C:\\build\\client\\src\\café.rs:2:7-11",
+      "expected": [
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs",
+          "line": 12,
+          "column": 9,
+          "severity": "error",
+          "message": "cannot find value `missing` in this scope",
+          "code": "E0425",
+          "source": "rustc"
+        },
+        {
+          "target": "CLIENT",
+          "path": "src/tick.rs",
+          "line": 4,
+          "column": 17,
+          "severity": "warning",
+          "message": "unused variable: `dt`",
+          "source": "rustc"
+        },
+        {
+          "target": "CLIENT",
+          "path": "src/direct.rs",
+          "line": 8,
+          "column": 3,
+          "severity": "error",
+          "message": "mismatched types",
+          "code": "E0308",
+          "source": "rustc"
+        },
+        {
+          "target": "CLIENT",
+          "path": "src/café.rs",
+          "line": 2,
+          "column": 7,
+          "endColumn": 11,
+          "severity": "info",
+          "message": "café 値",
+          "source": "rustc"
+        }
+      ]
+    },
+    {
+      "name": "json-primary-spans-and-malformed-line-isolation",
+      "defaultTarget": "SERVER",
+      "output": "{malformed json}\n{\"reason\":\"compiler-message\",\"message\":{\"level\":\"error\",\"message\":\"borrowed value does not live long enough\",\"code\":{\"code\":\"E0597\"},\"spans\":[{\"file_name\":\"client/src/lib.rs\",\"is_primary\":true,\"line_start\":3,\"column_start\":5,\"line_end\":3,\"column_end\":12},{\"file_name\":\"client/src/lib.rs\",\"is_primary\":false,\"line_start\":1,\"column_start\":1}]}}\nsrc/after.rs:9:2: warning: after malformed JSON",
+      "expected": [
+        {
+          "target": "CLIENT",
+          "path": "src/lib.rs",
+          "line": 3,
+          "column": 5,
+          "endLine": 3,
+          "endColumn": 12,
+          "severity": "error",
+          "message": "borrowed value does not live long enough",
+          "code": "E0597",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/after.rs",
+          "line": 9,
+          "column": 2,
+          "severity": "warning",
+          "message": "after malformed JSON",
+          "source": "rustc"
+        }
+      ]
+    }
+  ]
+}

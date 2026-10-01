@@ -1,0 +1,34 @@
+# Is the committed schema behind what the docs site publishes? A real question, asked on a
+# schedule rather than on every commit: a commit's verdict must not change because somebody
+# published the docs. Scheduled workflows run from the DEFAULT branch (prod), so this file
+# must exist there; it checks out dev, where the snapshot moves first.
+name: schema-drift
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --group dev --no-install-project
+      - name: compare schema.gql with the published SDL
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Exit 1 = drift reported (an issue is filed or updated): a notice, not a failure.
+        # Exit 2 = the comparison could not run, which IS a failure.
+        run: |
+          set +e
+          uv run --no-sync python scripts/schema_drift.py --issue
+          code=$?
+          if [ "$code" -eq 2 ]; then exit 1; fi
+          exit 0

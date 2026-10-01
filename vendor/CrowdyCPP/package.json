@@ -1,0 +1,36 @@
+{
+  "name": "crowdycpp-maintainer-tools",
+  "version": "0.53.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline parity and schema maintenance tools for CrowdyCPP",
+  "crowdyjsParityTarget": {
+    "version": "18.0.4",
+    "commit": "c8634082689dbc9c11d720eaf4e05e828ad775d9"
+  },
+  "scripts": {
+    "codegen": "node scripts/codegen.mjs",
+    "check:studio-state-fixtures": "node tools/parity/studio-state-fixtures.mjs",
+    "check:codegen": "node scripts/codegen.mjs --check",
+    "check:schema": "node scripts/schema-sync.mjs --check --offline",
+    "check:layout-fixtures": "node tools/parity/layout-fixtures.mjs",
+    "check:operations": "node --test tests/parity/codegen-operation-isolation.test.mjs",
+    "check:parity": "node tools/parity/parity.mjs --check docs/parity-matrix.md --strict",
+    "check:release": "npm run check:schema && npm run check:codegen && npm run check:parity && npm run check:layout-fixtures && npm run check:studio-state-fixtures && npm test",
+    "test": "node --test tests/parity/*.test.mjs",
+    "parity:repin": "node tools/parity/repin.mjs",
+    "schema:sync": "node scripts/schema-sync.mjs",
+    "schema:drift": "node scripts/schema-drift.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@graphql-tools/merge": "^9.2.4",
+    "graphql": "^16.14.2"
+  },
+  "publishedSchemaSnapshot": {
+    "url": "https://docs.crowdedkingdoms.com/schema/game-api.graphql",
+    "sourceBlob": "935509f0ae3e8ac8b9cdad11dc2bf94bf00cdd28",
+    "snapshotSha256": "a4fc571e3a18bcb2be84563897cce4e44ded26ef9015079bae89cfbb94a9c207",
+    "syncedAt": "2026-09-30T05:13:17.321Z"
+  }
+}

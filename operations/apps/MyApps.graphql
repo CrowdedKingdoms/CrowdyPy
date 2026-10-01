@@ -1,0 +1,22 @@
+query MyApps {
+  myApps {
+    appId
+    orgId
+    name
+    slug
+    description
+    visibility
+    status
+    metadata
+    wildernessWritesOpen
+    splitMode
+    gameApiUrl
+    createdAt
+    updatedAt
+    org {
+      orgId
+      slug
+      name
+    }
+  }
+}

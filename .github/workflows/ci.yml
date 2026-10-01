@@ -1,0 +1,131 @@
+# Every push and pull request. Each job answers one question, and every gate is a property
+# of the commit: nothing here reads a server, so a commit's verdict cannot change because
+# somebody else published something (the scheduled schema-drift job asks that question).
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint:
+    name: lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --group dev --no-install-project
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync mypy
+
+  gates:
+    name: offline gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --group dev --no-install-project
+      - name: generated GraphQL modules match schema.gql and operations/
+        run: uv run --no-sync python scripts/codegen.py --check
+      - name: the blocking client matches its async source
+        run: uv run --no-sync python scripts/unasync.py --check
+      - name: schema.gql and operations/ hash to their CrowdyJS provenance
+        run: uv run --no-sync python scripts/schema_sync.py --check
+      - name: vendor/CrowdyCPP hashes to its pin, and the two CrowdyJS pins agree
+        run: uv run --no-sync python scripts/vendor_crowdycpp.py --check
+      - name: public content policy (tree)
+        run: python scripts/ci/check_content_policy.py
+      - name: default origin names this branch's tier (a PR is judged by its base)
+        run: |
+          python scripts/ci/assert_default_origin.py --self-test
+          python scripts/ci/assert_default_origin.py --from-ref
+      - name: release gates refuse what they exist to refuse
+        run: |
+          bash scripts/ci/resolve-release-tier.test.sh
+          python scripts/ci/resolve_pypi_version.py --self-test
+
+  parity:
+    name: parity with CrowdyJS (and the native core's provenance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: read the pins
+        id: pins
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          pins = tomllib.load(open("pyproject.toml", "rb"))["tool"]["crowdypy"]
+          print(f"crowdyjs={pins['crowdyjs']['commit']}")
+          print(f"crowdycpp={pins['crowdycpp']['commit']}")
+          PY
+      # Full history: the pin-tier check asks whether each pinned commit is reachable from
+      # the same tier's branch, and re-derivation reads the pinned commit's objects.
+      - uses: actions/checkout@v7
+        with:
+          repository: CrowdedKingdoms/CrowdyJS
+          path: CrowdyJS
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: CrowdedKingdoms/CrowdyCPP
+          path: CrowdyCPP
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen --group dev
+      - name: vendor/CrowdyCPP re-derives from the pinned CrowdyCPP commit
+        run: uv run --no-sync python scripts/vendor_crowdycpp.py --check --crowdycpp CrowdyCPP
+      - name: schema.gql and operations/ re-derive from the pinned CrowdyJS commit
+        run: uv run --no-sync python scripts/schema_sync.py --check --crowdyjs CrowdyJS
+      - name: parity matrix (baseline until the portable gaps reach zero)
+        run: uv run --no-sync python tools/parity/parity.py --crowdyjs CrowdyJS --check docs/parity-matrix.md
+      - name: both pins are promoted to this branch's tier
+        run: uv run --no-sync python scripts/ci/check_pin_tiers.py --crowdyjs CrowdyJS --crowdycpp CrowdyCPP --from-ref
+      - name: shared fixtures are byte-for-byte their sources
+        env:
+          CROWDYJS_PATH: CrowdyJS
+        run: uv run --no-sync pytest -q tests/unit/test_fixture_provenance.py
+
+  test:
+    name: unit (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14", "3.14t"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --group test
+      - run: uv run --no-sync pytest -q
+
+  wheels:
+    uses: ./.github/workflows/wheels.yml
+
+  artifacts:
+    name: content policy (built wheels and sdist)
+    needs: wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - run: python scripts/ci/check_content_policy.py dist/*.whl dist/*.tar.gz
+      - name: the wheels carry this branch's default origin and no shared libcrypto
+        run: python scripts/ci/verify_artifacts.py --from-ref dist/*.whl

@@ -1,0 +1,169 @@
+[build-system]
+requires = ["scikit-build-core>=1.1,<2", "nanobind>=3.1,<4"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "crowdypy"
+version = "0.1.0"
+description = "Official Python SDK for Crowded Kingdoms: typed GraphQL clients and a native UDP replication core"
+readme = "README.md"
+license = "MIT AND Apache-2.0"
+license-files = [
+  "LICENSE",
+  "licenses/OpenSSL-LICENSE.txt",
+  "vendor/CrowdyCPP/LICENSE",
+  "vendor/CrowdyCPP/third_party/yyjson/LICENSE",
+]
+requires-python = ">=3.12"
+authors = [{ name = "Crowded Kingdoms" }]
+keywords = ["crowded-kingdoms", "multiplayer", "replication", "graphql", "sdk", "udp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Free Threading :: 2 - Beta",
+  "Topic :: Games/Entertainment",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = [
+  "httpx>=0.28,<1",
+  "msgspec>=0.19,<1",
+  "websockets>=14,<18",
+]
+
+[project.optional-dependencies]
+numpy = ["numpy>=2.0"]
+http2 = ["httpx[http2]>=0.28,<1"]
+
+[project.urls]
+Homepage = "https://github.com/CrowdedKingdoms/CrowdyPy"
+Documentation = "https://github.com/CrowdedKingdoms/CrowdyPy#readme"
+Repository = "https://github.com/CrowdedKingdoms/CrowdyPy"
+Changelog = "https://github.com/CrowdedKingdoms/CrowdyPy/blob/prod/MIGRATION.md"
+
+[dependency-groups]
+test = [
+  "graphql-core>=3.3,<4",
+  "hypothesis>=6.100",
+  "numpy>=2.0",
+  "pytest>=9.0",
+  "pytest-asyncio>=1.0",
+]
+dev = [
+  { include-group = "test" },
+  "mypy>=2.0",
+  "nanobind>=3.1,<4",
+  "ruff>=0.16",
+  "scikit-build-core>=1.1,<2",
+]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.22"
+build-dir = "build/{wheel_tag}"
+wheel.py-api = "cp312"
+wheel.packages = ["src/crowdypy"]
+install.components = ["python"]
+sdist.exclude = [".github", "build", "wheelhouse", ".venv"]
+
+[tool.scikit-build.cmake.define]
+CROWDY_BUILD_TESTS = "OFF"
+CROWDY_BUILD_E2E = "OFF"
+CROWDY_BUILD_BENCHMARKS = "OFF"
+CROWDY_BUILD_EXAMPLES = "OFF"
+CROWDY_WITH_CURL = "OFF"
+CROWDY_WITH_CURL_WEBSOCKETS = "OFF"
+CROWDY_WITH_OPENSSL = "ON"
+
+[tool.cibuildwheel]
+# One stable-ABI wheel per platform (built on 3.12, good for every later 3.x) plus the
+# free-threaded 3.14 build, which has no stable ABI.
+build = ["cp312-*", "cp314t-*"]
+skip = ["*-musllinux_i686", "*-manylinux_i686", "*-win32"]
+test-groups = ["test"]
+test-sources = ["tests", "pyproject.toml", "schema.gql", "operations", "vendor/CrowdyCPP/tools"]
+test-command = "pytest -q tests/unit -p no:cacheprovider"
+
+[tool.cibuildwheel.linux]
+before-all = "bash scripts/ci/cibw_before_all_linux.sh"
+environment = { OPENSSL_ROOT_DIR = "/opt/crowdypy-openssl" }
+
+[tool.cibuildwheel.macos]
+before-all = "bash scripts/ci/build_openssl.sh /tmp/crowdypy-openssl"
+environment = { OPENSSL_ROOT_DIR = "/tmp/crowdypy-openssl", MACOSX_DEPLOYMENT_TARGET = "11.0" }
+
+[tool.cibuildwheel.windows]
+before-all = "vcpkg install openssl:x64-windows-static-md"
+environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
+
+# --------------------------------------------------------------------------------------
+# Pins. CrowdyPy's API follows CrowdyJS; its native core is CrowdyCPP. Both pins must name
+# commits on the SAME tier branch as the CrowdyPy branch carrying them, and CrowdyCPP's own
+# CrowdyJS pin must equal ours (scripts/vendor_crowdycpp.py --check, scripts/ci/check_pin_tiers.py).
+# --------------------------------------------------------------------------------------
+
+[tool.crowdypy.crowdyjs]
+version = "18.0.4"
+commit = "c8634082689dbc9c11d720eaf4e05e828ad775d9"
+
+[tool.crowdypy.crowdycpp]
+version = "0.53.0"
+tag = "dev/v0.53.0"
+commit = "2a590468601f55c3fbc50b3dc4ffd0d6b5625b58"
+tree-sha256 = "0258c2834c4e5e0a6861b548f1640cef739efcfc802112404a2e241c476d8296"
+
+# schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
+# scripts/schema_sync.py, which records these hashes and re-derives them in CI.
+[tool.crowdypy.graphql]
+schema-sha256 = "5dcaf15c772c89fe250ecdbd83eb21b52b67f27d739fca38c2871b5553751ab0"
+operations-sha256 = "4b0990648ef236dd7901e1cc3413ee4034a0505051adb36d788568993ec31d6b"
+
+# The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it
+# on a schedule; nothing on the per-commit path reads the network.
+[tool.crowdypy.published-sdl]
+url = "https://docs.crowdedkingdoms.com/schema/game-api.graphql"
+
+# --------------------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts", "tools"]
+extend-exclude = ["vendor", "src/crowdypy/_sync", "src/crowdypy/_generated", "src/crowdypy/_default_origin.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PERF", "PIE", "PT", "TID"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "PT011"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/crowdypy"]
+exclude = ["src/crowdypy/_sync/"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["crowdypy._native"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+markers = [
+  "e2e: live suites against a deployed stack; skipped unless CROWDY_E2E_* is set",
+  "slow: long-running suites, opt-in with CROWDY_E2E_SLOW=1",
+]
