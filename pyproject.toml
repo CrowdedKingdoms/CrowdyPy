@@ -103,6 +103,10 @@ before-all = "bash scripts/ci/build_openssl.sh /tmp/crowdypy-openssl"
 environment = { OPENSSL_ROOT_DIR = "/tmp/crowdypy-openssl", MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
+# cibuildwheel runs the test install through cmd.exe here, where "<" and ">" in a
+# requirement specifier are redirections; name the test dependencies bare.
+test-groups = []
+test-requires = ["graphql-core", "hypothesis", "numpy", "pytest", "pytest-asyncio"]
 before-all = "vcpkg install openssl:x64-windows-static-md"
 environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 
