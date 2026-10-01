@@ -9,9 +9,46 @@
 //  - Python drains events in batches (Connection.poll), as columns it can view
 //    without copying, never one callback per datagram.
 //  - Sends release the GIL; a batch send releases it once for the whole batch.
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#else
+#include <sys/socket.h>
+#endif
 #include "replication.hpp"
 
 namespace crowdypy {
+
+void write_wake(std::int64_t fd) {
+  if (fd < 0) return;
+  static const char byte = 1;
+#ifdef _WIN32
+  (void)::send(static_cast<SOCKET>(fd), &byte, 1, 0);
+#else
+  int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+  flags |= MSG_NOSIGNAL;
+#endif
+  (void)::send(static_cast<int>(fd), &byte, 1, flags);
+#endif
+}
+
+void prepare_wake_fd(std::int64_t fd) {
+#if defined(SO_NOSIGPIPE)
+  if (fd >= 0) {
+    const int one = 1;
+    (void)::setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+  }
+#else
+  (void)fd;
+#endif
+}
+
 namespace {
 
 // ------------------------------------------------------------------ video frames

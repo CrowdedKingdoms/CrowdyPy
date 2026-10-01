@@ -2,17 +2,6 @@
 // connection wrapper, used by replication_binding.cpp and session_binding.cpp.
 #pragma once
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#else
-#include <sys/socket.h>
-#endif
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -385,19 +374,10 @@ inline nb::tuple row_tuple(const NotificationBatch& b, std::size_t i) {
 
 // ------------------------------------------------------------------ the connection
 
-inline void write_wake(std::int64_t fd) {
-  if (fd < 0) return;
-  static const char byte = 1;
-#ifdef _WIN32
-  (void)::send(static_cast<SOCKET>(fd), &byte, 1, 0);
-#else
-  int flags = MSG_DONTWAIT;
-#ifdef MSG_NOSIGNAL
-  flags |= MSG_NOSIGNAL;
-#endif
-  (void)::send(static_cast<int>(fd), &byte, 1, flags);
-#endif
-}
+// Defined in replication_binding.cpp, so this header pulls in no platform socket headers
+// (<windows.h>'s far and near macros break CrowdyCPP's headers included after it).
+void write_wake(std::int64_t fd);
+void prepare_wake_fd(std::int64_t fd);
 
 struct ConnectionOptions {
   std::int64_t appId = 0;
@@ -488,12 +468,7 @@ class PyConnection {
   void requestReassignment() { connection_->requestReassignment(); }
 
   void setWakeFd(std::int64_t fd) {
-#if defined(SO_NOSIGPIPE)
-    if (fd >= 0) {
-      const int one = 1;
-      (void)::setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-    }
-#endif
+    prepare_wake_fd(fd);
     wakeFd_.store(fd, std::memory_order_release);
   }
 
