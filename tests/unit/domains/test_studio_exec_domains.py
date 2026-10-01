@@ -131,8 +131,10 @@ PORTED: dict[type, set[str]] = {
         "put_file",
         "delete_file",
     },
-    # CrowdyJS's ExecAPI less connect and connectAsDeveloper, which open an ExecConnection.
+    # CrowdyJS's ExecAPI; connect and connect_as_developer open an ExecConnection.
     ExecAPI: {
+        "connect",
+        "connect_as_developer",
         "developer_endpoint",
         "logs",
         "instances",

@@ -23,21 +23,11 @@ import msgspec
 from crowdypy._generated import operations as ops
 from crowdypy._sync.domains._base import Domain
 from crowdypy.utils import bigint
+from crowdypy.domains.discovery import AppEndpoint  # one class in both clients
 
 __all__ = ["AppEndpoint", "DiscoveryDomain"]
 
 
-class AppEndpoint(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Where one app is placed."""
-
-    #: The app this entry describes (decimal string).
-    app_id: str
-    #: The datacenter code (e.g. ``or``, ``va``); ``None`` when the app has no placement.
-    datacenter_code: str | None = None
-    #: The HTTPS GraphQL origin of the app's own datacenter; ``None`` when unplaced.
-    game_api_url: str | None = None
-    #: The WebSocket form of ``game_api_url``.
-    game_api_ws_url: str | None = None
 
 
 class DiscoveryDomain(Domain):

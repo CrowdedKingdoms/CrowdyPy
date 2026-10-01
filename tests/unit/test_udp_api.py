@@ -46,6 +46,7 @@ class World:
         self.lock = threading.Lock()
         self.pending: list[wire.LongSpatialMessage] = []
         self.channel: list[bytes] = []
+        self.client: Any = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = httpx.Request("POST", "http://x", content=request.content).read()
@@ -76,7 +77,7 @@ class World:
 
     def pump_once(self) -> None:
         """Read one datagram: bundles unpacked, channel messages kept apart, heartbeats skipped."""
-        data, _ = self.udp.recvfrom(2048)
+        data, self.client = self.udp.recvfrom(2048)
         for message in wire.split_datagram(data):
             if message[0] == MessageType.CHANNEL_MESSAGE_REQUEST:
                 self.channel.append(message)
@@ -90,6 +91,20 @@ class World:
         while not self.pending:
             self.pump_once()
         return self.pending.pop(0)
+
+    def echo(self, sent: wire.LongSpatialMessage, token: str = TOKEN) -> None:
+        """Answer a send with its notification, as the server's fan-out includes the sender."""
+        kind = {
+            MessageType.ACTOR_UPDATE_REQUEST: MessageType.ACTOR_UPDATE_NOTIFICATION,
+            MessageType.VOXEL_UPDATE_REQUEST: MessageType.VOXEL_UPDATE_NOTIFICATION,
+        }[MessageType(sent.type)]
+        self.udp.sendto(
+            wire.encode_long_spatial(
+                token, kind, sent.app_id, sent.chunk, sent.uuid, sent.payload,
+                distance=sent.distance, game_token_id=1_700_000_000_000, sequence=sent.sequence,
+            ),
+            self.client,
+        )  # fmt: skip
 
     def close(self) -> None:
         self.udp.close()
@@ -230,4 +245,31 @@ async def test_grid_sends_check_the_box_then_use_udp(world: World) -> None:
     while not world.channel:  # it may have left in a datagram of its own
         await asyncio.to_thread(world.pump_once)
     assert len(world.channel) == 1
+    await client.aclose()
+
+
+async def test_a_world_actor_remembers_its_chunk(world: World) -> None:
+    client = async_client(world)
+    await client.udp.connect(app_token(), **OPTIONS)
+    actor = client.world("7").actor(uuid=ME)
+    with pytest.raises(ValueError, match="join a chunk"):
+        await actor.send_state(b"x")
+
+    joining = asyncio.create_task(actor.join((1, 2, 3), b"hello"))
+    sent = await asyncio.to_thread(world.recv)
+    assert (sent.chunk, sent.payload, sent.decay) == ((1, 2, 3), b"hello", DecayRate.EXPONENTIAL)
+    world.echo(sent)
+    echo = await asyncio.wait_for(joining, 3)
+    assert (echo.uuid, echo.payload) == (ME, b"hello")
+    assert actor.chunk == (1, 2, 3)
+
+    other = "c" * 32
+    await actor.send_to_actor(other, b"dm", (4, 5, 6))
+    client.udp.flush_sends()
+    direct = await asyncio.to_thread(world.recv)
+    assert (direct.type, direct.chunk, direct.uuid) == (
+        MessageType.SINGLE_ACTOR_MESSAGE,
+        (4, 5, 6),
+        other.encode(),
+    )
     await client.aclose()

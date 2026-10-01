@@ -32,6 +32,7 @@ from crowdypy._sync.graphql import GraphQLClient
 from crowdypy.pkce import generate_pkce_pair, generate_state
 from crowdypy.session import SessionStore
 from crowdypy.utils import bigint
+from crowdypy.domains.portal import AppAuthorizationGrant, AppTokenResponse, AuthorizedServer, CurrentServer, MemoryPkceStore, PkceStore, PortalConsentRequiredError  # one class in both clients
 
 __all__ = [
     "AppAuthorizationGrant",
@@ -47,82 +48,18 @@ __all__ = [
 ]
 
 
-class AuthorizedServer(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    ip4: str
-    client_port: int
 
 
-class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A gameplay token and where to use it. Its repr never shows the token."""
-
-    token: str
-    game_token_id: str
-    app_id: str
-    expires_at: str
-    game_api_url: str | None = None
-    game_api_ws_url: str | None = None
-    discovery_url: str | None = None
-    launch_url: str | None = None
-    #: Set on a refresh that named its current server and was installed there.
-    authorized_server: AuthorizedServer | None = None
-
-    def __repr__(self) -> str:
-        return (
-            f"AppTokenResponse(app_id={self.app_id!r}, game_token_id={self.game_token_id!r}, "
-            f"expires_at={self.expires_at!r}, game_api_url={self.game_api_url!r}, token=<redacted>)"
-        )
 
 
-class CurrentServer(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The replication server a native client is connected to."""
-
-    ip4: str
-    client_port: int
 
 
-class AppAuthorizationGrant(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    grant_id: str
-    app_id: str
-    status: str
-    scopes: list[str] = msgspec.field(default_factory=list)
-    app_name: str | None = None
-    granted_at: str | None = None
-    revoked_at: str | None = None
 
 
-class PortalConsentRequiredError(Exception):
-    """The player has not consented to this app yet."""
-
-    def __init__(self, app_id: str, app_name: str | None) -> None:
-        super().__init__(f"Consent required for app {app_id}")
-        self.app_id = app_id
-        self.app_name = app_name
 
 
-class PkceStore(Protocol):
-    """Keeps each PKCE verifier between :meth:`PortalAPI.begin_entry` and the redirect."""
-
-    def get(self, state: str) -> str | None: ...
-
-    def set(self, state: str, verifier: str) -> None: ...
-
-    def remove(self, state: str) -> None: ...
 
 
-class MemoryPkceStore:
-    """The default: verifiers live in this process only and never leave it."""
-
-    def __init__(self) -> None:
-        self._verifiers: dict[str, str] = {}
-
-    def get(self, state: str) -> str | None:
-        return self._verifiers.get(state)
-
-    def set(self, state: str, verifier: str) -> None:
-        self._verifiers[state] = verifier
-
-    def remove(self, state: str) -> None:
-        self._verifiers.pop(state, None)
 
 
 def default_hosted_sign_in_url(graphql_endpoint: str) -> str:

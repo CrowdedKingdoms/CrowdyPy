@@ -39,6 +39,15 @@ _LAZY: dict[str, str] = {
     "GridBox": "crowdypy._grid",
     "GridChunk": "crowdypy._grid",
     "GridScope": "crowdypy.grid_scope",
+    "WorldClient": "crowdypy.world",
+    "ActorClient": "crowdypy.world",
+    "GameKitClient": "crowdypy.kit",
+    "run_optimistic_action": "crowdypy.kit",
+    "WorldSessionCore": "crowdypy.stores",
+    "create_world_session": "crowdypy.stores",
+    "GraphQLSubscriptions": "crowdypy.subscriptions",
+    "AsyncExecConnection": "crowdypy.exec_gateway",
+    "ExecConnection": "crowdypy.exec_gateway",
     # errors
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
@@ -135,7 +144,18 @@ _LAZY: dict[str, str] = {
     "ConnState": "crowdypy.replication",
     "TokenMaterial": "crowdypy.replication",
 }
-_SUBMODULES = {"enums", "errors", "inputs", "media", "replication", "sync", "wire"}
+_SUBMODULES = {
+    "codecs",
+    "enums",
+    "errors",
+    "inputs",
+    "kit",
+    "media",
+    "replication",
+    "stores",
+    "sync",
+    "wire",
+}
 
 __all__ = [
     "CROWDY_DEFAULT_HOST",
@@ -383,11 +403,23 @@ if TYPE_CHECKING:
     from crowdypy.estate import (
         is_same_estate as is_same_estate,
     )
+    from crowdypy.exec_gateway import (
+        AsyncExecConnection as AsyncExecConnection,
+    )
+    from crowdypy.exec_gateway import (
+        ExecConnection as ExecConnection,
+    )
     from crowdypy.graphql import (
         AsyncGraphQLClient as AsyncGraphQLClient,
     )
     from crowdypy.grid_scope import (
         GridScope as GridScope,
+    )
+    from crowdypy.kit import (
+        GameKitClient as GameKitClient,
+    )
+    from crowdypy.kit import (
+        run_optimistic_action as run_optimistic_action,
     )
     from crowdypy.lb_cookie import (
         LbCookieStore as LbCookieStore,
@@ -440,6 +472,15 @@ if TYPE_CHECKING:
     from crowdypy.session import (
         TokenStore as TokenStore,
     )
+    from crowdypy.stores import (
+        WorldSessionCore as WorldSessionCore,
+    )
+    from crowdypy.stores import (
+        create_world_session as create_world_session,
+    )
+    from crowdypy.subscriptions import (
+        GraphQLSubscriptions as GraphQLSubscriptions,
+    )
     from crowdypy.utils import (
         SequenceAllocator as SequenceAllocator,
     )
@@ -457,4 +498,10 @@ if TYPE_CHECKING:
     )
     from crowdypy.utils import (
         validate_crowdy_uuid as validate_crowdy_uuid,
+    )
+    from crowdypy.world import (
+        ActorClient as ActorClient,
+    )
+    from crowdypy.world import (
+        WorldClient as WorldClient,
     )

@@ -48,6 +48,7 @@ from crowdypy.errors import (
 )
 from crowdypy._sync.graphql import GraphQLClient
 from crowdypy.utils import bigint
+from crowdypy.domains.crowdy_studio import CrowdyStudioOfflineError, CrowdyStudioProject, CrowdyStudioProjectFile, CrowdyStudioProjectGitHub, CrowdyStudioProjectMetadata, CrowdyStudioProjectRevision, CrowdyStudioProjectSummary, CrowdyStudioReferenceFile, CrowdyStudioRevisionConflictError, _FileDelta, _ProjectSave  # one class in both clients
 
 __all__ = [
     "CrowdyStudioAPI",
@@ -79,119 +80,22 @@ CrowdyStudioPairingPreference = Literal["NONE", "OPTIONAL", "REQUIRED"]
 CrowdyStudioProjectSource = Literal["STUDIO", "GITHUB"]
 
 
-class CrowdyStudioProjectFile(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A source file in one project target; ``path`` is relative to that target."""
-
-    target: CrowdyStudioTarget
-    path: str
-    content: str
 
 
-class CrowdyStudioProjectMetadata(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    name: str
-    description: str | None = None
-    server_module_name: str | None = None
-    client_module_name: str | None = None
-    pairing_preference: CrowdyStudioPairingPreference
 
 
-class CrowdyStudioProjectRevision(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The immutable revision identity of a saved project."""
-
-    id: str
-    saved_at: str
 
 
-class CrowdyStudioProjectGitHub(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The repository a GITHUB project is bound to, and the commit its files mirror."""
-
-    owner: str
-    repo: str
-    branch: str
-    #: Every bound write presents it as ``expectedCommitSha``; a stale one is refused with
-    #: ``GITHUB_STALE_SHA`` and surfaces as a revision conflict.
-    sha: str | None
 
 
-class CrowdyStudioProject(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """One atomic project snapshot: SERVER and CLIENT files share one revision.
-
-    For a GITHUB project ``files`` is the server-maintained mirror of the repository at
-    ``github.sha``, read exactly like a STUDIO project's files.
-    """
-
-    project_id: str
-    app_id: str
-    grid_id: str
-    kind: CrowdyStudioProjectKind
-    metadata: CrowdyStudioProjectMetadata
-    files: list[CrowdyStudioProjectFile]
-    sdk_version: str
-    abi_version: int
-    revision: CrowdyStudioProjectRevision
-    source: CrowdyStudioProjectSource
-    github: CrowdyStudioProjectGitHub | None
-    created_at: str
-    updated_at: str
 
 
-class CrowdyStudioProjectSummary(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    project_id: str
-    name: str
-    kind: CrowdyStudioProjectKind
-    revision_id: str
-    server_module_name: str | None = None
-    client_module_name: str | None = None
-    source: CrowdyStudioProjectSource
-    #: ``owner/repo@branch`` for a GITHUB project.
-    github: str | None = None
-    github_sha: str | None
-    updated_at: str
 
 
-class CrowdyStudioReferenceFile(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A read-only source file from the personal library or the common catalog."""
-
-    id: str
-    source: Literal["PERSONAL_LIBRARY", "COMMON"]
-    title: str
-    #: A target fence; a file without one is useful from either target.
-    target: CrowdyStudioTarget | None = None
-    path: str
-    content: str
-    tags: list[str] | None = None
-    updated_at: str | None = None
 
 
-class CrowdyStudioRevisionConflictError(CrowdyError):
-    """The expected revision lost a save race: the project changed in another session.
-
-    ``remote_project`` is the project as it is now, when it could be read back, so the
-    caller can show what moved and offer to keep its own version.
-    """
-
-    code = "PROJECT_REVISION_CONFLICT"
-
-    def __init__(
-        self,
-        message: str = "The project changed in another session",
-        remote_project: CrowdyStudioProject | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.remote_project = remote_project
 
 
-class CrowdyStudioOfflineError(CrowdyError):
-    """The project service could not be reached (network, timeout or HTTP 5xx); retry later."""
-
-    code = "PROJECT_OFFLINE"
-
-    def __init__(
-        self,
-        message: str = "The project service is offline",
-        cause: BaseException | object | None = None,
-    ) -> None:
-        super().__init__(message, cause=cause)
 
 
 # What JavaScript's String.prototype.trim removes: Python's str.strip() would also take
@@ -379,23 +283,8 @@ def _from_common_dto(dto: Mapping[str, Any]) -> CrowdyStudioReferenceFile:
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _ProjectSave:
-    """A save_project call with its BigInt arguments as decimal strings."""
-
-    app_id: str
-    grid_id: str
-    project_id: str
-    expected_revision_id: str
-    metadata: CrowdyStudioProjectMetadata
-    files: list[CrowdyStudioProjectFile]
 
 
-@dataclass(frozen=True, slots=True)
-class _FileDelta:
-    upserts: list[CrowdyStudioProjectFile]
-    #: ``(target, path)`` of each baseline file the save no longer has.
-    deletes: list[tuple[CrowdyStudioTarget, str]]
 
 
 def _project_file_delta(

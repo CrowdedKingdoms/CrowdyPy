@@ -58,10 +58,11 @@ nanobind_add_module(_native
   LTO
   native/module.cpp
   native/replication_binding.cpp
+  native/session_binding.cpp
   native/wire_binding.cpp
 )
 target_include_directories(_native PRIVATE native)
-target_link_libraries(_native PRIVATE crowdy_replication crowdy_crypto_openssl OpenSSL::Crypto)
+target_link_libraries(_native PRIVATE crowdy crowdy_replication crowdy_crypto_openssl OpenSSL::Crypto)
 if(WIN32)
   target_link_libraries(_native PRIVATE ws2_32)
 endif()
