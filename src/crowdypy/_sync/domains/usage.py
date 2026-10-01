@@ -116,5 +116,7 @@ class UsageAPI(Domain):
 
     def org_projection(self, org_id: str | int) -> dict[str, Any]:
         """The org's per-app monthly egress projections against the free allowance."""
-        result: dict[str, Any] = self._request(ORG_USAGE_PROJECTION, {"orgId": bigint(org_id)})
+        result: dict[str, Any] = self._request(
+            ORG_USAGE_PROJECTION, {"orgId": bigint(org_id)}
+        )
         return result

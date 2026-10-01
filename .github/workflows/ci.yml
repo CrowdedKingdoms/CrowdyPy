@@ -88,8 +88,8 @@ jobs:
         run: uv run --no-sync python scripts/vendor_crowdycpp.py --check --crowdycpp CrowdyCPP
       - name: schema.gql and operations/ re-derive from the pinned CrowdyJS commit
         run: uv run --no-sync python scripts/schema_sync.py --check --crowdyjs CrowdyJS
-      - name: parity matrix (baseline until the portable gaps reach zero)
-        run: uv run --no-sync python tools/parity/parity.py --crowdyjs CrowdyJS --check docs/parity-matrix.md
+      - name: parity matrix (strict; a portable gap fails the build)
+        run: uv run --no-sync python tools/parity/parity.py --crowdyjs CrowdyJS --check docs/parity-matrix.md --strict
       - name: both pins are promoted to this branch's tier
         run: uv run --no-sync python scripts/ci/check_pin_tiers.py --crowdyjs CrowdyJS --crowdycpp CrowdyCPP --from-ref
       - name: shared fixtures are byte-for-byte their sources

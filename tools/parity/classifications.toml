@@ -87,9 +87,6 @@ GraphQLClient = "AsyncGraphQLClient"
 [classes]
 # CrowdyJS public classes with no CrowdyPy counterpart.
 
-# --- portable-gap
-"CrowdyStudioController" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio" }
-
 # --- browser-exclusion
 "BrowserSessionPkceStore" = { kind = "browser-exclusion", reason = "sessionStorage-backed PKCE verifier store; a Python application keeps verifiers in MemoryPkceStore or its own PkceStore" }
 "CrowdyStudioDomShell" = { kind = "browser-exclusion", reason = "Studio workspace shell owns DOM elements, browser events and CSS layout" }

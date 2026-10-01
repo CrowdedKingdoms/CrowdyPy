@@ -5,11 +5,11 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.3.0`
+- CrowdyPy `0.4.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
-  browser exclusion with its reason, and every portable gap with the release that closes it
-  (the gate runs in baseline mode until there are none, then strict).
+  browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
+  new one fails the build.
 - Native core: CrowdyCPP (the pinned tag and commit in `pyproject.toml`), vendored under
   `vendor/CrowdyCPP/` and re-derived from that commit in CI.
 - GraphQL schema: CrowdyJS's `schema.gql` at the pinned commit.

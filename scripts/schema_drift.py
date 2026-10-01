@@ -53,7 +53,7 @@ def report(url: str, committed: set[str], published: set[str]) -> str:
         "",
         "schema.gql is CrowdyJS's at the pinned commit. When CrowdyJS carries the change on this "
         "tier, re-pin: `python scripts/schema_sync.py --crowdyjs <checkout> --ref <commit>`, then "
-        "`python scripts/codegen.py` and `python tools/parity/parity.py ... --write docs/parity-matrix.md`.",
+        "`python scripts/codegen.py` and `python tools/parity/parity.py ... --write docs/parity-matrix.md --strict`.",
     ]
     return "\n".join(lines)
 

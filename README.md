@@ -11,18 +11,17 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.3.0: World Stores, the Game Kit, ck-exec and subscriptions.**
-- `create_world_session()` binds CrowdyCPP's `WorldSession`. Every notification lands in
-  the stores natively on `tick()`: your actor, everyone else (with native lanes), chunks,
-  inboxes, events, errors.
-- Host election, save state, avatar state and chunk persistence run from the session's
-  timers.
-- `crowdypy.kit` has the social helpers and engine wire formats; `client.exec.connect()`
-  opens a ck-exec gateway connection; `GraphQLSubscriptions` speaks
-  `graphql-transport-ws`.
-- 0.2.0 brought native UDP replication (`client.udp`), and 0.1.0 the GraphQL client.
-- The headless Studio arrives in 0.4.0; [`docs/parity-matrix.md`](docs/parity-matrix.md)
-  lists what remains.
+**v0.4.0: headless Crowdy Studio, and full parity with CrowdyJS.**
+- `crowdypy.studio.CrowdyStudioController` is the Studio editor without a browser: open
+  projects, edit with autosave and revision conflicts, bind GitHub, apply agent patches with
+  checkpoints, and build, deploy and run mods. `StudioLayoutController` and
+  `parse_rustc_diagnostics` match CrowdyJS byte for byte.
+- The roots CrowdyCPP sends and CrowdyJS does not are wrapped too: email confirmation, usage
+  projections, compute budgets, listing versions, the narrow Studio mutations, and
+  `client.crowdy_studio_agent`.
+- The parity gate is strict: [`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps.
+- 0.3.0 brought the World Stores, the Game Kit, ck-exec and subscriptions; 0.2.0 native UDP
+  replication (`client.udp`); 0.1.0 the GraphQL client.
 
 See [MIGRATION.md](MIGRATION.md).
 
@@ -165,6 +164,21 @@ asyncio.create_task(session.run())  # tick 60 times a second
 snapshot = session.actors.snapshot()  # once a frame: every actor at once
 states = pose.decode_many(snapshot.state_offsets, snapshot.state_data)  # numpy, no loop
 ```
+
+## Crowdy Studio
+
+```python
+from crowdypy.studio import CrowdyStudioController
+
+studio = CrowdyStudioController.for_client(game, app_id=app_id, grid_id=grid_id)
+await studio.initialize()  # opens the first project
+studio.update_file("SERVER", "src/lib.rs", source)  # autosaves
+result = await studio.test_draft()  # build, deploy and switch on the mod
+print(result.status, studio.get_state().build_output)
+```
+
+A CLIENT target runs in a host you pass as `broker_factory`; the browser Studio runs it in a
+Web Worker.
 
 ## Performance
 

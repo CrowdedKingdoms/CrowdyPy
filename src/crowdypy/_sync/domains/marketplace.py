@@ -223,7 +223,9 @@ class MarketplaceAPI(Domain):
         )
         return result
 
-    def app_listing_versions(self, app_id: str | int, listing_id: str) -> list[dict[str, Any]]:
+    def app_listing_versions(
+        self, app_id: str | int, listing_id: str
+    ) -> list[dict[str, Any]]:
         """A listing's immutable published versions, newest first, with their artifact
         hashes. Needs ``view_compute_diagnostics``."""
         result: list[dict[str, Any]] = self._request(

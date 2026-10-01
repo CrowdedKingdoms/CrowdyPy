@@ -3,6 +3,40 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.4.0
+
+Headless Crowdy Studio and full CrowdyJS parity. Additive; still CrowdyJS 18.0.4 and
+CrowdyCPP 0.54.0.
+
+- **`crowdypy.studio`.**
+  - `CrowdyStudioController` is CrowdyJS's controller on asyncio, and
+    `CrowdyStudioController.for_client(client, app_id=, grid_id=)` builds one over a
+    client.
+  - Its state is an immutable `CrowdyStudioState`, replaced on every change; `subscribe`
+    to follow it. Autosave, retries and the polled surfaces are timers on the running
+    loop.
+  - A CLIENT target runs in the `broker_factory` you pass: a host for the attached CLIENT
+    half. Without one, a CLIENT run fails with a message saying so.
+  - A cancelled agent operation raises `CrowdyStudioError`, the module's error class.
+- **Studio helpers.**
+  - `StudioLayoutController` persists CrowdyJS's layout JSON.
+  - `parse_rustc_diagnostics` parses build logs.
+  - `create_crowdy_studio_starter_project`, `github_new_repository_url` and
+    `parse_client_tick_interval_ms` port their CrowdyJS namesakes.
+  - `canonical_json`, `digest_canonical_json` and `project_content_hash` compute the
+    approval digests CrowdyJS computes.
+- **The roots CrowdyCPP sends and CrowdyJS does not:**
+  - `AuthAPI.confirm_email` and `resend_confirmation_email`;
+  - `UsageAPI.org_summary`, `app_projection` and `org_projection`;
+  - `AppsAPI.compute_budget`, `set_compute_budget` and `clear_compute_budget`;
+  - `MarketplaceAPI.app_listing_versions`;
+  - CrowdyCPP's narrow `CrowdyStudioAPI` mutations: `save_project_metadata` (fields
+    left `UNCHANGED` keep their value), `save_project_files`, `set_project_archived`,
+    `set_personal_library_file_archived` and `publish_common_file`;
+  - the new `client.crowdy_studio_agent` (`CrowdyStudioAgentAPI`): provider consent,
+    model usage and the agent policy.
+- **The parity gate is strict.** A portable gap fails the build.
+
 ## 0.3.0
 
 The World Stores, the Game Kit, the ck-exec gateway and GraphQL subscriptions. Additive,
