@@ -25,6 +25,7 @@ from crowdypy._operation import inline_operation
 from crowdypy.auth_state import AuthState
 from crowdypy._sync.domains._base import Domain
 from crowdypy._sync.graphql import GraphQLClient
+from crowdypy.domains.auth import AuthResponse, AuthUser, UserIdentity  # one class in both clients
 
 __all__ = [
     "AuthAPI",
@@ -39,31 +40,10 @@ __all__ = [
 ]
 
 
-class AuthUser(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    user_id: str
-    email: str | None = None
-    gamertag: str | None = None
 
 
-class AuthResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A session token and who it belongs to. Its repr never shows the token."""
-
-    token: str
-    game_token_id: str
-    user: AuthUser
-
-    def __repr__(self) -> str:
-        return f"AuthResponse(user={self.user!r}, game_token_id={self.game_token_id!r}, token=<redacted>)"
 
 
-class UserIdentity(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    identity_id: str
-    provider: str
-    subject: str
-    email: str | None
-    email_verified: bool
-    created_at: str
-    last_login_at: str | None
 
 
 def _code_of(error: object) -> str | None:

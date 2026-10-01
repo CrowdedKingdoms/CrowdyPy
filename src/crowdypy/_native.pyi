@@ -7,3 +7,4 @@ OPENSSL_VERSION: str
 FREE_THREADED: bool
 wire: Any
 replication: Any
+session: Any

@@ -23,7 +23,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import Any, Final, Literal, TypeGuard
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeGuard
 
 import msgspec
 
@@ -32,6 +32,10 @@ from crowdypy._generated.enums import ExecModScope
 from crowdypy._sync.domains._base import Domain, omit_none, sleep
 from crowdypy.errors import CrowdyError, CrowdyProtocolError
 from crowdypy.utils import bigint, decode_base64, encode_base64
+from crowdypy.domains.exec import CrowdyExecError, ExecAppStatus, ExecBuild, ExecBuildArtifact, ExecCrate, ExecDeployResult, ExecEndpoint, ExecEndpointStat, ExecGridClientMod, ExecInstance, ExecLogLine, ExecMod, ExecModClient, ExecModClientArtifact, ExecModClientArtifactBytes, ExecModListing, ExecModSwitch, ExecSourceFile, ExecStarter, ExecStarterPack, ExecVersion  # one class in both clients
+
+if TYPE_CHECKING:
+    from crowdypy.exec_gateway import ExecConnection
 
 __all__ = [
     "EXEC_CLIENT_ABI_IMPORTS",
@@ -130,368 +134,46 @@ def is_name_list(value: object) -> TypeGuard[list[str]]:
     return isinstance(value, list) and all(isinstance(name, str) for name in value)
 
 
-class CrowdyExecError(CrowdyError):
-    """A call, subscription or connection that ck-exec refused or could not complete.
-
-    ``status`` is the platform's (``AppError`` carries the handler's own message);
-    ``retryable`` says whether trying again later can succeed.
-
-    The SDK never retries a ``Busy`` reply. A gateway refuses a player's call over its limit
-    (120 calls per 10 s per player and app on a host) as ``Busy`` with a message starting
-    ``rate limited``: ``rate_limited`` is then true and ``retry_after_ms`` says how long to
-    wait. Calling again sooner is refused again and does not shorten the wait.
-    """
-
-    def __init__(
-        self, status: ExecStatus, message: str, cause: BaseException | object | None = None
-    ) -> None:
-        super().__init__(f"{status}: {message}", cause=cause)
-        self.status: ExecStatus = status
-        self.retryable: bool = status in _RETRYABLE
-        #: The caller's call limit refused it (``Busy`` "rate limited ...", or ``RateLimited``).
-        self.rate_limited: bool = status == "RateLimited" or (
-            status == "Busy" and message.startswith("rate limited")
-        )
-        retry_in = _RETRY_IN.search(message) if self.rate_limited else None
-        #: How long to wait before calling again, when the refusal says (``retry in N ms``).
-        self.retry_after_ms: int | None = int(retry_in.group(1)) if retry_in else None
-
-
-class ExecEndpoint(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Where to dial an execution host's gateway, and the token to dial it with.
-
-    Its repr never shows the token.
-    """
-
-    gateway_url: str
-    #: The connect token, bound to the caller, the app and ``host``.
-    token: str
-    host: str
-    #: When the token expires, about a minute after it was issued.
-    expires_at: str | None = None
-
-    def __repr__(self) -> str:
-        return (
-            f"ExecEndpoint(gateway_url={self.gateway_url!r}, host={self.host!r}, "
-            f"expires_at={self.expires_at!r}, token=<redacted>)"
-        )
-
-
-class ExecLogLine(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """One guest log line (``ctx.log``); ``level`` is 0 error, 1 warn, 2 info, 3 debug.
-
-    ``flow`` is the call it was written in (32 lowercase hex digits, shared by everything
-    that call caused, on any host), or ``None`` outside a call; pass it as ``flow`` to
-    :meth:`ExecAPI.logs` to follow it.
-    """
 
-    id: str
-    node_type: str
-    key: str
-    level: int
-    host: str
-    at: str
-    text: str
-    flow: str | None = None
 
 
-class ExecInstance(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """An instance the execution manager has placed."""
 
-    instance_id: str
-    node_type: str
-    key: str
-    kind: str
-    phase: str
-    host: str | None = None
-    epoch: int
-    since_ms: float
-    held_back: str | None = None
 
 
-class ExecVersion(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A deployed version: ``manifest`` is ``manifest_json`` parsed.
 
-    Both are ``None`` when the version's row is gone.
-    """
 
-    version: int
-    created_by: str | None = None
-    created_at: str
-    types: int
-    active: bool
-    manifest_json: str | None = None
-    manifest: dict[str, Any] | None = None
 
 
-class ExecEndpointStat(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Calls to one endpoint (a node type's ``method``) over a window, by outcome.
 
-    ``busy`` includes calls refused by the caller's call limit; the latencies are over
-    ``timed_calls`` and ``None`` when none was timed.
-    """
 
-    node_type: str
-    method: str
-    calls: float
-    app_errors: float
-    busy: float
-    denied: float
-    deadline_exceeded: float
-    other_errors: float
-    timed_calls: float
-    latency_ms_avg: float | None = None
-    latency_ms_max: float | None = None
-    first_minute: str
-    last_minute: str
 
 
-class ExecAppStatus(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """An app's active version, kill switches and budget pause."""
 
-    active_version: int | None = None
-    disabled: bool
-    disabled_types: list[str]
-    budget_paused: bool
 
 
-class ExecSourceFile(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """One file of a crate: its path (``Cargo.toml``, ``src/lib.rs``, ...) and content."""
 
-    path: str
-    content: str
 
 
-class ExecCrate(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """One crate to build: its files by path, or as a list."""
-
-    name: str
-    files: dict[str, str] | list[ExecSourceFile]
 
 
-class ExecStarter(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A starter crate, with its files ready for :meth:`ExecAPI.build`."""
 
-    crate: str
-    node_type: str
-    description: str
-    files: list[ExecSourceFile]
 
 
-class ExecStarterPack(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The starter crates, and the manifest that deploys them as one app.
 
-    The manifest's types name their crates, for :meth:`ExecAPI.deploy` with the build's id.
-    """
 
-    manifest: dict[str, Any]
-    starters: list[ExecStarter]
 
 
-class ExecBuildArtifact(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """One module of a build.
 
-    A CLIENT build's carries its capability summary (``capability_summary``, parsed), the
-    hash visitors consent to and its tick interval; a ck-exec module's are ``None``.
-    """
-
-    crate: str
-    digest: str
-    size_bytes: int
-    capability_summary_json: str | None = None
-    capability_hash: str | None = None
-    tick_interval_ms: int | None = None
-    capability_summary: dict[str, Any] | None = None
 
-
-class ExecBuild(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A build, its log and one module per crate.
 
-    ``status`` is ``queued``, ``building``, ``succeeded`` or ``failed``; ``kind`` is ``exec``
-    for ck-exec modules and ``client`` for the CLIENT half of a mod.
-    """
-
-    build_id: str
-    status: str
-    kind: str
-    log: str | None = None
-    created_at: str
-    started_at: str | None = None
-    finished_at: str | None = None
-    artifacts: list[ExecBuildArtifact]
-
-
-class ExecMod(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A mod: a player's code on a grid they own.
-
-    Players in the grid call it as the node type ``mod:<name>`` (:func:`exec_mod_type`)
-    keyed by the grid id. It runs as its owner while ``enabled`` and ``blocked`` is ``None``.
-    """
-
-    mod_id: str
-    grid_id: str
-    name: str
-    owner_id: str
-    version: int
-    digest: str
-    enabled: bool
-    listing_id: str | None = None
-    blocked: str | None = None
-    running: bool
-    updated_at: str
-
-
-class ExecModListing(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A published mod other grid owners may install (no payments).
-
-    The ``client_*`` fields describe the CLIENT half it had when published (``None``
-    without one), which an install attaches to the installer's mod;
-    ``client_capability_summary`` is that summary parsed, for an installer to review first.
-    """
-
-    listing_id: str
-    title: str
-    description: str | None = None
-    publisher_id: str
-    source_mod_id: str
-    source_version: int
-    digest: str
-    installs: int
-    client_digest: str | None = None
-    client_capability_summary_json: str | None = None
-    client_capability_hash: str | None = None
-    client_tick_interval_ms: int | None = None
-    created_at: str
-    delisted_at: str | None = None
-    client_capability_summary: dict[str, Any] | None = None
-
-
-class ExecModSwitch(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A rung of the app's mods kill ladder that is off; ``scope`` is an :class:`ExecModScope`."""
-
-    scope: str
-    target: str
-    reason: str | None = None
-    created_by: str | None = None
-    created_at: str
-
-
-class ExecModClient(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The CLIENT half attached to a mod.
-
-    The mod's grid serves it to visitors who consent to its ``capability_hash`` or trust its
-    author; ``capability_summary`` is ``capability_summary_json`` parsed.
-    """
-
-    mod_id: str
-    grid_id: str
-    name: str
-    owner_id: str
-    client_version: int
-    digest: str
-    size_bytes: int
-    capability_summary_json: str
-    capability_hash: str
-    tick_interval_ms: int
-    updated_at: str
-    capability_summary: dict[str, Any] | None = None
-
-
-class ExecGridClientMod(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A CLIENT half a grid serves, with the caller's consent and trust in its author.
-
-    ``capability_summary`` and ``author_capability_summary`` are the two JSON fields parsed
-    (``None`` when they do not parse); the author's is the union a one-per-author trust
-    prompt shows.
-    """
-
-    mod_id: str
-    name: str
-    grid_id: str
-    author_id: str
-    listing_id: str | None = None
-    client_version: int
-    digest: str
-    capability_summary_json: str
-    capability_hash: str
-    tick_interval_ms: int
-    caller_consented: bool
-    author_capability_summary_json: str
-    author_capability_hash: str
-    caller_trusts_author: bool
-    updated_at: str
-    capability_summary: dict[str, Any] | None = None
-    author_capability_summary: dict[str, Any] | None = None
-
-
-class ExecModClientArtifact(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A served CLIENT half's module as the Game API returns it.
-
-    ``wasm_base64`` is the module, ``digest`` what to check it against, and
-    ``fuel_per_dispatch`` (a decimal string) the budget for its ``ck_fuel`` global. Its repr
-    shows the module's length, not the module.
-    """
-
-    mod_id: str
-    name: str
-    grid_id: str
-    client_version: int
-    digest: str
-    wasm_base64: str
-    size_bytes: int
-    capability_summary_json: str
-    capability_hash: str
-    tick_interval_ms: int
-    fuel_per_dispatch: str
-    abi_version: int
-    capability_summary: dict[str, Any] | None = None
-
-    def __repr__(self) -> str:
-        return (
-            f"ExecModClientArtifact(mod_id={self.mod_id!r}, name={self.name!r}, "
-            f"client_version={self.client_version!r}, digest={self.digest!r}, "
-            f"wasm_base64=<{len(self.wasm_base64)} chars>)"
-        )
-
-
-class ExecModClientArtifactBytes(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """A CLIENT half's module, decoded and checked by :meth:`ExecAPI.mod_client_artifact_bytes`.
-
-    Run it with ``digest`` as its identity, ``fuel_per_dispatch``, ``tick_interval_ms``, and
-    only the host calls in ``capability_summary["hostFunctions"]``. Its repr shows the
-    module's length, not the module.
-    """
-
-    mod_id: str
-    #: The mod's name: its name on the grid event bus.
-    name: str
-    grid_id: str
-    client_version: int
-    #: The module; its SHA-256 is ``digest``.
-    bytes: builtins.bytes
-    #: SHA-256 of ``bytes``, lowercase hex.
-    digest: str
-    size_bytes: int
-    #: Fuel for each dispatch (init, tick, invoke, event).
-    fuel_per_dispatch: int
-    #: How often to tick it, in milliseconds (16-1000).
-    tick_interval_ms: int
-    capability_summary_json: str
-    #: What the player consented to; its ``hostFunctions`` bound the module's host calls.
-    capability_summary: dict[str, Any]
-    capability_hash: str
-    abi_version: int
-
-    def __repr__(self) -> str:
-        return (
-            f"ExecModClientArtifactBytes(mod_id={self.mod_id!r}, name={self.name!r}, "
-            f"client_version={self.client_version!r}, digest={self.digest!r}, "
-            f"bytes=<{len(self.bytes)} bytes>)"
-        )
-
-
-class ExecDeployResult(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    version: int
+
+
+
+
+
+
+
+
 
 
 def _reject_constant(name: str) -> Any:
@@ -566,6 +248,25 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "nodeType": node_type, "key": key}),
         )
         return msgspec.convert(payload, ExecEndpoint)
+
+    def connect_as_developer(
+        self,
+        app_id: str | int,
+        *,
+        node_type: str | None = None,
+        key: str | None = None,
+        **options: Any,
+    ) -> ExecConnection:
+        """A gateway connection as the developer (see :meth:`developer_endpoint`); it redials
+        with a fresh token whenever it reconnects."""
+        from crowdypy.exec_gateway import ExecConnection
+
+        def dial() -> ExecEndpoint:
+            return self.developer_endpoint(app_id, node_type=node_type, key=key)
+
+        connection = ExecConnection(dial, **options)
+        connection.connect()
+        return connection
 
     def logs(
         self,
@@ -1210,6 +911,26 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "nodeType": node_type, "key": key}),
         )
         return msgspec.convert(payload, ExecEndpoint)
+
+    def connect(
+        self,
+        app_id: str | int,
+        *,
+        node_type: str | None = None,
+        key: str | None = None,
+        **options: Any,
+    ) -> ExecConnection:
+        """A gateway connection as this player (see :meth:`endpoint`); it redials with a fresh
+        token whenever it reconnects. ``options``: ``call_timeout``, ``reconnect``,
+        ``open_timeout``."""
+        from crowdypy.exec_gateway import ExecConnection
+
+        def dial() -> ExecEndpoint:
+            return self.endpoint(app_id, node_type=node_type, key=key)
+
+        connection = ExecConnection(dial, **options)
+        connection.connect()
+        return connection
 
     def deploy(
         self,

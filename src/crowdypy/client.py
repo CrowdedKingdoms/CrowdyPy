@@ -12,6 +12,7 @@ Async source: ``crowdypy._sync.client.CrowdyClient`` is generated from this modu
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -55,10 +56,12 @@ from crowdypy.domains.voxels import VoxelsAPI
 from crowdypy.estate import is_same_estate
 from crowdypy.graphql import AsyncGraphQLClient, graphql_endpoint
 from crowdypy.grid_scope import GridScope
+from crowdypy.kit.kit import GameKitClient
 from crowdypy.lb_cookie import LbCookieStore
 from crowdypy.rediscover import RediscoverFn, create_bootstrap_rediscover
 from crowdypy.replication import ConnState, token_material
 from crowdypy.session import TokenStore
+from crowdypy.world import WorldClient
 
 __all__ = ["AsyncCrowdyClient", "create_crowdy_client"]
 
@@ -211,6 +214,21 @@ class AsyncCrowdyClient:
         The box is learned from the first :meth:`GridScope.mint_token`, or pass it here.
         """
         return GridScope(self.grids, self.channels, app_id, grid_id, box, self.udp)
+
+    def world(self, app_id: str | int) -> WorldClient:
+        """The app-scoped realtime facade: actors that remember their chunk, over ``udp``."""
+        return WorldClient(app_id, self.udp)
+
+    def kit(self, app_id: str | int, **options: Any) -> GameKitClient:
+        """The app-scoped Game Kit: parties, guilds and chat rooms (``kit.social``)."""
+        return GameKitClient(
+            app_id,
+            self.game_apps,
+            teams=self.teams,
+            channels=self.channels,
+            udp=self.udp,
+            **options,
+        )
 
     # -------------------------------------------------------- moving the endpoint
 

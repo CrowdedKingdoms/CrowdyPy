@@ -24,4 +24,7 @@ NB_MODULE(_native, m) {
   nb::module_ replication =
       m.def_submodule("replication", "CrowdyCPP's replication Connection and video frames.");
   crowdypy::register_replication(replication);
+
+  nb::module_ session = m.def_submodule("session", "CrowdyCPP's WorldSession and its stores.");
+  crowdypy::register_session(session);
 }

@@ -22,7 +22,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import Any, Final, Literal, TypeGuard
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeGuard
 
 import msgspec
 
@@ -31,6 +31,9 @@ from crowdypy._generated.enums import ExecModScope
 from crowdypy.domains._base import Domain, omit_none, sleep
 from crowdypy.errors import CrowdyError, CrowdyProtocolError
 from crowdypy.utils import bigint, decode_base64, encode_base64
+
+if TYPE_CHECKING:
+    from crowdypy.exec_gateway import AsyncExecConnection
 
 __all__ = [
     "EXEC_CLIENT_ABI_IMPORTS",
@@ -565,6 +568,25 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "nodeType": node_type, "key": key}),
         )
         return msgspec.convert(payload, ExecEndpoint)
+
+    async def connect_as_developer(
+        self,
+        app_id: str | int,
+        *,
+        node_type: str | None = None,
+        key: str | None = None,
+        **options: Any,
+    ) -> AsyncExecConnection:
+        """A gateway connection as the developer (see :meth:`developer_endpoint`); it redials
+        with a fresh token whenever it reconnects."""
+        from crowdypy.exec_gateway import AsyncExecConnection
+
+        async def dial() -> ExecEndpoint:
+            return await self.developer_endpoint(app_id, node_type=node_type, key=key)
+
+        connection = AsyncExecConnection(dial, **options)
+        await connection.connect()
+        return connection
 
     async def logs(
         self,
@@ -1209,6 +1231,26 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "nodeType": node_type, "key": key}),
         )
         return msgspec.convert(payload, ExecEndpoint)
+
+    async def connect(
+        self,
+        app_id: str | int,
+        *,
+        node_type: str | None = None,
+        key: str | None = None,
+        **options: Any,
+    ) -> AsyncExecConnection:
+        """A gateway connection as this player (see :meth:`endpoint`); it redials with a fresh
+        token whenever it reconnects. ``options``: ``call_timeout``, ``reconnect``,
+        ``open_timeout``."""
+        from crowdypy.exec_gateway import AsyncExecConnection
+
+        async def dial() -> ExecEndpoint:
+            return await self.endpoint(app_id, node_type=node_type, key=key)
+
+        connection = AsyncExecConnection(dial, **options)
+        await connection.connect()
+        return connection
 
     async def deploy(
         self,

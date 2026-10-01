@@ -111,24 +111,8 @@ GraphQLClient = "AsyncGraphQLClient"
 # CrowdyJS public classes with no CrowdyPy counterpart.
 
 # --- portable-gap
-"ActorClient" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"ActorInbox" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"AvatarStateStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"ChannelInbox" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"ChunkStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
 "CrowdyStudioController" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio" }
-"ErrorStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"EventRouter" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"ExecConnection" = { kind = "portable-gap", reason = "P3 (0.3.0): the ck-exec gateway connection (websockets, msgpack frames, the shared frame fixture)" }
-"HostTracker" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"LocalActorStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"RemoteActorLane" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"RemoteActorStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"SaveStateStore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"SocialKit" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
 "StudioLayoutController" = { kind = "portable-gap", reason = "P4 (0.4.0): headless Crowdy Studio" }
-"WorldClient" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"WorldSessionCore" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
 
 # --- browser-exclusion
 "BrowserSessionPkceStore" = { kind = "browser-exclusion", reason = "sessionStorage-backed PKCE verifier store; a Python application keeps verifiers in MemoryPkceStore or its own PkceStore" }
@@ -147,12 +131,6 @@ GraphQLClient = "AsyncGraphQLClient"
 [methods]
 # Methods of mapped classes that CrowdyPy does not have.
 
-# --- portable-gap
-"CrowdyClient.kit" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"CrowdyClient.world" = { kind = "portable-gap", reason = "P3 (0.3.0): World Stores, over CrowdyCPP's WorldSession bound through WorldSessionServices" }
-"ExecAPI.connect" = { kind = "portable-gap", reason = "P3 (0.3.0): opens an ExecConnection to the ck-exec gateway" }
-"ExecAPI.connectAsDeveloper" = { kind = "portable-gap", reason = "P3 (0.3.0): opens a developer ExecConnection" }
-
 # --- native-equivalent
 "CrowdyClient.close" = { kind = "native-equivalent", reason = "AsyncCrowdyClient.aclose(), the asyncio spelling; the blocking CrowdyClient has close()" }
 
@@ -165,45 +143,6 @@ GraphQLClient = "AsyncGraphQLClient"
 [exports]
 # Functions and values exported from CrowdyJS's src/index.ts.
 
-# --- portable-gap
-"EVENT_ABILITY" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_CONTACT_DAMAGE" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_CONTROL_POINT" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_MOVEMENT_VIOLATION" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_PROPOSAL" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_RACE_TIMING" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_SCORE" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_TURN" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_WEATHER" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"EVENT_ZONE_CHANGE" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"ExecModScope" = { kind = "portable-gap", reason = "P3 (0.3.0): the ck-exec gateway connection (websockets, msgpack frames, the shared frame fixture)" }
-"FLAG_GROUNDED" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"FLAG_MOB" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"FLAG_NPC" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"FLAG_RESERVED3" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"GameKitClient" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"POSE_BYTES" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"RealtimeClient" = { kind = "portable-gap", reason = "P3 (0.3.0): the graphql-transport-ws subscriptions client" }
-"decodeEnginePose" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"decodeExecFrame" = { kind = "portable-gap", reason = "P3 (0.3.0): the ck-exec gateway connection (websockets, msgpack frames, the shared frame fixture)" }
-"encodeEnginePose" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"encodeExecFrame" = { kind = "portable-gap", reason = "P3 (0.3.0): the ck-exec gateway connection (websockets, msgpack frames, the shared frame fixture)" }
-"engineLanes" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"enginePoseCodec" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseAbilityEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseContactDamage" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseControlPointEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseEngineEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseMovementViolation" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseProposalEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseRaceTimingEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseScoreEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseTurnEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseWeatherEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"parseZoneChangeEvent" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"poseSuffix" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-"runOptimisticAction" = { kind = "portable-gap", reason = "P3 (0.3.0): Game Kit (social, engine pose, event parsers, optimistic actions)" }
-
 # --- native-equivalent
 "BUNDLE_HEADER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
 "BUNDLE_LENGTH_PREFIX_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
@@ -212,6 +151,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "RELAY_MAX_BUNDLE_MEMBERS" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_BUNDLE_MEMBERS" }
 "RELAY_MAX_BUNDLE_MEMBER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle(), which enforces the member limit" }
 "RELAY_MAX_DATAGRAM_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_DATAGRAM_SIZE" }
+"RealtimeClient" = { kind = "native-equivalent", reason = "client.udp's native connection replaces the browser realtime transport (udpNotifications over graphql-transport-ws, and the binary relay); crowdypy.subscriptions.GraphQLSubscriptions is the graphql-transport-ws client for other subscription roots" }
 "RealtimeMetrics" = { kind = "native-equivalent", reason = "connection.stats(): CrowdyCPP's counters (datagrams, messages and bytes, by message type)" }
 "UdpErrorCode" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.ErrorCode" }
 "VERSION" = { kind = "native-equivalent", reason = "crowdypy.__version__, the Python convention" }

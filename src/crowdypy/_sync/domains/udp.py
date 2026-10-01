@@ -29,6 +29,7 @@ from crowdypy.replication import (
     token_material,
 )
 from crowdypy.wire import DecayRate
+from crowdypy.domains.udp import ConnectionStatus  # one class in both clients
 
 if TYPE_CHECKING:
     from crowdypy._sync.client import CrowdyClient
@@ -38,14 +39,6 @@ __all__ = ["ConnectionStatus", "UdpAPI"]
 _LIVE = (ConnState.CONNECTING, ConnState.CONNECTED, ConnState.RECONNECTING)
 
 
-class ConnectionStatus(NamedTuple):
-    """Where the connection stands, and the server it uses when it has one."""
-
-    connected: bool
-    state: ConnState
-    server_ip4: str | None = None
-    server_ip6: str | None = None
-    server_client_port: int | None = None
 
 
 class _GameSessionProvider:

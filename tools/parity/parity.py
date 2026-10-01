@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import re
 import subprocess
 import sys
@@ -213,7 +214,17 @@ def py_classes(modules: dict[str, ast.Module]) -> dict[str, set[str]]:
                         for member in _public_methods(defined[stmt.value.func.id]):
                             methods.add(f"{attr}.{member}")
         classes[name] = methods
-    return classes
+
+    # A class carries what it inherits from CrowdyPy's own classes (an inbox base, a lane).
+    def inherited(name: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        node = defined[name]
+        found = set(classes[name])
+        for base in node.bases:
+            if isinstance(base, ast.Name) and base.id in defined and base.id not in seen:
+                found |= inherited(base.id, seen | {name})
+        return found
+
+    return {name: inherited(name) for name in classes}
 
 
 def py_public_names(modules: dict[str, ast.Module]) -> set[str]:
@@ -224,6 +235,10 @@ def py_public_names(modules: dict[str, ast.Module]) -> set[str]:
                 names.add(node.name)
             elif isinstance(node, ast.Assign):
                 names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+                # A module's __all__ also names what it re-exports (a generated enum).
+                if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                    with contextlib.suppress(ValueError):
+                        names.update(str(n) for n in ast.literal_eval(node.value))
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 names.add(node.target.id)
     return {n for n in names if not n.startswith("_")}

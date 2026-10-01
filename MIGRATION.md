@@ -3,6 +3,54 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.3.0
+
+The World Stores, the Game Kit, the ck-exec gateway and GraphQL subscriptions. Additive,
+except for one fix to the blocking client (the last item). Still CrowdyJS 18.0.4 and
+CrowdyCPP 0.54.0.
+
+- **World Stores** (`crowdypy.stores`, `create_world_session(game, app_id)` over a
+  connected `game.udp`) bind CrowdyCPP's `WorldSession`. `session.tick()` applies every
+  notification since the last tick to the stores natively, runs your actor's send loop and
+  reaping, and then fires your callbacks. The stores are:
+  - `self` (`LocalActorStore`: join, set and patch state, send-on-change with keyframes and
+    heartbeats, `last_ack` / `last_error` / `status`);
+  - `actors` (`RemoteActorStore`: staleness, sample history, `on_join` / `on_leave` /
+    `on_update`, native lanes filtered by `state[offset] & mask == value`, and
+    `snapshot()` columns);
+  - `chunks` (`ChunkStore`: real-time voxel merge, optimistic `set_voxel`, `ensure_around`
+    / `hydrate` from the Game API, write-back with CrowdyJS's refuse-or-retry rules, and an
+    `on_missing` worldgen hook);
+  - `errors`, `direct_inbox`, `channel_inbox` and `events`.
+
+  `HostTracker`, `SaveStateStore` and `AvatarStateStore` make their GraphQL calls from the
+  session's timers. Nothing a tick does waits on the network.
+- **Codecs** (`crowdypy.codecs`): `json_codec`, `raw_codec`, `text_codec`, and
+  `struct_codec`, which declares a fixed layout and decodes a whole lane's states at once
+  into a numpy structured array (`codec.decode_many(snapshot.state_offsets,
+  snapshot.state_data)`).
+- **`client.world(app_id).actor()`** (`WorldClient` / `ActorClient`): an actor that
+  remembers its chunk after `join`, over `client.udp`.
+- **The Game Kit** (`crowdypy.kit`, `client.kit(app_id)`):
+  - parties, guilds and chat rooms (`kit.social`);
+  - the 48-byte engine pose (`encode_engine_pose`, `engine_pose_codec`), and
+    `engine_lanes()` as native lane filters;
+  - the engine event parsers;
+  - `run_optimistic_action`.
+- **The ck-exec gateway** (`crowdypy.exec_gateway`): `client.exec.connect(app_id)` and
+  `connect_as_developer` return a connection with `call` (msgpack), `call_raw`,
+  `subscribe`, `ping` and `on_reconnect`.
+  - It redials with backoff and renews its subscriptions, and follows a `Moved` reply to
+    the new host. The frames match the platform's shared fixture.
+  - `AsyncExecConnection` runs in asyncio; `ExecConnection` is the blocking form.
+- **`GraphQLSubscriptions.for_client(client)`**: `graphql-transport-ws` subscriptions
+  authenticated as CrowdyJS's are.
+- **Fix: the blocking client raises and returns the async client's classes.** Before,
+  every class in a generated module was a copy, so `except
+  crowdypy.PortalConsentRequiredError` did not catch what `crowdypy.sync.CrowdyClient`
+  raised. A class with no async code (errors, result structs, records) is now one class in
+  both clients.
+
 ## 0.2.0
 
 Native UDP replication: CrowdyCPP's connection, now at CrowdyCPP 0.54.0, bound for Python.

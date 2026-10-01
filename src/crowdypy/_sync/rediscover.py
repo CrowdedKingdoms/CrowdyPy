@@ -19,6 +19,7 @@ import httpx
 import msgspec
 
 from crowdypy._sync.graphql import graphql_endpoint
+from crowdypy.rediscover import Endpoint  # one class in both clients
 
 __all__ = [
     "BOOTSTRAP_QUERY",
@@ -36,12 +37,6 @@ BOOTSTRAP_QUERY = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class Endpoint:
-    """A re-discovery answer. A ``None`` field means no answer for it, not "clear it"."""
-
-    http_url: str | None
-    ws_url: str | None
 
 
 class RediscoverFn(Protocol):

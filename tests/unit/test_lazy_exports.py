@@ -55,3 +55,17 @@ def test_all_lists_the_lazy_names_and_the_eager_ones() -> None:
 def test_submodules_resolve() -> None:
     for name in crowdypy._SUBMODULES:
         assert getattr(crowdypy, name) is importlib.import_module(f"crowdypy.{name}")
+
+
+def test_the_blocking_client_raises_and_returns_the_same_classes() -> None:
+    """``except crowdypy.PortalConsentRequiredError`` must catch what the blocking client
+    raises: a class with no async code is one class in both clients."""
+    from crowdypy._sync.domains import exec as sync_exec
+    from crowdypy._sync.domains import portal as sync_portal
+    from crowdypy.domains import exec as async_exec
+    from crowdypy.domains import portal as async_portal
+
+    assert sync_portal.PortalConsentRequiredError is crowdypy.PortalConsentRequiredError
+    assert sync_portal.AppTokenResponse is async_portal.AppTokenResponse
+    assert sync_exec.CrowdyExecError is async_exec.CrowdyExecError
+    assert sync_portal.PortalAPI is not async_portal.PortalAPI  # the API itself has two forms

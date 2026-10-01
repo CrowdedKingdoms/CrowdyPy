@@ -11,15 +11,20 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.2.0: native UDP replication.** `client.udp` has CrowdyJS's UdpAPI methods, sent as
-signed datagrams by CrowdyCPP's native client. The lifecycle runs natively: assignment,
-refresh that keeps the server, re-assignment after a datacenter move. Python takes events
-in batches with zero-copy columns, sends many entities in one call, and is woken through a
-socket. Video frames are in `crowdypy.media`. 0.1.0 brought the GraphQL client (every
-portable CrowdyJS 18.0.4 domain, async and blocking) and `crowdypy.wire`. The World Stores,
-ck-exec gateway and Game Kit arrive in 0.3.0, and the headless Studio in 0.4.0; until then
-[`docs/parity-matrix.md`](docs/parity-matrix.md) lists them as portable gaps. See
-[MIGRATION.md](MIGRATION.md).
+**v0.3.0: World Stores, the Game Kit, ck-exec and subscriptions.**
+- `create_world_session()` binds CrowdyCPP's `WorldSession`. Every notification lands in
+  the stores natively on `tick()`: your actor, everyone else (with native lanes), chunks,
+  inboxes, events, errors.
+- Host election, save state, avatar state and chunk persistence run from the session's
+  timers.
+- `crowdypy.kit` has the social helpers and engine wire formats; `client.exec.connect()`
+  opens a ck-exec gateway connection; `GraphQLSubscriptions` speaks
+  `graphql-transport-ws`.
+- 0.2.0 brought native UDP replication (`client.udp`), and 0.1.0 the GraphQL client.
+- The headless Studio arrives in 0.4.0; [`docs/parity-matrix.md`](docs/parity-matrix.md)
+  lists what remains.
+
+See [MIGRATION.md](MIGRATION.md).
 
 ## Install
 
@@ -144,6 +149,22 @@ async for batch in conn.batches():
 
 `crowdypy.replication.ReplicationConnection` is the same for code without an event loop:
 `wait()` and then `poll()` from your own loop.
+
+## World Stores
+
+```python
+from crowdypy.codecs import f32, struct_codec, u16
+from crowdypy.stores import create_world_session
+
+pose = struct_codec({"x": f32(), "y": f32(), "z": f32(), "yaw": u16()})
+session = create_world_session(game, app_id, actor_codec=pose, host=True, save=True)
+session.self.join((0, 0, 0), {"x": 0.0, "y": 64.0, "z": 0.0, "yaw": 0})
+session.actors.on_join(lambda actor: print("joined", actor.uuid, actor.value))
+asyncio.create_task(session.run())  # tick 60 times a second
+
+snapshot = session.actors.snapshot()  # once a frame: every actor at once
+states = pose.decode_many(snapshot.state_offsets, snapshot.state_data)  # numpy, no loop
+```
 
 ## Performance
 

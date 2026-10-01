@@ -9,10 +9,12 @@ rather than each acting on it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Awaitable, Callable
+from typing import Any
 
-__all__ = ["AsyncSingleFlight", "SingleFlight"]
+__all__ = ["AsyncSingleFlight", "SingleFlight", "run_now", "run_soon"]
 
 
 class AsyncSingleFlight[T]:
@@ -95,3 +97,33 @@ class SingleFlight[T]:
         flight = self._flight
         if flight is not None:
             flight.done.wait()
+
+
+_background: set[asyncio.Task[Any]] = set()
+_logger = logging.getLogger("crowdypy")
+
+
+def run_soon(job: Callable[[], Awaitable[Any]]) -> None:
+    """Start ``job`` on the running loop without waiting for it; a failure is logged.
+
+    scripts/unasync.py maps this to :func:`run_now`, which runs the job inline in the
+    blocking client.
+    """
+
+    async def guarded() -> None:
+        try:
+            await job()
+        except Exception:
+            _logger.exception("background job failed")
+
+    task = asyncio.get_running_loop().create_task(guarded())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+def run_now(job: Callable[[], Any]) -> None:
+    """Run ``job`` now; a failure is logged (the blocking twin of :func:`run_soon`)."""
+    try:
+        job()
+    except Exception:
+        _logger.exception("background job failed")

@@ -22,21 +22,11 @@ from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import CodeAdmissionMode
 from crowdypy._sync.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
+from crowdypy.domains.apps import AppRoute  # one class in both clients
 
 __all__ = ["AppRoute", "AppsAPI"]
 
 
-class AppRoute(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Which game-api endpoint should serve an app (:meth:`AppsAPI.route_for`)."""
-
-    #: The app id (decimal string).
-    app_id: str
-    #: The app's runtime data lives in its own game-api database, not the shared one.
-    split_mode: bool = False
-    #: Where the app runs (not deployed, the shared game-api, or a dedicated environment).
-    deployment_target: str | None = None
-    #: The game-api URL to route gameplay to; ``None`` means keep the client's own endpoint.
-    game_api_url: str | None = None
 
 
 def _route_from_app_row(row: object) -> AppRoute | None:

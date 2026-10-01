@@ -27,6 +27,7 @@ from crowdypy._generated import inputs
 from crowdypy._operation import inline_operation
 from crowdypy._sync.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
+from crowdypy.domains.crowdy_studio_github import CrowdyStudioGitHubConnectStart, CrowdyStudioGitHubFile, CrowdyStudioGitHubLayout, CrowdyStudioGitHubRepo, CrowdyStudioGitHubStatus, CrowdyStudioGitHubTree, CrowdyStudioGitHubTreeEntry  # one class in both clients
 
 __all__ = [
     "CrowdyStudioGitHubConnectStart",
@@ -40,72 +41,18 @@ __all__ = [
 ]
 
 
-class CrowdyStudioGitHubStatus(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """The caller's GitHub connection and the repository a project is bound to."""
-
-    configured: bool
-    connected: bool
-    account_login: str | None = None
-    account_type: str | None = None
-    owner: str | None = None
-    repo: str | None = None
-    branch: str | None = None
-    #: Commit the project mirror is at; ``None`` when the project is not bound.
-    github_sha: str | None = None
-    #: ``all`` or ``selected``: which repositories the installation covers. A repository
-    #: created on GitHub afterwards must be added to a ``selected`` installation (at
-    #: ``install_url``) before it can be bound. ``None`` when not connected.
-    repository_selection: str | None = None
-    install_url: str | None = None
 
 
-class CrowdyStudioGitHubConnectStart(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    connect_url: str
 
 
-class CrowdyStudioGitHubRepo(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    owner: str
-    name: str
-    full_name: str
-    private: bool
-    default_branch: str | None = None
 
 
-class CrowdyStudioGitHubTreeEntry(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    path: str
-    #: ``blob`` or ``tree``.
-    type: str
-    sha: str | None = None
-    size: int | None = None
 
 
-class CrowdyStudioGitHubTree(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    commit_sha: str
-    entries: list[CrowdyStudioGitHubTreeEntry]
 
 
-class CrowdyStudioGitHubFile(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    path: str
-    content: str
-    sha: str
-    #: Commit the file was read at, or the commit a write created (the new ``github_sha``).
-    commit_sha: str | None = None
 
 
-class CrowdyStudioGitHubLayout(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Where the SERVER and CLIENT crates live in the bound repository at one commit.
-
-    Resolved server-side from ``crowdy.json`` (or inferred): the only layout grammar, so
-    never parse ``crowdy.json`` yourself.
-    """
-
-    commit_sha: str
-    #: Directory of the SERVER ``Cargo.toml``; ``.`` is the repository root.
-    server: str
-    #: Directory of the CLIENT ``Cargo.toml``, or ``None`` when server-only.
-    client: str | None = None
-    assets: str
-    from_file: bool
 
 
 _STATUS_FIELDS = (
