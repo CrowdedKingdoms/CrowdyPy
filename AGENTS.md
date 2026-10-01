@@ -102,6 +102,13 @@ reviewed classification (`native-equivalent` or `browser-exclusion`), a stale or
 fails, and a `portable-gap` fails the build. Something new in CrowdyJS that CrowdyPy lacks is
 ported in the same change that moves the pin; it is not parked as a gap.
 
+## Live e2e
+
+`tests/e2e/` holds black-box suites over the `CROWDY_E2E_*` variables CrowdyCPP's suites read;
+unconfigured they skip. Run them against the local stack and then the dev tier before a
+release moves on, and record the run in `docs/e2e-coverage.md` (configuration, the
+`tools/e2e/provision.py` helper and where each tier's org admin credentials live are there).
+
 ## Releasing
 
 The version lives in six places that `tests/unit/test_release_versions.py` holds together:

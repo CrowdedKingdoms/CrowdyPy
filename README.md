@@ -201,6 +201,10 @@ uv run pytest tests/unit
 uv run ruff check . && uv run ruff format --check . && uv run mypy
 ```
 
+The live suites in `tests/e2e/` run against a deployment when the `CROWDY_E2E_*` variables
+are set; [`docs/e2e-coverage.md`](docs/e2e-coverage.md) lists them, how to configure them
+and the last live runs.
+
 The gates CI runs, all from a clean checkout:
 
 | Gate | Command |
