@@ -47,6 +47,7 @@ player once and signs it in for the later suites.
 |---|---|---|---|
 | 2026-10-01 | local stack: ck-api at `dev` (`78386df3`), two replication servers, the 3-node Citus lab | 0.4.0 (branch) | 8 passed; Studio skipped (no grid in the app) |
 | 2026-10-01 | dev tier, app `96701660793088` (CrowdyPy e2e, in the org admin's org) | 0.4.0 (branch) | 8 passed; Studio skipped (the suite needs a grid the owner controls in that app; a placeholder is refused with `CROWDY_STUDIO_GRID_NOT_FOUND`) |
+| 2026-10-01 | dev tier, app `96701660793088` | the published `dev/v0.4.0` wheel (`0.4.0.dev1`, manylinux x86_64, installed into a clean Python 3.12) | 8 passed |
 
 ## Not covered here
 
