@@ -11,19 +11,16 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.4.1: headless Crowdy Studio, and full parity with CrowdyJS.**
-- `crowdypy.studio.CrowdyStudioController` is the Studio editor without a browser: open
-  projects, edit with autosave and revision conflicts, bind GitHub, apply agent patches with
-  checkpoints, and build, deploy and run mods. `StudioLayoutController` and
-  `parse_rustc_diagnostics` match CrowdyJS byte for byte.
-- The GraphQL roots CrowdyCPP covers and CrowdyJS's portable API leaves out are wrapped too:
-  email confirmation, usage projections, compute budgets, listing versions, the narrow Studio
-  mutations, and `client.crowdy_studio_agent`.
-- `crowdypy.player_host` is the typed observation contract a game implements so tooling can
-  read the player it controls, validated exactly as CrowdyJS validates it.
-- The parity gate is strict: [`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps.
-- 0.4.1 changes documentation only. 0.3.0 brought the World Stores, the Game Kit, ck-exec and
-  subscriptions; 0.2.0 native UDP replication (`client.udp`); 0.1.0 the GraphQL client.
+**v0.5.0: open grids, and the ck-exec gateway check (CrowdyJS 18.1.0, CrowdyCPP 0.55.0).**
+- `client.exec.connect()` sends the connect token only to a gateway on the game API's estate
+  (or the release's default origin's); any other gateway is refused before it is dialed. A
+  gateway that refuses the token is reported as `Denied`, with its reason.
+- `game_apps.open_permissions()` and `set_open_permissions()`: grids open to every player.
+- 0.4 brought the headless Crowdy Studio (`crowdypy.studio`), player-host observation
+  (`crowdypy.player_host`), the roots CrowdyCPP covers beyond CrowdyJS, and the strict parity
+  gate ([`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps); 0.3.0 the World Stores,
+  the Game Kit, ck-exec and subscriptions; 0.2.0 native UDP replication (`client.udp`); 0.1.0
+  the GraphQL client.
 
 See [MIGRATION.md](MIGRATION.md).
 

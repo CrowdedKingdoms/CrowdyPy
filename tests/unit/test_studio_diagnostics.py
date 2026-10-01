@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -11,17 +12,20 @@ import pytest
 
 from crowdypy.studio.diagnostics import parse_rustc_diagnostics
 
+ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = json.loads(
-    (
-        Path(__file__).resolve().parents[2]
-        / "vendor/CrowdyCPP/tools/parity/fixtures/crowdy-studio-diagnostics.v1.json"
-    ).read_text(encoding="utf-8")
+    (ROOT / "vendor/CrowdyCPP/tools/parity/fixtures/crowdy-studio-diagnostics.v1.json").read_text(
+        encoding="utf-8"
+    )
 )
 
 
 def test_the_fixture_is_the_pinned_contract() -> None:
     assert FIXTURE["contractVersion"] == "crowdy.studio-diagnostics/1"
-    assert FIXTURE["crowdyJs"]["commit"] == "c8634082689dbc9c11d720eaf4e05e828ad775d9"
+    pin = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["crowdypy"][
+        "crowdyjs"
+    ]
+    assert FIXTURE["crowdyJs"] == {"version": pin["version"], "commit": pin["commit"]}
 
 
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=lambda c: c["name"])

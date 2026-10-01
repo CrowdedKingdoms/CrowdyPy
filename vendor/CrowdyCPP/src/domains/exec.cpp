@@ -13,8 +13,10 @@
 #include <utility>
 
 #include "crowdy/core/base64.hpp"
+#include "crowdy/default_origin.hpp"
 #include "crowdy/generated/operations.hpp"
 #include "crowdy/graphql/errors.hpp"
+#include "crowdy/graphql/estate.hpp"
 
 namespace crowdy::domains {
 
@@ -192,7 +194,83 @@ std::string queryValue(std::string_view s) {
   return out;
 }
 
+// ---- where a connect token may go ----
+
+std::string lowercase(std::string_view s) {
+  std::string out(s);
+  std::transform(out.begin(), out.end(), out.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return out;
+}
+
+/// The scheme of an absolute URL, lowercased, or empty when `url` is not one.
+std::string schemeOf(std::string_view url) {
+  const std::size_t sep = url.find("://");
+  if (sep == std::string_view::npos || sep == 0) return {};
+  for (unsigned char c : url.substr(0, sep)) {
+    if (!std::isalnum(c) && c != '+' && c != '-' && c != '.') return {};
+  }
+  return lowercase(url.substr(0, sep));
+}
+
+/// Whether the authority of an absolute URL carries userinfo (`user:pass@`).
+bool hasUserinfo(std::string_view url) {
+  std::string_view rest = url.substr(url.find("://") + 3);
+  return rest.substr(0, rest.find_first_of("/?#")).find('@') != std::string_view::npos;
+}
+
+bool isIpLiteral(std::string_view host) {
+  if (!host.empty() && host.front() == '[') return true;
+  int parts = 0;
+  std::size_t digits = 0;
+  for (char c : host) {
+    if (c == '.') {
+      if (digits == 0) return false;
+      ++parts;
+      digits = 0;
+    } else if (c >= '0' && c <= '9' && digits < 3) {
+      ++digits;
+    } else {
+      return false;
+    }
+  }
+  return parts == 3 && digits > 0;
+}
+
+bool isLoopback(std::string_view host) {
+  constexpr std::string_view suffix = ".localhost";
+  return host == "localhost" || host == "[::1]" ||
+         (host.size() > suffix.size() && host.substr(host.size() - suffix.size()) == suffix) ||
+         (isIpLiteral(host) && host.substr(0, 4) == "127.");
+}
+
+/// One host, or two DNS names graphql::isSameEstate puts on one estate. Never two IPs.
+bool sameEstate(std::string_view urlA, const std::string& hostA, std::string_view urlB,
+                const std::string& hostB) {
+  if (hostA == hostB) return true;
+  if (isIpLiteral(hostA) || isIpLiteral(hostB)) return false;
+  return graphql::isSameEstate(urlA, urlB);
+}
+
 }  // namespace
+
+std::optional<std::string> execGatewayRefusal(std::string_view gameApiUrl, std::string_view gatewayUrl) {
+  const std::string scheme = schemeOf(gatewayUrl);
+  const auto gateway = graphql::estateHostname(gatewayUrl);
+  if (scheme.empty() || !gateway) return "it is not an absolute URL";
+  if (scheme != "ws" && scheme != "wss") return scheme + ": is not a WebSocket scheme";
+  if (hasUserinfo(gatewayUrl)) return "it carries credentials";
+  const std::string apiScheme = schemeOf(gameApiUrl);
+  const auto api = graphql::estateHostname(gameApiUrl);
+  if (apiScheme.empty() || !api) return "the game API URL " + std::string(gameApiUrl) + " is not absolute";
+  if (apiScheme == "https" && scheme != "wss") return "a game API on https: hands out wss: gateways only";
+  if (sameEstate(gameApiUrl, *api, gatewayUrl, *gateway)) return std::nullopt;
+  const auto tier = graphql::estateHostname(kDefaultHttpOrigin);
+  if (tier && sameEstate(kDefaultHttpOrigin, *tier, gatewayUrl, *gateway)) return std::nullopt;
+  if (isLoopback(*api) && isLoopback(*gateway)) return std::nullopt;
+  const std::string estates = tier && *tier != *api ? *api + " and " + *tier : *api;
+  return *gateway + " is outside the estate of " + estates;
+}
 
 // ---- SHA-256 (FIPS 180-4), for deploy digests ------------------------------------
 
@@ -360,6 +438,16 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
     return ws_ && open_;
   }
 
+  std::optional<ExecReply> lastFailure() const {
+    std::lock_guard lock(mu_);
+    return lastFailure_;
+  }
+
+  void pinGateway(std::function<std::string()> gameApiUrl) {
+    std::lock_guard lock(mu_);
+    gatewayPin_ = std::move(gameApiUrl);
+  }
+
   void close() {
     std::vector<std::function<void()>> run;
     std::shared_ptr<graphql::IWebSocketConnection> ws;
@@ -462,6 +550,20 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
   }
 
   void onEndpoint(Result<ExecEndpoint> found) {
+    // The Game API's URL is read outside the lock: the client's endpoint has a lock of its own.
+    std::optional<std::string> refused;
+    if (found.ok()) {
+      std::function<std::string()> pin;
+      {
+        std::lock_guard lock(mu_);
+        pin = gatewayPin_;
+      }
+      if (pin) {
+        if (auto why = execGatewayRefusal(pin(), found.value().gatewayUrl)) {
+          refused = "refusing the gateway " + found.value().gatewayUrl + ": " + *why;
+        }
+      }
+    }
     std::vector<std::function<void()>> run;
     std::shared_ptr<graphql::IWebSocketConnection> ws;
     std::uint64_t gen = 0;
@@ -471,6 +573,9 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       if (!found.ok()) {
         dialing_ = false;
         attemptFailedLocked(run, found.error(), "no host for this app");
+      } else if (refused) {
+        dialing_ = false;
+        attemptFailedLocked(run, Errc::NotConnected, *refused);
       } else {
         endpoint_ = found.value();
         std::string url = endpoint_.gatewayUrl;
@@ -506,12 +611,32 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
         if (ev.frame.kind == graphql::WebSocketFrameKind::Binary) onFrame(gen, ev.frame.payload);
         return;
       case graphql::WebSocketEventKind::Close:
+        // 4401 is how a gateway before ck-exec 0.10.0 refused a token: it upgraded, then closed.
         return onLost(gen, ev.close.code == 4401 ? ExecStatus::Denied : ExecStatus::Unavailable,
                       ev.close.reason.empty() ? "the gateway closed the connection" : ev.close.reason);
       case graphql::WebSocketEventKind::Error:
+        if (ev.error.httpStatus > 0) return onRefused(gen, ev.error.httpStatus, ev.error.httpBody);
         return onLost(gen, ExecStatus::Unavailable, ev.error.message);
     }
   }
+
+  /// The gateway answered the upgrade `status` (401: a refused connect token; 429: the player's
+  /// or the gateway's session cap), with `body` as the reason when the transport could read it.
+  void onRefused(std::uint64_t gen, int status, const std::string& body) {
+    std::string reason;
+    for (char c : body) {
+      const bool space = std::isspace(static_cast<unsigned char>(c)) != 0;
+      if (space && (reason.empty() || reason.back() == ' ')) continue;
+      reason.push_back(space ? ' ' : c);
+      if (reason.size() >= kRefusalReasonMaxChars) break;
+    }
+    while (!reason.empty() && reason.back() == ' ') reason.pop_back();
+    onLost(gen, status == 401 ? ExecStatus::Denied : ExecStatus::Unavailable,
+           "the gateway refused the connection (HTTP " + std::to_string(status) + (reason.empty() ? "" : ": " + reason) +
+               ")");
+  }
+
+  static constexpr std::size_t kRefusalReasonMaxChars = 500;
 
   void onOpen(std::uint64_t gen) {
     std::vector<std::function<void()>> run;
@@ -520,6 +645,7 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       if (gen != gen_ || closed_) return;
       open_ = true;
       dialing_ = false;
+      lastFailure_.reset();
       const bool again = everOpened_;
       everOpened_ = true;
       backoffMs_ = opts_.initialReconnectDelayMs;
@@ -615,6 +741,7 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       open_ = false;
       dialing_ = false;
       ++gen_;
+      if (!immediately) lastFailure_ = ExecReply{status, why};
       // Calls in flight on the lost connection go again once (a call caught by
       // a lost connection is retried, like one answered Moved); the rest fail.
       for (auto it = pending_.begin(); it != pending_.end();) {
@@ -639,18 +766,20 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       }
       if (!everOpened_ && !wasOpen) {
         // The first connection never opened: fail the waiters rather than retry forever.
-        for (auto& w : waiters_) run.push_back([w] { w(Errc::NotConnected); });
+        const Errc code = status == ExecStatus::Denied ? Errc::Rejected : Errc::NotConnected;
+        for (auto& w : waiters_) run.push_back([w, code] { w(code); });
         waiters_.clear();
-        failAllLocked(run, why);
+        failAllLocked(run, why, status);
       } else if (opts_.reconnect) {
         scheduleReconnectLocked(immediately ? 0 : backoffMs_);
       } else {
-        failAllLocked(run, why);
+        failAllLocked(run, why, status);
       }
     }
   }
 
   void attemptFailedLocked(std::vector<std::function<void()>>& run, Errc code, const std::string& why) {
+    lastFailure_ = ExecReply{ExecStatus::Unavailable, why};
     if (everOpened_ && opts_.reconnect) {
       scheduleReconnectLocked(backoffMs_);
       backoffMs_ = std::min(backoffMs_ * 2, opts_.maxReconnectDelayMs);
@@ -661,11 +790,12 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
     failAllLocked(run, why);
   }
 
-  void failAllLocked(std::vector<std::function<void()>>& run, const std::string& why) {
+  void failAllLocked(std::vector<std::function<void()>>& run, const std::string& why,
+                     ExecStatus status = ExecStatus::Unavailable) {
     for (auto& [rid, p] : pending_) {
       if (p.done) {
         auto done = std::move(p.done);
-        run.push_back([done, why] { done(ExecReply{ExecStatus::Unavailable, why}); });
+        run.push_back([done, status, why] { done(ExecReply{status, why}); });
       }
     }
     pending_.clear();
@@ -770,6 +900,8 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
   bool closed_ = false;
   bool everOpened_ = false;
   ExecEndpoint endpoint_;
+  std::function<std::string()> gatewayPin_;
+  std::optional<ExecReply> lastFailure_;
   long backoffMs_;
   bool reconnectDue_ = false;
   Clock::time_point reconnectAt_{};
@@ -836,6 +968,10 @@ std::string ExecConnection::host() const { return impl_->host(); }
 
 bool ExecConnection::connected() const { return impl_->connected(); }
 
+std::optional<ExecReply> ExecConnection::lastFailure() const { return impl_->lastFailure(); }
+
+void ExecConnection::pinGateway(std::function<std::string()> gameApiUrl) { impl_->pinGateway(std::move(gameApiUrl)); }
+
 void ExecConnection::close() { impl_->close(); }
 
 // ---- the domain -------------------------------------------------------------------
@@ -895,9 +1031,19 @@ ExecDial ExecAPI::dialer(std::string appId, std::string nodeType, std::string ke
   };
 }
 
+std::shared_ptr<ExecConnection> ExecAPI::pinned(ExecDial dial, ExecConnectOptions options) const {
+  auto conn = std::make_shared<ExecConnection>(transport_, gql_->dispatcher(), std::move(dial), std::move(options));
+  std::weak_ptr<graphql::GraphQLClient> gql = gql_;
+  conn->pinGateway([gql] {
+    auto client = gql.lock();
+    return client ? client->endpoint() : std::string(kDefaultHttpOrigin);
+  });
+  return conn;
+}
+
 std::shared_ptr<ExecConnection> ExecAPI::connect(std::string appId, ExecConnectOptions options) const {
   auto dial = dialer(std::move(appId), options.nodeType, options.key);
-  auto conn = std::make_shared<ExecConnection>(transport_, gql_->dispatcher(), std::move(dial), std::move(options));
+  auto conn = pinned(std::move(dial), std::move(options));
   conn->connect();
   return conn;
 }
@@ -905,7 +1051,7 @@ std::shared_ptr<ExecConnection> ExecAPI::connect(std::string appId, ExecConnectO
 void ExecAPI::connectAsync(std::string appId, ExecConnectOptions options,
                            std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const {
   auto dial = dialer(std::move(appId), options.nodeType, options.key);
-  auto conn = std::make_shared<ExecConnection>(transport_, gql_->dispatcher(), std::move(dial), std::move(options));
+  auto conn = pinned(std::move(dial), std::move(options));
   conn->connect([conn, done = std::move(done)](Status s) {
     if (!s.ok()) return done(s.code);
     done(conn);
@@ -929,7 +1075,7 @@ void ExecAPI::developerEndpointAsync(std::string appId, std::string nodeType, st
 
 std::shared_ptr<ExecConnection> ExecAPI::connectAsDeveloper(std::string appId, ExecConnectOptions options) const {
   auto dial = dialer(std::move(appId), options.nodeType, options.key, true);
-  auto conn = std::make_shared<ExecConnection>(transport_, gql_->dispatcher(), std::move(dial), std::move(options));
+  auto conn = pinned(std::move(dial), std::move(options));
   conn->connect();
   return conn;
 }
@@ -937,7 +1083,7 @@ std::shared_ptr<ExecConnection> ExecAPI::connectAsDeveloper(std::string appId, E
 void ExecAPI::connectAsDeveloperAsync(std::string appId, ExecConnectOptions options,
                                       std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const {
   auto dial = dialer(std::move(appId), options.nodeType, options.key, true);
-  auto conn = std::make_shared<ExecConnection>(transport_, gql_->dispatcher(), std::move(dial), std::move(options));
+  auto conn = pinned(std::move(dial), std::move(options));
   conn->connect([conn, done = std::move(done)](Status s) {
     if (!s.ok()) return done(s.code);
     done(conn);

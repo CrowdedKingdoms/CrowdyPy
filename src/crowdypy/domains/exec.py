@@ -22,10 +22,12 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, Literal, TypeGuard
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypeGuard
+from urllib.parse import urlsplit
 
 import msgspec
 
+from crowdypy._default_origin import CROWDY_DEFAULT_HTTP_ORIGIN
 from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import ExecModScope
 from crowdypy.domains._base import Domain, omit_none, sleep
@@ -63,6 +65,7 @@ __all__ = [
     "ExecStarterPack",
     "ExecStatus",
     "ExecVersion",
+    "exec_gateway_refusal",
     "exec_mod_type",
     "exec_status",
     "is_name_list",
@@ -549,6 +552,87 @@ def _optional_bigint(value: str | int | None) -> str | None:
     return None if value is None else bigint(value)
 
 
+class _Url(NamedTuple):
+    scheme: str
+    #: Lowercased, with an IPv6 address in brackets, as a browser's ``URL.hostname`` has it.
+    host: str
+    credentials: bool
+
+
+_IPV4 = re.compile(r"\d{1,3}(\.\d{1,3}){3}")
+_LOOPBACK_V4 = re.compile(r"127\.\d{1,3}\.\d{1,3}\.\d{1,3}")
+
+
+def _parse_url(raw: str) -> _Url | None:
+    try:
+        parts = urlsplit(raw.strip())
+        host = parts.hostname
+        parts.port  # noqa: B018 -- a malformed port raises here, as the URL parser refuses it
+    except ValueError:
+        return None
+    if not parts.scheme or not parts.netloc or not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    return _Url(parts.scheme.lower(), host, bool(parts.username) or bool(parts.password))
+
+
+def _is_ip_literal(host: str) -> bool:
+    return host.startswith("[") or _IPV4.fullmatch(host) is not None
+
+
+def _is_loopback(host: str) -> bool:
+    return (
+        host == "localhost"
+        or host.endswith(".localhost")
+        or host == "[::1]"
+        or _LOOPBACK_V4.fullmatch(host) is not None
+    )
+
+
+def _same_estate(a: _Url, b: _Url) -> bool:
+    if a.host == b.host:
+        return True
+    if _is_ip_literal(a.host) or _is_ip_literal(b.host):
+        return False
+    site_a = ".".join(a.host.split(".")[-2:])
+    return site_a == ".".join(b.host.split(".")[-2:]) and "." in site_a
+
+
+def exec_gateway_refusal(game_api_url: str, gateway_url: str) -> str | None:
+    """Why :meth:`ExecAPI.connect` would not dial ``gateway_url`` for a game API at
+    ``game_api_url``, or ``None`` when it would.
+
+    It dials a ``ws``/``wss`` URL without credentials (only ``wss`` under an ``https`` game
+    API) on the estate of the game API or of this release's default origin, or a loopback
+    gateway for a loopback game API; two IP addresses are one estate only when equal. The
+    connect token goes nowhere else, whatever the game API answers.
+    """
+    gateway = _parse_url(gateway_url)
+    if gateway is None:
+        return "it is not an absolute URL"
+    if gateway.scheme not in ("ws", "wss"):
+        return f"{gateway.scheme}: is not a WebSocket scheme"
+    if gateway.credentials:
+        return "it carries credentials"
+    api = _parse_url(game_api_url)
+    if api is None:
+        return f"the game API URL {game_api_url} is not absolute"
+    if api.scheme == "https" and gateway.scheme != "wss":
+        return "a game API on https: hands out wss: gateways only"
+    if _same_estate(api, gateway):
+        return None
+    tier = _parse_url(CROWDY_DEFAULT_HTTP_ORIGIN)
+    if tier is not None and _same_estate(tier, gateway):
+        return None
+    if _is_loopback(api.host) and _is_loopback(gateway.host):
+        return None
+    estates = (
+        f"{api.host} and {tier.host}" if tier is not None and tier.host != api.host else api.host
+    )
+    return f"{gateway.host} is outside the estate of {estates}"
+
+
 class ExecAPI(Domain):
     """ck-exec on the Game API: gateway endpoints for players and developers, building,
     deploying and operating an app's nodes, and players' mods with their CLIENT halves.
@@ -582,7 +666,9 @@ class ExecAPI(Domain):
         from crowdypy.exec_gateway import AsyncExecConnection
 
         async def dial() -> ExecEndpoint:
-            return await self.developer_endpoint(app_id, node_type=node_type, key=key)
+            return self._checked(
+                await self.developer_endpoint(app_id, node_type=node_type, key=key)
+            )
 
         connection = AsyncExecConnection(dial, **options)
         await connection.connect()
@@ -1232,6 +1318,16 @@ class ExecAPI(Domain):
         )
         return msgspec.convert(payload, ExecEndpoint)
 
+    def _checked(self, endpoint: ExecEndpoint) -> ExecEndpoint:
+        why = exec_gateway_refusal(
+            self._graphql.endpoint or CROWDY_DEFAULT_HTTP_ORIGIN, endpoint.gateway_url
+        )
+        if why:
+            raise CrowdyExecError(
+                "Unavailable", f"refusing the gateway {endpoint.gateway_url}: {why}"
+            )
+        return endpoint
+
     async def connect(
         self,
         app_id: str | int,
@@ -1246,7 +1342,7 @@ class ExecAPI(Domain):
         from crowdypy.exec_gateway import AsyncExecConnection
 
         async def dial() -> ExecEndpoint:
-            return await self.endpoint(app_id, node_type=node_type, key=key)
+            return self._checked(await self.endpoint(app_id, node_type=node_type, key=key))
 
         connection = AsyncExecConnection(dial, **options)
         await connection.connect()

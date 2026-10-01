@@ -10,7 +10,9 @@ import asyncio
 import socket
 import threading
 import time
+import tomllib
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -339,7 +341,10 @@ def test_video_frames_fragment_and_reassemble() -> None:
 
 
 def test_the_native_layer_reports_its_build() -> None:
-    assert _native.CROWDYCPP_VERSION == "0.54.0"
+    pin = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    assert pin["tool"]["crowdypy"]["crowdycpp"]["version"] == _native.CROWDYCPP_VERSION
     assert _native.replication.STATUS_ROW == STATUS == 255
 
 

@@ -17,6 +17,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_HTTP_URL` | no | the game API origin, when not the minted `game_api_url` |
 | `CROWDY_E2E_STUDIO_GRID_ID` | no | a grid in the app that the owner controls (Studio suite) |
 | `CROWDY_E2E_SLOW=1` | no | long-running suites |
+| `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards) |
 
 ```bash
 pytest tests/e2e -q
@@ -39,6 +40,7 @@ player once and signs it in for the later suites.
 | `test_e2e_replication.py` | two players over native UDP: an actor update reaches the other player and echoes back to the sender; a 16-entity batched frame (`send_actor_updates`) reaches the other player; voxel updates and client events reach the other player | `e2e_two_client_actor`, `e2e_self_echo`, `e2e_spatial_distance` |
 | `test_e2e_world.py` | two World Stores sessions: each sees the other's actor natively; a voxel edit lands in the other session's chunk store | `e2e_stores_live`, `e2e_world_session` |
 | `test_e2e_world_data.py` | a GraphQL voxel write by an entitled player is recorded and listed back | `e2e_chunks` |
+| `test_e2e_open_grid_exec_gateway.py` | as a throwaway org admin (`CROWDY_E2E_THROWAWAY_OWNER=1`): open a nested grid, read it back, a player holds its keys, a player-code key is refused `BAD_REQUEST`, close it; the tier's ck-exec gateway passes `exec_gateway_refusal`, a connection pings, and a tampered connect token is `Denied` with the gateway's HTTP 401 reason | `e2e_open_grid_exec_gateway` |
 | `test_e2e_studio.py` | the headless Studio controller creates a project from the mod starter, edits it with autosave, and archives it (optional: needs `CROWDY_E2E_STUDIO_GRID_ID`) | `e2e_crowdy_studio` |
 
 ## Live runs

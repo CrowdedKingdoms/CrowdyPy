@@ -193,12 +193,12 @@ class ChunkStore {
   /// attached: persisted or dropped (refused, or out of attempts), it is evicted;
   /// one whose failure can still clear stays, dirty, for the next tick.
   std::size_t pruneBeyond(const ChunkCoord& center, int distance) {
-    std::vector<ChunkCoord> far;
+    std::vector<ChunkCoord> distant;
     for (const auto& [coord, chunk] : chunks_) {
-      if (chebyshev(coord, center) > distance) far.push_back(coord);
+      if (chebyshev(coord, center) > distance) distant.push_back(coord);
     }
     std::size_t pruned = 0;
-    for (const ChunkCoord& coord : far) {
+    for (const ChunkCoord& coord : distant) {
       auto it = chunks_.find(coord);
       if (it == chunks_.end()) continue;
       if (it->second.dirty && source_) {

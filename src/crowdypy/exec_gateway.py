@@ -176,6 +176,21 @@ def _closed_status(error: BaseException) -> ExecStatus:
     return "Denied" if received is not None and received.code == 4401 else "Unavailable"
 
 
+def _refused(error: BaseException) -> CrowdyExecError | None:
+    """A refused upgrade as the gateway put it: ``401`` (a token it will not take) is
+    ``Denied``, anything else ``Unavailable``, with the body as the reason."""
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    if not isinstance(status, int):
+        return None
+    body = getattr(response, "body", None) or b""
+    reason = " ".join(body.decode("utf-8", errors="replace").split())[:500]
+    return CrowdyExecError(
+        "Denied" if status == 401 else "Unavailable",
+        f"the gateway refused the connection (HTTP {status}{f': {reason}' if reason else ''})",
+    )
+
+
 def _status_error(status: int, payload: bytes) -> CrowdyExecError:
     return CrowdyExecError(exec_status(status), payload.decode("utf-8", errors="replace"))
 
@@ -277,7 +292,7 @@ class AsyncExecConnection:
                 _closed_status(exc), f"the gateway closed the connection ({exc})"
             ) from exc
         except (InvalidHandshake, OSError, TimeoutError) as exc:
-            raise CrowdyExecError(
+            raise _refused(exc) or CrowdyExecError(
                 "Unavailable", f"connecting to {endpoint.gateway_url} failed: {exc}"
             ) from exc
         self._ws = ws
@@ -563,7 +578,7 @@ class ExecConnection:
                     _closed_status(exc), f"the gateway closed the connection ({exc})"
                 ) from exc
             except (InvalidHandshake, OSError, TimeoutError) as exc:
-                raise CrowdyExecError(
+                raise _refused(exc) or CrowdyExecError(
                     "Unavailable", f"connecting to {endpoint.gateway_url} failed: {exc}"
                 ) from exc
             self._ws = ws
