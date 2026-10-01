@@ -24,18 +24,26 @@ pytestmark = pytest.mark.skipif(
 
 
 def _project_version() -> str:
-    return str(tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"])
+    return str(
+        tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    )
 
 
 def _sites() -> dict[str, str | None]:
-    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked = next((p["version"] for p in lock.get("package", []) if p["name"] == "crowdypy"), None)
     version_py = re.search(
-        r'__version__ = "([^"]+)"', (ROOT / "src/crowdypy/_version.py").read_text()
+        r'__version__ = "([^"]+)"', (ROOT / "src/crowdypy/_version.py").read_text(encoding="utf-8")
     )
-    compat = re.search(r"CrowdyPy `(\d+\.\d+\.\d+)`", (ROOT / "docs/compatibility.md").read_text())
-    readme = re.search(r"^\*\*v(\d+\.\d+\.\d+)\b", (ROOT / "README.md").read_text(), re.M)
-    migration = re.search(r"^## (\d+\.\d+\.\d+)\b", (ROOT / "MIGRATION.md").read_text(), re.M)
+    compat = re.search(
+        r"CrowdyPy `(\d+\.\d+\.\d+)`", (ROOT / "docs/compatibility.md").read_text(encoding="utf-8")
+    )
+    readme = re.search(
+        r"^\*\*v(\d+\.\d+\.\d+)\b", (ROOT / "README.md").read_text(encoding="utf-8"), re.M
+    )
+    migration = re.search(
+        r"^## (\d+\.\d+\.\d+)\b", (ROOT / "MIGRATION.md").read_text(encoding="utf-8"), re.M
+    )
     return {
         "src/crowdypy/_version.py": version_py.group(1) if version_py else None,
         "uv.lock": locked,

@@ -18,7 +18,9 @@ from crowdypy import wire
 from crowdypy.errors import CrowdyProtocolError
 
 FIXTURES = json.loads(
-    (Path(__file__).resolve().parent.parent / "fixtures" / "binary-wire-fixtures.json").read_text()
+    (Path(__file__).resolve().parent.parent / "fixtures" / "binary-wire-fixtures.json").read_text(
+        encoding="utf-8"
+    )
 )
 JS_TOKEN = FIXTURES["gameToken"].encode()
 JS_TOKEN_ID = int(FIXTURES["gameTokenId"])

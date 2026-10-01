@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PIN = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["crowdypy"]
+PIN = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["crowdypy"]
 
 
 def _crowdyjs() -> Path | None:
