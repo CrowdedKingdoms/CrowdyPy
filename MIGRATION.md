@@ -3,6 +3,31 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.5.0
+
+CrowdyJS 18.1.0 and CrowdyCPP 0.55.0. Additive, plus one refusal that is a security fix.
+
+- **The ck-exec connect token goes only to a gateway on the estate.** `client.exec.connect`
+  and `connect_as_developer` dial a gateway only when `exec_gateway_refusal` (in
+  `crowdypy.domains.exec`) passes it. That means `ws` or `wss` without credentials (only
+  `wss` under an `https` game API), on the estate of the game API or of this release's default
+  origin (two IP addresses only when equal), or a loopback gateway for a loopback game API.
+  Any other gateway the game API names is refused before the token leaves the process, with
+  `CrowdyExecError("Unavailable", "refusing the gateway …")`. `AsyncExecConnection.open` and
+  `ExecConnection.open` still dial what they are given. The rule answers the 19 cases CrowdyJS
+  and CrowdyCPP check (`exec-gateway-cases.json`).
+- **A refused upgrade carries the gateway's answer.** HTTP `401` (a token it will not take) is
+  `Denied` and anything else `Unavailable`, each with the gateway's reason, as in "the
+  gateway refused the connection (HTTP 401: bad signature)". Both used to be `Unavailable`
+  "connecting … failed".
+- **Open grids:** `GameAppsAPI.open_permissions(app_id, grid_id)` and
+  `set_open_permissions(input)` (`manage_apps`) cover the keys a grid grants every player with
+  access to the app. An empty list closes it.
+- CrowdyCPP 0.55.0 also builds on Windows when `<windows.h>` comes first (its `far` and
+  `near` macros broke a session header).
+- New live suite `tests/e2e/test_e2e_open_grid_exec_gateway.py`, which runs as a throwaway
+  org admin with `CROWDY_E2E_THROWAWAY_OWNER=1`.
+
 ## 0.4.1
 
 Documentation only; nothing the package does changed. Still CrowdyJS 18.0.4 and CrowdyCPP

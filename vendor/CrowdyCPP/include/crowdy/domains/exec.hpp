@@ -172,13 +172,15 @@ class ExecConnection {
   ExecConnection& operator=(const ExecConnection&) = delete;
 
   /// A connection to a known gateway with a connect token you already have
-  /// (tools and tests). It does not reconnect.
+  /// (tools and tests). It does not reconnect, and it dials the URL it is given:
+  /// `execGatewayRefusal` judges only what the Game API names.
   static std::shared_ptr<ExecConnection> open(
       std::shared_ptr<graphql::IWebSocketTransport> transport,
       std::shared_ptr<graphql::Dispatcher> dispatcher, ExecEndpoint endpoint,
       ExecConnectOptions options = {});
 
-  /// Start connecting. `done` fires once: Ok when open, the failure otherwise.
+  /// Start connecting. `done` fires once: Ok when open, the failure otherwise
+  /// (Rejected when the gateway refused the connect token, `lastFailure()` says why).
   /// Calls made before then wait for the connection.
   void connect(std::function<void(Status)> done = {});
 
@@ -201,10 +203,21 @@ class ExecConnection {
 
   std::string host() const;
   bool connected() const;
+  /// Why the last attempt to connect failed, or the open connection was lost: nullopt until
+  /// then, and again once a connection opens. Since ck-exec 0.10.0 a gateway refuses a bad
+  /// connect token with HTTP 401 and its reason before any WebSocket exists, which is `Denied`
+  /// with that reason (the transport's `WebSocketError::httpStatus` / `httpBody`), and a player
+  /// past their session cap with 429, which is `Unavailable`. A gateway before 0.10.0 closed
+  /// with 4401, also `Denied`. Calls waiting on the attempt fail with the same reply.
+  std::optional<ExecReply> lastFailure() const;
   /// Close; nothing reconnects and pending calls fail as Unavailable.
   void close();
 
  private:
+  friend class ExecAPI;
+  /// Dial only gateways `execGatewayRefusal` passes for the Game API `gameApiUrl` names.
+  void pinGateway(std::function<std::string()> gameApiUrl);
+
   class Impl;
   std::shared_ptr<Impl> impl_;
 };
@@ -290,13 +303,16 @@ class ExecAPI : public DomainBase {
           std::shared_ptr<graphql::IWebSocketTransport> transport);
 
   /// A host for the signed-in player and its connect token (`execConnect`),
-  /// blocking. The session token must be the app-scoped token of `appId`.
+  /// blocking. The session token must be the app-scoped token of `appId`. `connect` dials
+  /// its gateway only when `execGatewayRefusal` passes it.
   Result<ExecEndpoint> endpoint(std::string appId, std::string nodeType = {}, std::string key = {}) const;
   void endpointAsync(std::string appId, std::string nodeType, std::string key,
                      std::function<void(Result<ExecEndpoint>)> done) const;
 
   /// Connect the signed-in player to ck-exec for `appId`. Returns at once; the
-  /// connection opens in the background and calls made meanwhile wait for it.
+  /// connection opens in the background and calls made meanwhile wait for it. A gateway
+  /// `execGatewayRefusal` refuses is never dialed: the attempt fails `Unavailable` with the
+  /// reason (`lastFailure()`), and a reconnect asks the Game API again.
   std::shared_ptr<ExecConnection> connect(std::string appId, ExecConnectOptions options = {}) const;
   /// The same, calling back once the connection is open (or with the failure).
   void connectAsync(std::string appId, ExecConnectOptions options,
@@ -554,6 +570,8 @@ class ExecAPI : public DomainBase {
 
  private:
   ExecDial dialer(std::string appId, std::string nodeType, std::string key, bool developer = false) const;
+  /// A connection over `dial` that dials only gateways the Game API this client talks to may name.
+  std::shared_ptr<ExecConnection> pinned(ExecDial dial, ExecConnectOptions options) const;
   static graphql::JVal deployVariables(std::string appId, std::string root, const std::vector<ExecNodeType>& types,
                                        const std::string& buildId);
 
@@ -565,6 +583,16 @@ std::string execSha256Hex(std::string_view bytes);
 
 /// The node type players call a mod by: `mod:<name>`, keyed by its grid's id.
 std::string execModType(std::string_view name);
+
+/// Why `ExecAPI::connect` will not send a connect token to `gatewayUrl`, or nullopt when it
+/// will. The Game API names the gateway, and the token rides in its query string, so a gateway
+/// must be `ws:` or `wss:` (`wss:` whenever the Game API is `https:`), carry no credentials, and
+/// be on the estate of the Game API or of this release's default origin (`kDefaultHttpOrigin`),
+/// as `graphql::isSameEstate` bounds a move; two IP literals must be equal. A Game API on
+/// loopback (ck-exec's local cluster) may also name a loopback gateway. Mirrors CrowdyJS
+/// `execGatewayRefusal`; `tools/parity/fixtures/exec-gateway-cases.json` holds both to the same
+/// answers. Apply it before dialing an `endpoint()` yourself.
+std::optional<std::string> execGatewayRefusal(std::string_view gameApiUrl, std::string_view gatewayUrl);
 
 /// Parse a CLIENT half's capability summary: `capabilitySummaryJson`, `authorCapabilitySummaryJson`
 /// or a listing's `clientCapabilitySummaryJson`. nullopt unless it is a JSON object whose

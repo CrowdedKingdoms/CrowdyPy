@@ -39,7 +39,7 @@ from crowdypy.studio import (
     sha256_digest,
 )
 
-# Computed by CrowdyJS 18.0.4 (dist at c8634082) for the same values.
+# Computed by CrowdyJS's own build for the same values (18.0.4, and again at 18.1.0).
 TRICKY = {
     "b": 1,
     "a": [True, None, 'é\u2028"\\\n\u0001', 0.5, -0.0],

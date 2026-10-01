@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: a4fc571e3a18bcb2be84563897cce4e44ded26ef9015079bae89cfbb94a9c207
-// operations sha256: a4069ba386039a2e4dc03aeff68f07c9605d5352901d31eeaa9260aad0493f5d
+// schema.gql sha256: 00b9a06bec3e1f476bff75811ea5d7f457957cd65022034e3d553cd64c5b266a
+// operations sha256: 9fe2a0fe6e7c68d22ce112401194c11a67d2287550f917505501ca2bec3bf58e
 
 #pragma once
 
@@ -5539,6 +5539,14 @@ query GridPermissionLimits($appId: BigInt!, $gridId: BigInt!) {
   }
 }
 
+query GridOpenPermissions($appId: BigInt!, $gridId: BigInt!) {
+  gridOpenPermissions(appId: $appId, gridId: $gridId) {
+    appId
+    gridId
+    permissionKeys
+  }
+}
+
 query GridGroupGrants($appId: BigInt!, $gridId: BigInt!, $groupId: BigInt!) {
   gridGroupGrants(appId: $appId, gridId: $gridId, groupId: $groupId) {
     appId
@@ -5597,6 +5605,14 @@ mutation RevokeGridPermissions($input: RevokeGridPermissionsInput!) {
 
 mutation SetGridPermissionLimits($input: SetGridPermissionLimitsInput!) {
   setGridPermissionLimits(input: $input) {
+    appId
+    gridId
+    permissionKeys
+  }
+}
+
+mutation SetGridOpenPermissions($input: SetGridOpenPermissionsInput!) {
+  setGridOpenPermissions(input: $input) {
     appId
     gridId
     permissionKeys
@@ -5731,6 +5747,14 @@ inline constexpr std::string_view kGridPermissionLimitsIsolatedDocument = R"gql(
   }
 })gql";
 inline constexpr std::string_view kGridPermissionLimitsOperationName = "GridPermissionLimits";
+inline constexpr std::string_view kGridOpenPermissionsIsolatedDocument = R"gql(query GridOpenPermissions($appId: BigInt!, $gridId: BigInt!) {
+  gridOpenPermissions(appId: $appId, gridId: $gridId) {
+    appId
+    gridId
+    permissionKeys
+  }
+})gql";
+inline constexpr std::string_view kGridOpenPermissionsOperationName = "GridOpenPermissions";
 inline constexpr std::string_view kGridGroupGrantsIsolatedDocument = R"gql(query GridGroupGrants($appId: BigInt!, $gridId: BigInt!, $groupId: BigInt!) {
   gridGroupGrants(appId: $appId, gridId: $gridId, groupId: $groupId) {
     appId
@@ -5795,6 +5819,14 @@ inline constexpr std::string_view kSetGridPermissionLimitsIsolatedDocument = R"g
   }
 })gql";
 inline constexpr std::string_view kSetGridPermissionLimitsOperationName = "SetGridPermissionLimits";
+inline constexpr std::string_view kSetGridOpenPermissionsIsolatedDocument = R"gql(mutation SetGridOpenPermissions($input: SetGridOpenPermissionsInput!) {
+  setGridOpenPermissions(input: $input) {
+    appId
+    gridId
+    permissionKeys
+  }
+})gql";
+inline constexpr std::string_view kSetGridOpenPermissionsOperationName = "SetGridOpenPermissions";
 inline constexpr std::string_view kAssignGroupToGridIsolatedDocument = R"gql(mutation AssignGroupToGrid($input: AssignGroupToGridInput!) {
   assignGroupToGrid(input: $input) {
     appId
@@ -5826,12 +5858,14 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "NearbyGridPermissions") return kNearbyGridPermissionsIsolatedDocument;
   if (operationName == "NearbyGrids") return kNearbyGridsIsolatedDocument;
   if (operationName == "GridPermissionLimits") return kGridPermissionLimitsIsolatedDocument;
+  if (operationName == "GridOpenPermissions") return kGridOpenPermissionsIsolatedDocument;
   if (operationName == "GridGroupGrants") return kGridGroupGrantsIsolatedDocument;
   if (operationName == "CreateGrid") return kCreateGridIsolatedDocument;
   if (operationName == "DeleteGrid") return kDeleteGridIsolatedDocument;
   if (operationName == "GrantGridPermissions") return kGrantGridPermissionsIsolatedDocument;
   if (operationName == "RevokeGridPermissions") return kRevokeGridPermissionsIsolatedDocument;
   if (operationName == "SetGridPermissionLimits") return kSetGridPermissionLimitsIsolatedDocument;
+  if (operationName == "SetGridOpenPermissions") return kSetGridOpenPermissionsIsolatedDocument;
   if (operationName == "AssignGroupToGrid") return kAssignGroupToGridIsolatedDocument;
   if (operationName == "RevokeGroupFromGrid") return kRevokeGroupFromGridIsolatedDocument;
   return {};

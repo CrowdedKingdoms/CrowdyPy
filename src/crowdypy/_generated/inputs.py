@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 5dcaf15c772c89fe250ecdbd83eb21b52b67f27d739fca38c2871b5553751ab0
+schema.gql sha256: 38c490a70f0bd92977fef5867e0b9e14a10d9467a2008dcd2c02bbc96878d8d3
 """
 
 from __future__ import annotations
@@ -860,6 +860,13 @@ class SetCrowdyStudioProviderConsentInput(msgspec.Struct, kw_only=True, omit_def
     consented: bool
 
 
+class SetGridOpenPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'grid_id': 'gridId', 'permission_keys': 'permissionKeys'}):
+    'Set the permission keys a grid grants every player with active access to the app (writes the grid_open_permissions input table): an open build area, a public arena.'
+    app_id: str
+    grid_id: str
+    permission_keys: list[str]
+
+
 class SetGridPermissionLimitsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'grid_id': 'gridId', 'permission_keys': 'permissionKeys'}):
     'Set the per-grid permission-key whitelist (writes the grid_permission_limits input table).'
     app_id: str
@@ -1213,6 +1220,7 @@ __all__ = [
     'SetCrowdyStudioLibraryFileArchivedInput',
     'SetCrowdyStudioProjectArchivedInput',
     'SetCrowdyStudioProviderConsentInput',
+    'SetGridOpenPermissionsInput',
     'SetGridPermissionLimitsInput',
     'SetHostedGameEnabledInput',
     'SetHostedGameListingInput',

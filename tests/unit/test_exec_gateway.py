@@ -231,3 +231,62 @@ def test_the_blocking_connection_calls_and_subscribes() -> None:
         assert stop is not None
         loop.call_soon_threadsafe(stop.set_result, None)
         thread.join(5)
+
+
+# ---- which gateways client.exec.connect dials (CrowdyJS's execGatewayRefusal) ----
+
+GATEWAY_CASES = json.loads(
+    (
+        Path(__file__).resolve().parents[2]
+        / "vendor/CrowdyCPP/tools/parity/fixtures/exec-gateway-cases.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("case", GATEWAY_CASES["cases"], ids=lambda c: c["note"])
+def test_the_gateway_check_answers_as_crowdyjs_does(case: dict[str, Any]) -> None:
+    from crowdypy.domains.exec import exec_gateway_refusal
+
+    why = exec_gateway_refusal(case["gameApi"], case["gateway"])
+    assert (why is None) == case["dials"], why
+
+
+async def test_connect_refuses_a_gateway_off_the_estate_without_dialing(
+    api: Any, graphql: Any
+) -> None:
+    from crowdypy.domains.exec import ExecAPI
+
+    api.reply_with_root(
+        {
+            "gatewayUrl": "wss://gw.example.org",
+            "token": "secret-token",
+            "host": "h",
+            "expiresAt": "x",
+        }
+    )
+    with pytest.raises(CrowdyExecError) as raised:
+        await ExecAPI(graphql).connect(42, node_type="mod:x", key="7")
+    assert raised.value.status == "Unavailable"
+    assert "refusing the gateway wss://gw.example.org" in raised.value.message
+    assert "outside the estate of ck.example.test" in raised.value.message
+
+
+@pytest.mark.parametrize(("status", "expected"), [(401, "Denied"), (429, "Unavailable")])
+async def test_a_refused_upgrade_reports_the_gateway_s_answer(status: int, expected: str) -> None:
+    from http import HTTPStatus
+
+    def refuse(connection: ServerConnection, request: Any) -> Any:
+        return connection.respond(HTTPStatus(status), "bad   signature\n")
+
+    async def never(connection: ServerConnection) -> None:  # pragma: no cover - refused first
+        await connection.wait_closed()
+
+    async with serve(never, "127.0.0.1", 0, process_request=refuse) as server:
+        port = server.sockets[0].getsockname()[1]
+        with pytest.raises(CrowdyExecError) as raised:
+            await AsyncExecConnection.open(f"ws://127.0.0.1:{port}", "t", reconnect=False)
+    assert raised.value.status == expected
+    assert (
+        raised.value.message
+        == f"{expected}: the gateway refused the connection (HTTP {status}: bad signature)"
+    )

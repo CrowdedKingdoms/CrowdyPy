@@ -86,6 +86,14 @@ class GameAppsAPI(Domain):
         )
         return result
 
+    def open_permissions(self, app_id: str | int, grid_id: str | int) -> dict[str, Any]:
+        """The keys a grid grants every player with active access to the app (an open build
+        area, a public arena). An empty ``permissionKeys`` means the grid is not open."""
+        result: dict[str, Any] = self._request(
+            ops.GRID_OPEN_PERMISSIONS, {"appId": bigint(app_id), "gridId": bigint(grid_id)}
+        )
+        return result
+
     def group_grants(
         self, app_id: str | int, grid_id: str | int, group_id: str | int
     ) -> list[dict[str, Any]]:
@@ -148,6 +156,24 @@ class GameAppsAPI(Domain):
         """
         result: dict[str, Any] = self._request(
             ops.SET_GRID_PERMISSION_LIMITS, {"input": input}
+        )
+        return result
+
+    def set_open_permissions(
+        self, input: inputs.SetGridOpenPermissionsInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Open a grid to every player: replace the keys it grants each player with active
+        access to the app, within its limits; players who gain access later get them too. An
+        empty ``permissionKeys`` closes the grid.
+
+        The most specific grid covering a chunk decides a voxel write there, so a zone nested
+        in the world grid that everyone may build in must grant ``update_voxel_data`` itself.
+        Refused with ``BAD_REQUEST`` for the app's world grid (open already), any of the four
+        player-code keys, a key that is not an active grid key, and a 33rd open grid in one
+        app. Needs ``manage_apps``.
+        """
+        result: dict[str, Any] = self._request(
+            ops.SET_GRID_OPEN_PERMISSIONS, {"input": input}
         )
         return result
 
