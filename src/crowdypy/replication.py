@@ -27,14 +27,11 @@ from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol
+from typing import Any, Final, NamedTuple, Protocol
 
 from crowdypy import _native
 from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
 from crowdypy.wire import DecayRate, ErrorCode, MessageType
-
-if TYPE_CHECKING:
-    from crowdypy.domains.portal import AppTokenResponse
 
 __all__ = [
     "STATUS",
@@ -91,7 +88,20 @@ class TokenMaterial(NamedTuple):
     authorized_on_current_server: bool = False
 
 
-def token_material(token: AppTokenResponse, current: Assignment | None = None) -> TokenMaterial:
+class _AppToken(Protocol):
+    """What :func:`token_material` reads: an ``AppTokenResponse`` from either client."""
+
+    @property
+    def token(self) -> str: ...
+    @property
+    def game_token_id(self) -> str: ...
+    @property
+    def expires_at(self) -> str: ...
+    @property
+    def authorized_server(self) -> Any: ...
+
+
+def token_material(token: _AppToken, current: Assignment | None = None) -> TokenMaterial:
     """The native token material of a minted or refreshed app token."""
     try:
         game_token_id = int(token.game_token_id)

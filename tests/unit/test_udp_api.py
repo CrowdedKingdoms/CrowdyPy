@@ -74,17 +74,21 @@ class World:
         with self.lock:
             return sum(1 for n, _ in self.calls if n.startswith(name))
 
+    def pump_once(self) -> None:
+        """Read one datagram: bundles unpacked, channel messages kept apart, heartbeats skipped."""
+        data, _ = self.udp.recvfrom(2048)
+        for message in wire.split_datagram(data):
+            if message[0] == MessageType.CHANNEL_MESSAGE_REQUEST:
+                self.channel.append(message)
+                continue
+            parsed = wire.parse_long_spatial(message)
+            if parsed.type != MessageType.CLIENT_ACTOR_HEARTBEAT:
+                self.pending.append(parsed)
+
     def recv(self) -> wire.LongSpatialMessage:
-        """The next message the client sent, bundles unpacked, heartbeats skipped."""
+        """The next spatial message the client sent."""
         while not self.pending:
-            data, _ = self.udp.recvfrom(2048)
-            for message in wire.split_datagram(data):
-                if message[0] == MessageType.CHANNEL_MESSAGE_REQUEST:
-                    self.channel.append(message)
-                    continue
-                parsed = wire.parse_long_spatial(message)
-                if parsed.type != MessageType.CLIENT_ACTOR_HEARTBEAT:
-                    self.pending.append(parsed)
+            self.pump_once()
         return self.pending.pop(0)
 
     def close(self) -> None:
@@ -223,5 +227,7 @@ async def test_grid_sends_check_the_box_then_use_udp(world: World) -> None:
     client.udp.flush_sends()
     actor = await asyncio.to_thread(world.recv)
     assert (actor.type, actor.chunk) == (MessageType.ACTOR_UPDATE_REQUEST, (1, 1, 1))
+    while not world.channel:  # it may have left in a datagram of its own
+        await asyncio.to_thread(world.pump_once)
     assert len(world.channel) == 1
     await client.aclose()
