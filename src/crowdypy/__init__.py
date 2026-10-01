@@ -153,6 +153,7 @@ _SUBMODULES = {
     "inputs",
     "kit",
     "media",
+    "player_host",
     "replication",
     "stores",
     "studio",

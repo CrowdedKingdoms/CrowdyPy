@@ -6,9 +6,6 @@ Projects, files and reference files are :mod:`crowdypy.domains.crowdy_studio`'s.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -25,6 +22,7 @@ from crowdypy.domains.crowdy_studio import (
     CrowdyStudioTarget,
     normalize_crowdy_studio_path,
 )
+from crowdypy.player_host.json_schema import canonical_json, digest_canonical_json, sha256_digest
 
 __all__ = [
     "CrowdyStudioAtomicFileChange",
@@ -220,55 +218,3 @@ def project_targets(kind: CrowdyStudioProjectKind) -> list[CrowdyStudioTarget]:
     if kind == "CLIENT":
         return ["CLIENT"]
     return ["SERVER", "CLIENT"]
-
-
-def sha256_digest(value: str | bytes) -> str:
-    """``sha256:`` and the hex digest of the UTF-8 text (or the bytes)."""
-    data = value.encode("utf-8", "surrogatepass") if isinstance(value, str) else value
-    return "sha256:" + hashlib.sha256(data).hexdigest()
-
-
-def canonical_json(value: Any) -> str:
-    """CrowdyJS's canonical JSON: keys sorted, no whitespace, strings escaped as
-    ``JSON.stringify`` escapes them. Non-finite numbers and non-JSON values are refused."""
-    return _canonical(value, set())
-
-
-def digest_canonical_json(value: Any) -> str:
-    return sha256_digest(canonical_json(value))
-
-
-def _canonical(value: Any, ancestors: set[int]) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("Non-finite numbers are forbidden")
-        if value.is_integer() and abs(value) < 1e21:
-            return str(int(value))
-        return repr(value).replace("e-0", "e-").replace("e+0", "e+")
-    if not isinstance(value, (list, tuple, dict)):
-        raise ValueError(f"Non-JSON value of type {type(value).__name__} is forbidden")
-    if id(value) in ancestors:
-        raise ValueError("Cyclic JSON is forbidden")
-    ancestors.add(id(value))
-    try:
-        if isinstance(value, (list, tuple)):
-            return "[" + ",".join(_canonical(entry, ancestors) for entry in value) + "]"
-        keys = sorted(value, key=lambda key: str(key).encode("utf-16-be", "surrogatepass"))
-        return (
-            "{"
-            + ",".join(
-                f"{json.dumps(str(key), ensure_ascii=False)}:{_canonical(value[key], ancestors)}"
-                for key in keys
-            )
-            + "}"
-        )
-    finally:
-        ancestors.discard(id(value))

@@ -19,6 +19,8 @@ wheel. Python never touches a datagram.
 - The roots CrowdyCPP sends and CrowdyJS does not are wrapped too: email confirmation, usage
   projections, compute budgets, listing versions, the narrow Studio mutations, and
   `client.crowdy_studio_agent`.
+- `crowdypy.player_host` is the typed observation contract a game implements so tooling can
+  read the player it controls, validated exactly as CrowdyJS validates it.
 - The parity gate is strict: [`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps.
 - 0.3.0 brought the World Stores, the Game Kit, ck-exec and subscriptions; 0.2.0 native UDP
   replication (`client.udp`); 0.1.0 the GraphQL client.

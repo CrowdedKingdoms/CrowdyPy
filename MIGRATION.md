@@ -35,6 +35,13 @@ CrowdyCPP 0.54.0.
     `set_personal_library_file_archived` and `publish_common_file`;
   - the new `client.crowdy_studio_agent` (`CrowdyStudioAgentAPI`): provider consent,
     model usage and the agent policy.
+- **`crowdypy.player_host`.** The typed observation contract a game implements so tooling
+  can read the player it controls:
+  - `PlayerHostAdapterV1` and the observation, capability and command types;
+  - CrowdyJS's schemas for them, generated verbatim from CrowdyJS;
+  - `validate_json_schema_value` and `assert_bounded_json_schema`, which give CrowdyJS's
+    verdict on every value;
+  - the agent error vocabulary (`CrowdyAgentError`, with CrowdyJS's message redaction).
 - **The parity gate is strict.** A portable gap fails the build.
 
 ## 0.3.0

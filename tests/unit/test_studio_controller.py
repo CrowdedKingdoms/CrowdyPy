@@ -21,6 +21,7 @@ from crowdypy.domains.crowdy_studio import (
     CrowdyStudioReferenceFile,
     CrowdyStudioRevisionConflictError,
 )
+from crowdypy.player_host import CrowdyAgentError
 from crowdypy.studio import (
     CrowdyStudioAtomicFileChange,
     CrowdyStudioAtomicPatchInput,
@@ -331,7 +332,7 @@ def test_digests_are_crowdyjs_s() -> None:
     assert digest_canonical_json(TRICKY) == TRICKY_DIGEST
     assert sha256_digest("café 値") == TEXT_DIGEST
     assert project_content_hash(make_project()) == PROJECT_CONTENT_HASH
-    with pytest.raises(ValueError):
+    with pytest.raises(CrowdyAgentError, match="Non-finite"):
         canonical_json({"x": float("nan")})
 
 
