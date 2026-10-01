@@ -57,7 +57,7 @@ jobs:
       - name: Stamp the release version
         if: inputs.version != ''
         run: python scripts/ci/stamp_version.py "${{ inputs.version }}"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv build --sdist --out-dir dist
       - uses: actions/upload-artifact@v7
         with:
