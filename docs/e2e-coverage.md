@@ -51,6 +51,7 @@ player once and signs it in for the later suites.
 | 2026-10-01 | dev tier, app `96701660793088` (CrowdyPy e2e, in the org admin's org) | 0.4.0 (branch) | 8 passed; Studio skipped (the suite needs a grid the owner controls in that app; a placeholder is refused with `CROWDY_STUDIO_GRID_NOT_FOUND`) |
 | 2026-10-01 | dev tier, app `96701660793088` | the published `dev/v0.4.0` wheel (`0.4.0.dev1`, manylinux x86_64, installed into a clean Python 3.12) | 8 passed |
 | 2026-10-01 | dev tier, app `96701660793088` | `crowdypy 0.4.1.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12; the first version published by trusted publishing) | 8 passed; Studio skipped |
+| 2026-10-01 | dev tier, app `96701660793088`; the open-grid suite in its own throwaway org and app (`CROWDY_E2E_THROWAWAY_OWNER=1`) | `crowdypy 0.5.0.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12) | 10 passed; Studio skipped |
 
 ## Not covered here
 
@@ -60,7 +61,7 @@ These CrowdyCPP suites have no CrowdyPy counterpart yet; the reason is in each r
 |---|---|
 | `e2e_billing_quotas`, `e2e_payments` | billing and payment mutations on a shared tier; CrowdyPy wraps the same documents CrowdyJS sends, covered by the unit suites |
 | `e2e_marketplace_claims` | owns a real chunk; needs a reserved coordinate and a `SELF_CLAIM` app |
-| `e2e_exec_client_halves`, `e2e_exec_gateway` | need a ck-exec mod grid and a running gateway with a connect token; the gateway client is checked against the shared frame fixture and a local server |
+| `e2e_exec_client_halves`, `e2e_exec_gateway` | need a ck-exec mod grid, or a gateway running the ck-exec demo app, for calls and subscription pushes; the open-grid suite connects to the tier's gateway and pings, and the gateway client's frames are checked against the shared fixture and a local server |
 | `e2e_cross_server` | needs a deployment with two or more replication servers reachable from the runner |
 | `e2e_agentic_studio`, `e2e_native_studio_integration` | the agent session is CrowdyJS's in-browser agent; CrowdyPy carries the policy and usage roots only |
 | `e2e_soak_two_clients`, `e2e_permission_refresh` | long-running; slated for `CROWDY_E2E_SLOW=1` suites |
