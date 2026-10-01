@@ -43,12 +43,14 @@ API origin (`crowdypy.CROWDY_DEFAULT_TIER` says which):
 
 | Tier | PyPI version | Pin |
 |---|---|---|
-| dev | `X.Y.Z.devN` | `crowdypy==0.1.0.dev1` |
-| test | `X.Y.ZrcN` | `crowdypy==0.1.0rc1` |
-| prod | `X.Y.Z` | `crowdypy==0.1.0` |
+| dev | `X.Y.Z.devN` | `crowdypy==0.4.0.dev1` |
+| test | `X.Y.ZrcN` | `crowdypy==0.4.0rc1` |
+| prod | `X.Y.Z` | `crowdypy==0.4.0` |
 
 pip skips pre-releases unless a requirement names one, so a prod range never picks up a dev
-or test build. The same wheels are attached to each GitHub release.
+or test build. The same wheels and the sdist are attached to each
+[GitHub release](https://github.com/CrowdedKingdoms/CrowdyPy/releases), and pip installs one
+from its URL (`pip install https://github.com/CrowdedKingdoms/CrowdyPy/releases/download/<tag>/<wheel>`).
 
 ## Quick start
 
