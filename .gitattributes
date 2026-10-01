@@ -1,0 +1,8 @@
+# Normalise line endings to LF in the repository and in every working tree,
+# including Windows checkouts where core.autocrlf defaults to true.
+#
+# Load-bearing, not cosmetic: scripts/codegen.py stamps the generated modules with
+# a sha256 over the raw bytes of schema.gql and operations/**, and the vendored
+# CrowdyCPP tree is checked against a hash of its bytes. A CRLF working tree
+# produces fingerprints no other platform can reproduce.
+* text=auto eol=lf
