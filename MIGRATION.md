@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.4.1
+
+Documentation only; nothing the package does changed. Still CrowdyJS 18.0.4 and CrowdyCPP
+0.54.0.
+
+- The README, which PyPI shows, carries the current tier pins and an example of installing a
+  wheel straight from a GitHub release.
+- The roots CrowdyPy wraps beyond CrowdyJS are described precisely: CrowdyJS's portable API
+  sends none of them, CrowdyCPP covers them, and CrowdyJS's in-browser agent does send the
+  two provider-consent roots and the model-usage root.
+- 0.4.1 is the first version PyPI receives from the release workflow, by trusted publishing.
+
 ## 0.4.0
 
 Headless Crowdy Studio and full CrowdyJS parity. Additive; still CrowdyJS 18.0.4 and
@@ -25,7 +37,7 @@ CrowdyCPP 0.54.0.
     `parse_client_tick_interval_ms` port their CrowdyJS namesakes.
   - `canonical_json`, `digest_canonical_json` and `project_content_hash` compute the
     approval digests CrowdyJS computes.
-- **The roots CrowdyCPP sends and CrowdyJS does not:**
+- **The roots CrowdyCPP covers and CrowdyJS's portable API leaves out:**
   - `AuthAPI.confirm_email` and `resend_confirmation_email`;
   - `UsageAPI.org_summary`, `app_projection` and `org_projection`;
   - `AppsAPI.compute_budget`, `set_compute_budget` and `clear_compute_budget`;

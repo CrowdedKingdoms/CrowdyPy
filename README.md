@@ -11,19 +11,19 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.4.0: headless Crowdy Studio, and full parity with CrowdyJS.**
+**v0.4.1: headless Crowdy Studio, and full parity with CrowdyJS.**
 - `crowdypy.studio.CrowdyStudioController` is the Studio editor without a browser: open
   projects, edit with autosave and revision conflicts, bind GitHub, apply agent patches with
   checkpoints, and build, deploy and run mods. `StudioLayoutController` and
   `parse_rustc_diagnostics` match CrowdyJS byte for byte.
-- The roots CrowdyCPP sends and CrowdyJS does not are wrapped too: email confirmation, usage
-  projections, compute budgets, listing versions, the narrow Studio mutations, and
-  `client.crowdy_studio_agent`.
+- The GraphQL roots CrowdyCPP covers and CrowdyJS's portable API leaves out are wrapped too:
+  email confirmation, usage projections, compute budgets, listing versions, the narrow Studio
+  mutations, and `client.crowdy_studio_agent`.
 - `crowdypy.player_host` is the typed observation contract a game implements so tooling can
   read the player it controls, validated exactly as CrowdyJS validates it.
 - The parity gate is strict: [`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps.
-- 0.3.0 brought the World Stores, the Game Kit, ck-exec and subscriptions; 0.2.0 native UDP
-  replication (`client.udp`); 0.1.0 the GraphQL client.
+- 0.4.1 changes documentation only. 0.3.0 brought the World Stores, the Game Kit, ck-exec and
+  subscriptions; 0.2.0 native UDP replication (`client.udp`); 0.1.0 the GraphQL client.
 
 See [MIGRATION.md](MIGRATION.md).
 

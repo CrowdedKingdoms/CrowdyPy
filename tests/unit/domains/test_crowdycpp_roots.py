@@ -1,5 +1,5 @@
-"""The roots CrowdyCPP sends and CrowdyJS 18.0.4 does not: each sends its inline document
-with the variables CrowdyCPP sends."""
+"""The roots CrowdyCPP covers and CrowdyJS 18.0.4's portable API leaves out: each sends its
+inline document with the variables CrowdyCPP sends."""
 
 from __future__ import annotations
 

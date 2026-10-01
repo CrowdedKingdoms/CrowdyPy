@@ -5,7 +5,8 @@ The model endpoint itself is REST (``GET /v1/model/models``, ``POST
 spends tokens through. These GraphQL companions read what it recorded and gate whether it
 may run: the player's provider consent and own usage (``use_studio_agent``), and the app's
 policy and sanitized usage (``view_compute_diagnostics``; ``manage_compute`` to change it).
-Mirrors CrowdyCPP's ``CrowdyStudioAgentAPI``; CrowdyJS sends these from its agent pane.
+Mirrors CrowdyCPP's ``CrowdyStudioAgentAPI``. CrowdyJS's in-browser agent sends the consent
+and model-usage roots itself; its portable API sends none of the seven.
 """
 
 from __future__ import annotations
