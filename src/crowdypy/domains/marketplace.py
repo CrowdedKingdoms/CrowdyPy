@@ -17,10 +17,25 @@ from typing import Any
 
 from crowdypy._generated import enums, inputs
 from crowdypy._generated import operations as ops
+from crowdypy._operation import inline_operation
 from crowdypy.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
 __all__ = ["MarketplaceAPI"]
+
+
+# CrowdyCPP's MarketplaceAPI sends this; CrowdyJS does not.
+APP_LISTING_VERSIONS = inline_operation(
+    "MarketplaceAppListingVersions",
+    "query",
+    "appPlayerCodeListingVersions",
+    "query MarketplaceAppListingVersions($appId: BigInt!, $listingId: String!) { "
+    "appPlayerCodeListingVersions(appId: $appId, listingId: $listingId) { versionId listingId "
+    "versionNo serverArtifactHashes clientArtifactHashes requirements { serverArtifactHash "
+    "clientArtifactHash } capabilitySummaryJson capabilityHash openSource licenseText "
+    "createdAt } }",
+)
+INLINE_OPERATIONS = (APP_LISTING_VERSIONS,)
 
 
 class MarketplaceAPI(Domain):
@@ -204,5 +219,15 @@ class MarketplaceAPI(Domain):
         result: str = await self._request(
             ops.MARKETPLACE_SET_GRID_CLAIM_POLICY,
             omit_none({"appId": bigint(app_id), "policy": policy, "approverUserIds": approvers}),
+        )
+        return result
+
+    async def app_listing_versions(
+        self, app_id: str | int, listing_id: str
+    ) -> list[dict[str, Any]]:
+        """A listing's immutable published versions, newest first, with their artifact
+        hashes. Needs ``view_compute_diagnostics``."""
+        result: list[dict[str, Any]] = await self._request(
+            APP_LISTING_VERSIONS, {"appId": bigint(app_id), "listingId": listing_id}
         )
         return result

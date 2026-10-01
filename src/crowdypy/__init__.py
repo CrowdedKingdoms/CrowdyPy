@@ -112,6 +112,7 @@ _LAZY: dict[str, str] = {
     "ChannelsAPI": "crowdypy.domains.channels",
     "ChunksAPI": "crowdypy.domains.chunks",
     "CrowdyStudioAPI": "crowdypy.domains.crowdy_studio",
+    "CrowdyStudioAgentAPI": "crowdypy.domains.crowdy_studio_agent",
     "CrowdyStudioGitHubTransport": "crowdypy.domains.crowdy_studio_github",
     "DiscoveryDomain": "crowdypy.domains.discovery",
     "ExecAPI": "crowdypy.domains.exec",
@@ -148,11 +149,15 @@ _SUBMODULES = {
     "codecs",
     "enums",
     "errors",
+    "exec_gateway",
     "inputs",
     "kit",
     "media",
+    "player_host",
     "replication",
     "stores",
+    "studio",
+    "subscriptions",
     "sync",
     "wire",
 }
@@ -264,6 +269,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.crowdy_studio import (
         CrowdyStudioAPI as CrowdyStudioAPI,
+    )
+    from crowdypy.domains.crowdy_studio_agent import (
+        CrowdyStudioAgentAPI as CrowdyStudioAgentAPI,
     )
     from crowdypy.domains.crowdy_studio_github import (
         CrowdyStudioGitHubTransport as CrowdyStudioGitHubTransport,
