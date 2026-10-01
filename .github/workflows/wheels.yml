@@ -44,6 +44,7 @@ jobs:
       - uses: pypa/cibuildwheel@v4.2.1
         with:
           output-dir: wheelhouse
+          extras: uv
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.archs }}

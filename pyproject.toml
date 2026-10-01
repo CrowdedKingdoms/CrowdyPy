@@ -68,7 +68,7 @@ dev = [
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"
-cmake.version = ">=3.22"
+cmake.version = ">=4.0"
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
 wheel.packages = ["src/crowdypy"]
@@ -85,6 +85,7 @@ CROWDY_WITH_CURL_WEBSOCKETS = "OFF"
 CROWDY_WITH_OPENSSL = "ON"
 
 [tool.cibuildwheel]
+build-frontend = "build[uv]"
 # One stable-ABI wheel per platform (built on 3.12, good for every later 3.x) plus the
 # free-threaded 3.14 build, which has no stable ABI.
 build = ["cp312-*", "cp314t-*"]
