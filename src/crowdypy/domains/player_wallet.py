@@ -1,0 +1,210 @@
+"""The player wallet and player billing (``client.player_wallet``).
+
+The player calls work on the CALLER's own wallet: balance, ledger, hourly usage charges
+(the platform's price and the studio's markup apart), self-set spend caps, auto-recharge
+and per-app gate states. A ck-exec mod's compute is billed here, to its owner. Fund the
+wallet with a checkout whose purpose is ``PLAYER_WALLET_TOPUP``.
+
+Call them on the identity client (session token); :meth:`PlayerWalletAPI.balance` and
+:meth:`PlayerWalletAPI.transactions` also take the app-scoped token. The studio calls
+(rate markup, per-player usage, accrued markup) need the app permission each one names.
+
+Amounts are micro-USD (1 USD = 1,000,000) or cents, as each field's name says; BigInt
+amounts and ids are decimal strings, and arguments accept an ``int`` too.
+"""
+
+from __future__ import annotations
+
+import warnings
+from typing import Any
+
+from msgspec import UNSET, UnsetType
+
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+__all__ = ["PlayerWalletAPI"]
+
+
+def _optional_bigint(value: str | int | None) -> str | None:
+    return None if value is None else bigint(value)
+
+
+class PlayerWalletAPI(Domain):
+    async def balance(self) -> dict[str, Any]:
+        """The caller's wallet, created empty on first access (never ``None``).
+
+        ``balanceMicrousd`` and ``holdsMicrousd`` are micro-USD; what can be spent is the
+        balance less the holds (a model turn holds its worst case while it runs).
+        ``balanceCents`` is the deprecated truncation.
+        """
+        result: dict[str, Any] = await self._request(ops.PLAYER_WALLET_BALANCE)
+        return result
+
+    async def transactions(
+        self, limit: int | None = None, offset: int | None = None
+    ) -> list[dict[str, Any]]:
+        """The caller's wallet ledger, newest first.
+
+        Top-ups, hourly usage debits, auto-recharges, refunds and adjustments. ``limit``
+        defaults to 50, at most 200.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.PLAYER_WALLET_TRANSACTIONS, omit_none({"limit": limit, "offset": offset})
+        )
+        return result
+
+    async def charges(
+        self, app_id: str | int | None = None, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """The caller's posted hourly usage charges, newest first, optionally for one app.
+
+        Each splits ``platformCents`` (the platform's rate card) from ``markupCents`` (the
+        studio's markup) with a per-metric snapshot. ``limit`` defaults to 50, at most 200.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.PLAYER_USAGE_CHARGES, omit_none({"appId": _optional_bigint(app_id), "limit": limit})
+        )
+        return result
+
+    async def spend_caps(self) -> list[dict[str, Any]]:
+        """The caller's self-set spend caps, global and per app, with their running counters.
+
+        The limit in force is the least of the developer's policy, the self-cap and the
+        balance.
+        """
+        result: list[dict[str, Any]] = await self._request(ops.PLAYER_SPEND_CAPS)
+        return result
+
+    async def set_spend_cap(
+        self,
+        scope: str,
+        app_id: str | int | None = None,
+        daily_limit_cents: str | int | None = None,
+        monthly_limit_cents: str | int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Set one of the caller's spend caps, in cents, and answer them all.
+
+        ``scope`` is ``"global"`` or ``"app"`` (with ``app_id``). A limit left at ``None``
+        means no cap for that window, so leaving both clears the cap. Reaching a cap pauses
+        the player's mods with ``PLAYER_SPEND_CAP`` until the window rolls over; play is
+        untouched.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.SET_PLAYER_SPEND_CAP,
+            omit_none(
+                {
+                    "scope": scope,
+                    "appId": _optional_bigint(app_id),
+                    "dailyLimitCents": _optional_bigint(daily_limit_cents),
+                    "monthlyLimitCents": _optional_bigint(monthly_limit_cents),
+                }
+            ),
+        )
+        return result
+
+    async def auto_billing(self) -> dict[str, Any]:
+        """The caller's auto-recharge settings: the card top-up made before funds run out."""
+        result: dict[str, Any] = await self._request(ops.PLAYER_AUTO_BILLING)
+        return result
+
+    async def set_auto_billing(
+        self,
+        enabled: bool,
+        limit_cents: str | int | UnsetType | None = UNSET,
+        recharge_amount_cents: str | int | None = None,
+        low_water_threshold_cents: str | int | None = None,
+    ) -> dict[str, Any]:
+        """Configure auto-recharge. Enabling it needs a saved card (:meth:`begin_card_setup`).
+
+        ``limit_cents`` is the ceiling per period: leave it out to keep the current one,
+        or pass ``None`` to remove it (no limit). ``recharge_amount_cents`` (1000 at first)
+        and ``low_water_threshold_cents``, the balance that triggers a recharge, keep their
+        current values when left at ``None``; the recharge must exceed the threshold.
+        """
+        variables: dict[str, Any] = {"enabled": enabled}
+        if limit_cents is not UNSET:
+            variables["limitCents"] = _optional_bigint(limit_cents)
+        variables |= omit_none(
+            {
+                "rechargeAmountCents": _optional_bigint(recharge_amount_cents),
+                "lowWaterThresholdCents": _optional_bigint(low_water_threshold_cents),
+            }
+        )
+        result: dict[str, Any] = await self._request(ops.SET_PLAYER_AUTO_BILLING, variables)
+        return result
+
+    async def begin_card_setup(self) -> dict[str, Any]:
+        """Begin saving a card to the caller's wallet.
+
+        Answers the Stripe SetupIntent ``clientSecret`` and ``publishableKey`` for a browser
+        to confirm. The saved card pays for auto-recharge and rent auto-renewal.
+        """
+        result: dict[str, Any] = await self._request(ops.BEGIN_PLAYER_CARD_SETUP)
+        return result
+
+    async def runtime_states(self) -> list[dict[str, Any]]:
+        """The caller's per-app gate states; an app that is absent is active.
+
+        ``denied`` with ``PLAYER_WALLET_EMPTY`` or ``PLAYER_SPEND_CAP`` pauses only that
+        player's grid compute, never play.
+        """
+        result: list[dict[str, Any]] = await self._request(ops.PLAYER_RUNTIME_STATES)
+        return result
+
+    async def rate_markup(self, app_id: str | int) -> int:
+        """The app's player rate-card markup on the platform base price, in basis points.
+
+        Studio: needs ``view_billing`` on the app. 0 is no markup.
+        """
+        result: int = await self._request(ops.PLAYER_RATE_MARKUP, {"appId": bigint(app_id)})
+        return result
+
+    async def set_rate_markup(self, app_id: str | int, markup_bps: int) -> int:
+        """Set the app's player rate-card markup, 0 to 10000 basis points, and answer it.
+
+        Studio: needs ``manage_billing`` on the app.
+        """
+        result: int = await self._request(
+            ops.SET_PLAYER_RATE_MARKUP, {"appId": bigint(app_id), "markupBps": markup_bps}
+        )
+        return result
+
+    async def app_player_usage(
+        self, app_id: str | int, hours: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Each player's usage of the app over a trailing window.
+
+        Studio: needs ``view_compute_diagnostics`` on the app. Compute and automation units,
+        compiles and the amount charged, per player. ``hours`` defaults to 24, at most 744.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_PLAYER_USAGE, omit_none({"appId": bigint(app_id), "hours": hours})
+        )
+        return result
+
+    async def app_markup_accrued(self, app_id: str | int) -> str:
+        """Deprecated: cents truncate. Use :meth:`app_markup_accrued_microusd`.
+
+        Studio: needs ``view_billing`` on the app. The player markup credited to the app's
+        org, in cents, as a decimal string.
+        """
+        warnings.warn(
+            "PlayerWalletAPI.app_markup_accrued is deprecated: cents truncate; "
+            "app_markup_accrued_microusd carries the exact amount",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result: str = await self._request(ops.APP_PLAYER_MARKUP_ACCRUED, {"appId": bigint(app_id)})
+        return result
+
+    async def app_markup_accrued_microusd(self, app_id: str | int) -> str:
+        """The player markup credited to the app's org, exact, in micro-USD as a decimal string.
+
+        Studio: needs ``view_billing`` on the app.
+        """
+        result: str = await self._request(
+            ops.APP_PLAYER_MARKUP_ACCRUED_MICROUSD, {"appId": bigint(app_id)}
+        )
+        return result

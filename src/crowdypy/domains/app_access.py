@@ -1,0 +1,221 @@
+"""App access tiers, per-user access grants and tier features (``client.app_access``).
+
+A tier is a bundle of runtime permissions (``access``, ``teleport``,
+``update_voxel_data``, ``use_voice_chat``, ...) a player gets; a grant attaches a user
+to a tier. A new app gets an open default tier, so most players need no explicit grant.
+
+:meth:`AppAccessAPI.tiers` and :meth:`AppAccessAPI.runtime_permissions` are public. The
+tier-feature methods are game-plane fields: call them with an app-scoped token for the
+app, since an identity session is refused there. Everything else needs an identity
+session, and tier and grant administration needs the app's ``manage_access_tiers``
+permission. ``BigInt`` ids take an ``int`` or a decimal string.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from crowdypy._generated import inputs
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+__all__ = ["AppAccessAPI"]
+
+
+class AppAccessAPI(Domain):
+    """Access tiers, the grants that attach users to them, and the features tiers grant."""
+
+    async def tiers(self, app_id: str | int) -> list[dict[str, Any]]:
+        """An app's access tiers in order, archived ones included (check ``status``). Public."""
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_ACCESS_TIERS, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def my_access(self, app_id: str | int) -> dict[str, Any] | None:
+        """The caller's access record for an app (its tier and status), or ``None``."""
+        result: dict[str, Any] | None = await self._request(
+            ops.MY_APP_ACCESS, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def users_by_app(
+        self,
+        app_id: str | int,
+        status: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """An app's access records, most recently updated first. Needs ``manage_access_tiers``.
+
+        ``status`` filters exactly (``"active"``, ``"revoked"``); ``limit`` defaults to 50.
+        Prefer :meth:`users_by_app_connection`: these offset arguments are deprecated.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_USER_ACCESS_BY_APP,
+            omit_none(
+                {"appId": bigint(app_id), "status": status, "limit": limit, "offset": offset}
+            ),
+        )
+        return result
+
+    async def users_by_app_connection(
+        self,
+        app_id: str | int,
+        first: int | None = None,
+        after: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """An app's access records as a cursor connection. Needs ``manage_access_tiers``.
+
+        Page with ``first`` and the previous page's ``pageInfo.endCursor`` as ``after``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.APP_USER_ACCESS_CONNECTION,
+            omit_none({"appId": bigint(app_id), "first": first, "after": after, "status": status}),
+        )
+        return result
+
+    async def runtime_permissions(self) -> list[str]:
+        """Every runtime permission key a tier or grid grant can name. Public."""
+        result: list[str] = await self._request(ops.RUNTIME_PERMISSIONS)
+        return result
+
+    async def grant_member_candidates(self, app_id: str | int) -> list[dict[str, Any]]:
+        """Members of the app's org a manual grant can name. Needs ``manage_access_tiers``.
+
+        Pass a candidate's ``userId`` to :meth:`grant`.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_GRANT_MEMBER_CANDIDATES, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def claim_free(self, app_id: str | int) -> dict[str, Any]:
+        """Claim the app's free default tier for the caller; no admin permission needed.
+
+        Idempotent, and never overrides a revoke. Errors when the app has no free default
+        tier or is archived.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.CLAIM_FREE_APP_ACCESS, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def grant_mine(self, app_id: str | int) -> dict[str, Any]:
+        """Grant the caller access through the app's default tier.
+
+        For an active member of the app's owning org (or a ``manage_access_tiers`` holder).
+        """
+        result: dict[str, Any] = await self._request(
+            ops.GRANT_MY_APP_ACCESS, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def create_tier(
+        self, input: inputs.CreateAccessTierInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Create an access tier for an app. Needs ``manage_access_tiers``.
+
+        Its permission keys must be :meth:`runtime_permissions`. Creating a tier grants it
+        to nobody.
+        """
+        result: dict[str, Any] = await self._request(ops.CREATE_ACCESS_TIER, {"input": input})
+        return result
+
+    async def update_tier(
+        self, tier_id: str | int, input: inputs.UpdateAccessTierInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Change an access tier; fields left out stay as they are.
+
+        Needs ``manage_access_tiers``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.UPDATE_ACCESS_TIER, {"tierId": bigint(tier_id), "input": input}
+        )
+        return result
+
+    async def archive_tier(self, tier_id: str | int) -> dict[str, Any]:
+        """Archive a tier so it can no longer be granted. Needs ``manage_access_tiers``.
+
+        Existing grants on the tier are not revoked.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.ARCHIVE_ACCESS_TIER, {"tierId": bigint(tier_id)}
+        )
+        return result
+
+    async def grant(self, input: inputs.GrantAppAccessInput | Mapping[str, Any]) -> dict[str, Any]:
+        """Grant a user access to an app, optionally on a tier. Needs ``manage_access_tiers``.
+
+        The user gains the tier's runtime permissions in the game at once. Re-granting
+        changes the tier and reactivates a revoked grant.
+        """
+        result: dict[str, Any] = await self._request(ops.GRANT_APP_ACCESS, {"input": input})
+        return result
+
+    async def revoke(self, app_id: str | int, user_id: str | int) -> dict[str, Any]:
+        """Revoke a user's access to an app. Needs ``manage_access_tiers``.
+
+        The user loses runtime access at once. The record is kept, and :meth:`grant`
+        restores it.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.REVOKE_APP_ACCESS, {"appId": bigint(app_id), "userId": bigint(user_id)}
+        )
+        return result
+
+    async def define_feature(
+        self, input: inputs.DefineAppFeatureInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Define (or re-describe) a feature key for an app. Needs ``manage_apps``.
+
+        Idempotent on the app and key. Like every tier-feature method, it takes an
+        app-scoped token for the app; a ck-exec hub checks a player's features with the
+        node API's ``players.features``.
+        """
+        result: dict[str, Any] = await self._request(ops.DEFINE_APP_FEATURE, {"input": input})
+        return result
+
+    async def features(self, app_id: str | int) -> list[dict[str, Any]]:
+        """The feature keys defined for an app. Needs ``manage_apps`` and an app-scoped token."""
+        result: list[dict[str, Any]] = await self._request(
+            ops.APP_FEATURES, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def grant_tier_feature(
+        self, input: inputs.GrantTierFeatureInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Grant a feature key to an access tier. Needs ``manage_apps`` and an app-scoped token."""
+        result: dict[str, Any] = await self._request(ops.GRANT_TIER_FEATURE, {"input": input})
+        return result
+
+    async def revoke_tier_feature(
+        self, input: inputs.GrantTierFeatureInput | Mapping[str, Any]
+    ) -> bool:
+        """Revoke a feature key from a tier: ``True`` if a grant was removed.
+
+        Needs ``manage_apps`` and an app-scoped token.
+        """
+        return bool(await self._request(ops.REVOKE_TIER_FEATURE, {"input": input}))
+
+    async def tier_features(
+        self, app_id: str | int, tier_id: str | int | None = None
+    ) -> list[dict[str, Any]]:
+        """An app's tier-to-feature grants, optionally for one tier.
+
+        Needs ``manage_apps`` and an app-scoped token.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.TIER_FEATURES,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "tierId": bigint(tier_id) if tier_id is not None else None,
+                }
+            ),
+        )
+        return result

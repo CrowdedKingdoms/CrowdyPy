@@ -1,0 +1,85 @@
+"""Usage quotas at the org and app scope (``client.quotas``).
+
+Every method needs an identity session. Reads need ``view_usage`` on the org or app;
+:meth:`QuotasAPI.set` and :meth:`QuotasAPI.remove` need ``manage_quotas`` on the rule's
+org or app. A quota is keyed by a ``metric``; the effective value resolves app, then
+org, then the platform default. The SDK does not set platform-global rules.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from crowdypy._generated import inputs
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.errors import CrowdyError
+from crowdypy.utils import bigint
+
+__all__ = ["QuotasAPI"]
+
+
+def _names_app_or_org(input: inputs.SetQuotaInput | Mapping[str, Any]) -> bool:
+    if isinstance(input, inputs.SetQuotaInput):
+        return bool(input.app_id or input.org_id)
+    return bool(input.get("appId") or input.get("orgId"))
+
+
+class QuotasAPI(Domain):
+    """Quota rules on organizations and apps, and the limit that applies."""
+
+    async def for_org(self, org_id: str | int) -> list[dict[str, Any]]:
+        """The quota rules set directly on an organization. Needs ``view_usage``."""
+        result: list[dict[str, Any]] = await self._request(
+            ops.QUOTAS_FOR_ORG, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def for_app(self, app_id: str | int) -> list[dict[str, Any]]:
+        """The quota rules set directly on an app. Needs the app's ``view_usage``."""
+        result: list[dict[str, Any]] = await self._request(
+            ops.QUOTAS_FOR_APP, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def effective(
+        self, metric: str, org_id: str | int | None = None, app_id: str | int | None = None
+    ) -> dict[str, Any] | None:
+        """The rule that applies to ``metric`` (e.g. ``"replication_messages"``), or ``None``.
+
+        An app rule overrides an org rule, which overrides the platform default. Needs
+        ``view_usage`` on the most specific scope given.
+        """
+        result: dict[str, Any] | None = await self._request(
+            ops.EFFECTIVE_QUOTA,
+            omit_none(
+                {
+                    "metric": metric,
+                    "orgId": bigint(org_id) if org_id is not None else None,
+                    "appId": bigint(app_id) if app_id is not None else None,
+                }
+            ),
+        )
+        return result
+
+    async def set(self, input: inputs.SetQuotaInput | Mapping[str, Any]) -> dict[str, Any]:
+        """Create or update a quota rule on an app or an org (``tierId`` may narrow either).
+
+        Needs ``manage_quotas`` on that app or org. Raises :class:`~crowdypy.errors.CrowdyError`
+        before any request when the input names neither an app nor an organization.
+        """
+        if not _names_app_or_org(input):
+            raise CrowdyError(
+                "quotas.set needs an appId or an orgId: the SDK sets app and org quotas only"
+            )
+        result: dict[str, Any] = await self._request(ops.SET_QUOTA, {"input": input})
+        return result
+
+    async def remove(self, quota_id: str | int) -> bool:
+        """Delete a quota rule; the metric falls back to the next most specific rule.
+
+        Needs ``manage_quotas`` on the rule's app or org. ``False`` when there is no such
+        rule.
+        """
+        return bool(await self._request(ops.DELETE_QUOTA, {"quotaId": bigint(quota_id)}))

@@ -1,0 +1,148 @@
+# Publish a tier release from an environment-prefixed tag.
+#
+#   dev/vX.Y.Z  -> PyPI X.Y.Z.devN  (N = next free number for that base)
+#   test/vX.Y.Z -> PyPI X.Y.ZrcN
+#   prod/vX.Y.Z -> PyPI X.Y.Z
+#
+# The tag's commit must be contained in the branch it names, the tag must be the version
+# the tree carries, and the generated default origin must name the tag's tier, all before
+# anything is built. PyPI accepts a version once and never replaces it, so the published
+# wheel is downloaded back and its default origin read again.
+#
+# PyPI publishing uses trusted publishing (OIDC, environment `pypi`). It runs only when the
+# repository variable PYPI_PUBLISHING is `enabled`, which the operator sets after
+# registering the project's trusted publisher; until then a release is a GitHub Release
+# carrying the same wheels.
+name: release
+on:
+  push:
+    tags:
+      - "dev/v*.*.*"
+      - "test/v*.*.*"
+      - "prod/v*.*.*"
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+      base: ${{ steps.tier.outputs.version }}
+      version: ${{ steps.pypi.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: the tag's commit is contained in the branch it names
+        id: tier
+        run: bash scripts/ci/resolve-release-tier.sh
+      - name: the tag is the version this tree builds
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          tag = os.environ["GITHUB_REF_NAME"].split("/", 1)[1].removeprefix("v")
+          tree = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          assert tag == tree, f"tag v{tag} but pyproject.toml is {tree}"
+          print(f"tag and tree agree on {tree}")
+          PY
+      - name: the default origin names the tag's tier
+        run: python scripts/ci/assert_default_origin.py "${{ steps.tier.outputs.tier }}"
+      - name: the version PyPI will receive
+        id: pypi
+        run: python scripts/ci/resolve_pypi_version.py "${{ steps.tier.outputs.tier }}" "${{ steps.tier.outputs.version }}"
+
+  build:
+    needs: guard
+    uses: ./.github/workflows/wheels.yml
+    with:
+      version: ${{ needs.guard.outputs.version }}
+
+  verify:
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - run: python scripts/ci/check_content_policy.py dist/*.whl dist/*.tar.gz
+      - run: python scripts/ci/verify_artifacts.py "${{ needs.guard.outputs.tier }}" dist/*.whl
+      - name: every artifact carries the resolved version
+        run: |
+          set -euo pipefail
+          for f in dist/*; do
+            case "$f" in *"crowdypy-${{ needs.guard.outputs.version }}"*) ;; *) echo "::error::$f is not ${{ needs.guard.outputs.version }}"; exit 1 ;; esac
+          done
+
+  pypi:
+    needs: [guard, verify]
+    if: vars.PYPI_PUBLISHING == 'enabled'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  readback:
+    needs: [guard, pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: download what PyPI serves and read its default origin
+        run: |
+          set -euo pipefail
+          v="${{ needs.guard.outputs.version }}"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if python -m pip download --no-deps --only-binary :all: --dest served "crowdypy==$v" \
+                 --platform manylinux_2_28_x86_64 --python-version 3.12 --implementation cp 2>/dev/null; then
+              break
+            fi
+            echo "PyPI does not serve crowdypy==$v yet (attempt $attempt); waiting"
+            sleep 20
+          done
+          ls served/*.whl
+          python scripts/ci/verify_artifacts.py "${{ needs.guard.outputs.tier }}" served/*.whl
+
+  github-release:
+    needs: [guard, verify]
+    if: always() && needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: release notes from MIGRATION.md
+        run: |
+          python - <<'PY'
+          import re
+          text = open("MIGRATION.md").read()
+          base = "${{ needs.guard.outputs.base }}".removeprefix("v")
+          m = re.search(rf"^## {re.escape(base)}\b.*?(?=^## |\Z)", text, re.M | re.S)
+          open("notes.md", "w").write((m.group(0) if m else f"CrowdyPy {base}") + "\n\nPyPI version: ${{ needs.guard.outputs.version }}\n")
+          PY
+      - name: create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          flags=(--title "CrowdyPy ${tag}" --notes-file notes.md --verify-tag)
+          if [ "${{ needs.guard.outputs.tier }}" = "prod" ]; then flags+=(--latest); else flags+=(--prerelease --latest=false); fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* "${flags[@]}"
+          fi
