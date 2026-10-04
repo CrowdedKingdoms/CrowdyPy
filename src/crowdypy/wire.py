@@ -1,0 +1,293 @@
+"""The public Replication API wire codec, from CrowdyCPP's native implementation.
+
+The replication client uses this codec internally without crossing into Python; this
+module exposes it for tools, tests and custom transports. Integers are little-endian,
+actor uuids are 32 ASCII octets, and the 64-character app-scoped token is used as-is as
+the 64-octet HMAC key (``HMAC-SHA256(token, prefix || token)``). See the public wire
+format and HMAC pages of the Replication API docs.
+
+Buffers may be any object exporting the buffer protocol (``bytes``, ``bytearray``,
+``memoryview``, numpy arrays); nothing is copied on the way in.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Sequence
+from enum import IntEnum
+from typing import Any, NamedTuple
+
+from crowdypy import _native
+from crowdypy.errors import CrowdyProtocolError
+
+_wire: Any = _native.wire
+
+__all__ = [
+    "HMAC_TAG_SIZE",
+    "LONG_SPATIAL_HEADER_SIZE",
+    "MAX_BUNDLE_MEMBERS",
+    "MAX_CHANNEL_PAYLOAD",
+    "MAX_DATAGRAM_SIZE",
+    "MAX_DISTANCE",
+    "MAX_LONG_SPATIAL_PAYLOAD",
+    "TOKEN_OCTETS",
+    "UUID_SIZE",
+    "ChannelNotification",
+    "DecayRate",
+    "ErrorCode",
+    "GenericError",
+    "LongSpatialMessage",
+    "MessageType",
+    "VoxelPayload",
+    "bundle",
+    "encode_channel_message",
+    "encode_event_payload",
+    "encode_long_spatial",
+    "encode_voxel_payload",
+    "parse_channel_notification",
+    "parse_datagram",
+    "parse_generic_error",
+    "parse_long_spatial",
+    "parse_voxel_payload",
+    "spatial_hmac",
+    "split_datagram",
+    "verify_command_reconnect",
+    "verify_long_spatial",
+    "verify_signed_bundle",
+]
+
+MAX_DATAGRAM_SIZE: int = _wire.MAX_DATAGRAM_SIZE
+MAX_LONG_SPATIAL_PAYLOAD: int = _wire.MAX_LONG_SPATIAL_PAYLOAD
+LONG_SPATIAL_HEADER_SIZE: int = _wire.LONG_SPATIAL_HEADER_SIZE
+UUID_SIZE: int = _wire.UUID_SIZE
+HMAC_TAG_SIZE: int = _wire.HMAC_TAG_SIZE
+TOKEN_OCTETS: int = _wire.TOKEN_OCTETS
+MAX_BUNDLE_MEMBERS: int = _wire.MAX_BUNDLE_MEMBERS
+MAX_CHANNEL_PAYLOAD: int = _wire.MAX_CHANNEL_PAYLOAD
+MAX_DISTANCE: int = _wire.MAX_DISTANCE
+
+
+class MessageType(IntEnum):
+    BAD_MESSAGE = 0
+    MESSAGE_BUNDLE = 2
+    GENERIC_ERROR = 3
+    CHANNEL_MESSAGE_REQUEST = 17
+    CHANNEL_MESSAGE_NOTIFICATION = 18
+    COMMAND_RECONNECT = 22
+    CLIENT_ACTOR_HEARTBEAT = 26
+    CLIENT_CAPABILITIES = 29
+    MESSAGE_BUNDLE_SIGNED = 30
+    ACTOR_UPDATE_REQUEST = 128
+    ACTOR_UPDATE_NOTIFICATION = 130
+    VOXEL_UPDATE_REQUEST = 131
+    VOXEL_UPDATE_NOTIFICATION = 133
+    CLIENT_AUDIO_PACKET = 134
+    CLIENT_AUDIO_NOTIFICATION = 135
+    CLIENT_TEXT_PACKET = 136
+    CLIENT_TEXT_NOTIFICATION = 137
+    CLIENT_EVENT_NOTIFICATION = 138
+    SERVER_EVENT_NOTIFICATION = 139
+    GENERIC_SPATIAL_1 = 140
+    SINGLE_ACTOR_MESSAGE = 142
+    CLIENT_VIDEO_PACKET = 143
+    CLIENT_VIDEO_NOTIFICATION = 144
+    ACTOR_LEFT_NOTIFICATION = 145
+
+
+class ErrorCode(IntEnum):
+    NO_ERROR = 0
+    UNKNOWN_ERROR = 1
+    INVALID_TOKEN = 5
+    APP_NOT_FOUND = 6
+    UNAUTHORIZED = 7
+    GAME_TOKEN_WRONG_SIZE = 13
+    INVALID_REQUEST = 15
+    INVALID_APP_ID = 18
+    USER_NOT_AUTHENTICATED = 20
+    TOKEN_EXPIRED = 32
+
+
+class DecayRate(IntEnum):
+    """Replication density across Chebyshev distance rings 1-8."""
+
+    NONE = 0
+    EXPONENTIAL = 1
+    LINEAR_50 = 2
+    LINEAR_25 = 3
+    LINEAR_10 = 4
+    LINEAR_5 = 5
+
+
+class LongSpatialMessage(NamedTuple):
+    type: int
+    app_id: int
+    chunk: tuple[int, int, int]
+    distance: int
+    decay: int
+    contains_auth: bool
+    uuid: bytes
+    payload: bytes
+    #: Server to client: the server's epoch millis. Client to server: the game token id.
+    epoch_or_token_id: int
+    sequence: int
+
+
+class ChannelNotification(NamedTuple):
+    channel_id: int
+    sender_uuid: bytes
+    payload: bytes
+    epoch_millis: int
+    sequence: int
+
+
+class GenericError(NamedTuple):
+    sequence: int
+    code: int
+
+
+class VoxelPayload(NamedTuple):
+    x: int
+    y: int
+    z: int
+    voxel_type: int
+    state: bytes
+
+
+def _call(fn: Any, *args: Any) -> Any:
+    try:
+        return fn(*args)
+    except _native.NativeError as exc:
+        raise CrowdyProtocolError(str(exc)) from exc
+
+
+def spatial_hmac(token: Any, prefix: Any) -> bytes:
+    """``HMAC-SHA256(token, prefix || token)``: the tag every signed message carries."""
+    result: bytes = _call(_wire.spatial_hmac, token, prefix)
+    return result
+
+
+def encode_long_spatial(
+    token: Any,
+    message_type: int,
+    app_id: int,
+    chunk: Sequence[int],
+    uuid: Any,
+    payload: Any = b"",
+    *,
+    distance: int = 0,
+    decay: int = DecayRate.NONE,
+    game_token_id: int,
+    sequence: int = 0,
+) -> bytes:
+    """Encode and sign one long-spatial message (header, payload, HMAC, token id, seq)."""
+    result: bytes = _call(
+        _wire.encode_long_spatial,
+        token,
+        int(message_type),
+        int(app_id),
+        int(chunk[0]),
+        int(chunk[1]),
+        int(chunk[2]),
+        int(distance),
+        int(decay),
+        uuid,
+        payload,
+        int(game_token_id),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
+def parse_long_spatial(datagram: Any) -> LongSpatialMessage:
+    """Parse one long-spatial message. Does NOT verify its HMAC (see verify_long_spatial)."""
+    t, app, cx, cy, cz, distance, decay, auth, uuid, payload, epoch, seq = _call(
+        _wire.parse_long_spatial, datagram
+    )
+    return LongSpatialMessage(
+        t, app, (cx, cy, cz), distance, decay, auth, uuid, payload, epoch, seq
+    )
+
+
+def verify_long_spatial(token: Any, datagram: Any) -> bool:
+    """True when a signed message's HMAC matches (an unsigned one verifies trivially)."""
+    return bool(_call(_wire.verify_long_spatial, token, datagram) == "Ok")
+
+
+def verify_signed_bundle(token: Any, datagram: Any) -> bool:
+    """True when a MESSAGE_BUNDLE_SIGNED's trailing HMAC matches."""
+    return bool(_call(_wire.verify_signed_bundle, token, datagram) == "Ok")
+
+
+def verify_command_reconnect(token: Any, datagram: Any) -> bool:
+    """True when a COMMAND_RECONNECT is genuine. Ignore one that is not."""
+    return bool(_call(_wire.verify_command_reconnect, token, datagram) == "Ok")
+
+
+def encode_channel_message(
+    token: Any, channel_id: int, uuid: Any, payload: Any, *, game_token_id: int, sequence: int = 0
+) -> bytes:
+    result: bytes = _call(
+        _wire.encode_channel_message,
+        token,
+        int(channel_id),
+        uuid,
+        payload,
+        int(game_token_id),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
+def parse_channel_notification(datagram: Any) -> ChannelNotification:
+    return ChannelNotification(*_call(_wire.parse_channel_notification, datagram))
+
+
+def parse_generic_error(datagram: Any) -> GenericError:
+    return GenericError(*_call(_wire.parse_generic_error, datagram))
+
+
+def encode_voxel_payload(x: int, y: int, z: int, voxel_type: int, state: Any = b"") -> bytes:
+    result: bytes = _call(_wire.encode_voxel_payload, x, y, z, voxel_type, state)
+    return result
+
+
+def parse_voxel_payload(payload: Any) -> VoxelPayload:
+    return VoxelPayload(*_call(_wire.parse_voxel_payload, payload))
+
+
+def encode_event_payload(event_type: int, state: Any = b"") -> bytes:
+    result: bytes = _call(_wire.encode_event_payload, event_type, state)
+    return result
+
+
+def bundle(messages: Sequence[Any]) -> bytes:
+    """Pack complete messages into one MESSAGE_BUNDLE datagram (a lone one goes unwrapped)."""
+    result: bytes = _call(_wire.bundle, list(messages))
+    return result
+
+
+def split_datagram(datagram: Any) -> list[bytes]:
+    """The messages in a datagram: each member of a bundle, or the datagram itself.
+
+    A MESSAGE_BUNDLE_SIGNED's trailing HMAC is stripped, not checked; verify it first.
+    """
+    result: list[bytes] = _call(_wire.split_datagram, datagram)
+    return result
+
+
+def parse_datagram(
+    datagram: Any,
+) -> Iterator[LongSpatialMessage | ChannelNotification | GenericError | bytes]:
+    """Every message in a datagram, parsed. Control frames are yielded as raw bytes."""
+    for member in split_datagram(datagram):
+        kind = member[0] if member else 0
+        if kind == MessageType.GENERIC_ERROR:
+            yield parse_generic_error(member)
+        elif kind == MessageType.CHANNEL_MESSAGE_NOTIFICATION:
+            yield parse_channel_notification(member)
+        elif kind & 0x80 or kind in (
+            MessageType.CLIENT_ACTOR_HEARTBEAT,
+            MessageType.CLIENT_CAPABILITIES,
+        ):
+            yield parse_long_spatial(member)
+        else:
+            yield member

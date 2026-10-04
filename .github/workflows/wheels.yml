@@ -1,0 +1,67 @@
+# Builds every distributable CrowdyPy artifact: one stable-ABI (cp312-abi3) wheel and one
+# free-threaded (cp314t) wheel per platform, plus the sdist. Called by ci.yml on every
+# push and pull request (so packaging is proven before anything is tagged) and by
+# release.yml with the tier version to stamp.
+#
+# Each wheel links its own static libcrypto (scripts/ci/build_openssl.sh, vcpkg on
+# Windows) and runs the unit suite against the installed wheel; abi3 wheels are audited
+# with abi3audit --strict (cibuildwheel's default).
+name: wheels
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "PEP 440 version to stamp into the build (release only; empty keeps pyproject's)"
+        type: string
+        default: ""
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wheels:
+    name: wheels (${{ matrix.os }}, ${{ matrix.archs }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, archs: x86_64 }
+          - { os: ubuntu-24.04-arm, archs: aarch64 }
+          - { os: macos-latest, archs: arm64 }
+          # Cross-built on Apple silicon; its tests would need Rosetta, so they are skipped.
+          - { os: macos-latest, archs: x86_64, test-skip: "*-macosx_x86_64" }
+          - { os: windows-latest, archs: AMD64 }
+    env:
+      CIBW_ARCHS: ${{ matrix.archs }}
+      CIBW_TEST_SKIP: ${{ matrix.test-skip || '' }}
+      CROWDYPY_OPENSSL_ARCH: ${{ matrix.archs }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Stamp the release version
+        if: inputs.version != ''
+        shell: bash
+        run: python scripts/ci/stamp_version.py "${{ inputs.version }}"
+      - uses: pypa/cibuildwheel@v4.2.1
+        with:
+          output-dir: wheelhouse
+          extras: uv
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.archs }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Stamp the release version
+        if: inputs.version != ''
+        run: python scripts/ci/stamp_version.py "${{ inputs.version }}"
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv build --sdist --out-dir dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error

@@ -1,0 +1,46 @@
+"""Public platform discovery (``client.platform``).
+
+No token needed. It tells a client where the shared game-api is, for apps published to
+the shared environment, before the client has a per-app endpoint; point a per-game
+client at ``sharedGameApiUrl`` / ``sharedGameApiWsUrl``.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from crowdypy._operation import inline_operation
+from crowdypy.domains._base import Domain
+
+__all__ = ["PlatformAPI"]
+
+PLATFORM_CONFIG = inline_operation(
+    "PlatformConfig",
+    "query",
+    "platformConfig",
+    """
+  query PlatformConfig {
+    platformConfig {
+      sharedGameApiUrl
+      sharedGameApiWsUrl
+      freeAppsPerOrg
+    }
+  }
+""",
+)
+
+#: Documents this module declares inline (CrowdyJS declares the same ones inline).
+INLINE_OPERATIONS = (PLATFORM_CONFIG,)
+
+
+class PlatformAPI(Domain):
+    """Public facts about the platform a client needs before it routes."""
+
+    async def config(self) -> dict[str, Any]:
+        """The shared game-api URLs and the free shared-app slots each org gets. Public.
+
+        ``sharedGameApiUrl`` and ``sharedGameApiWsUrl`` are ``None`` when the deployment has
+        no shared environment.
+        """
+        result: dict[str, Any] = await self._request(PLATFORM_CONFIG, {})
+        return result
