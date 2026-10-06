@@ -3,6 +3,21 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.5.1
+
+CrowdyJS 18.2.0 and CrowdyCPP 0.56.0. No API change; one behaviour fix.
+
+- **Chunk loads keep recorded voxel edits** (OI-2026-10-02-006). Since ck-api v2.33.0 every
+  voxel edit recorded for a chunk (a hub's or mod's `world.set_voxels`, `updateVoxel`, a
+  realtime voxel update) arrives only in the chunk's `voxelStates`, never in its `voxels`.
+  `ChunkStore.hydrate()` now applies each entry's voxel type at its voxel, also on a chunk
+  stored with `voxels: null`, and an entry without a state clears the hydrated state there.
+  `ensure_around()` no longer reloads a chunk it already holds when a bulk load around a new
+  center returns it again; prune the chunk to load it afresh. Turn on
+  `hydrate_voxel_states` to see hub and mod edits after a reload.
+- A state a local `set_voxel` gave a voxel is not cleared by a later hydration that says the
+  voxel has none: the native core keeps it until the next realtime update there.
+
 ## 0.5.0
 
 CrowdyJS 18.1.0 and CrowdyCPP 0.55.0. Additive, plus one refusal that is a security fix.

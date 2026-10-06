@@ -585,7 +585,11 @@ class ChunkStore:
     def ensure_around(self, center: Sequence[int | str], radius: int) -> None:
         """Load every stored chunk within ``radius`` (Chebyshev) of ``center`` in one request;
         a requested chunk the server has never stored is ``missing`` (and goes to
-        ``on_missing``, the worldgen hook, when configured)."""
+        ``on_missing``, the worldgen hook, when configured).
+
+        A chunk already loaded keeps what the store holds for it when a later bulk load
+        returns it again: its stored ``voxels`` carry none of the edits hydration and
+        realtime merges applied. Prune it to load it afresh."""
         middle = _coord(center)
         around = [
             (middle[0] + dx, middle[1] + dy, middle[2] + dz)
@@ -613,6 +617,10 @@ class ChunkStore:
                 raise
             for row in response.get("chunks") or []:
                 coord = _coord(row["coordinates"])
+                # The cube around a new center includes chunks loaded from an earlier one.
+                known = self._meta.get(coord)
+                if known is not None and known.load_state == "loaded":
+                    continue
                 returned.add(coord)
                 self._apply_server_chunk(coord, row.get("voxels"), row.get("chunkState"))
             for coord in wanted:
@@ -623,7 +631,13 @@ class ChunkStore:
                 self._when_not_busy(functools.partial(self.hydrate, coord))
 
     def hydrate(self, chunk: Sequence[int | str]) -> None:
-        """Load one chunk in full: voxels, chunk state and per-voxel states."""
+        """Load one chunk in full: voxels, chunk state and per-voxel states.
+
+        Each ``voxelStates`` entry goes over the dense grid: its voxel type at its voxel,
+        and its state (an entry without one clears the hydrated state there). Since
+        ck-api v2.33.0 every voxel edit recorded for a chunk (a hub's or mod's
+        ``world.set_voxels``, ``updateVoxel``, realtime voxel updates) arrives only that
+        way, so without hydration none of them shows after a reload."""
         coord = _coord(chunk)
         full = self._session.client.chunks.get(
             {"appId": self._session.app_id, "coordinates": _chunk_input(coord)}
@@ -631,17 +645,31 @@ class ChunkStore:
         if not full:
             self._mark_missing(coord)
             return
-        self._apply_server_chunk(coord, full.get("voxels"), full.get("chunkState"))
-        meta = self._meta[coord]
+        entries = []
         for entry in full.get("voxelStates") or []:
             voxel = entry["voxelCoord"]
-            if not all(0 <= int(voxel[axis]) < 16 for axis in ("x", "y", "z")):
+            if all(0 <= int(voxel[axis]) < 16 for axis in ("x", "y", "z")):
+                entries.append(
+                    (int(voxel["x"]) + int(voxel["y"]) * 16 + int(voxel["z"]) * 256, entry)
+                )
+        voxels = full.get("voxels")
+        if entries:
+            raw = decode_base64(voxels) if voxels else b""
+            # A chunk stored with `voxels: null` still carries its recorded edits.
+            grid = bytearray(raw) if len(raw) == CHUNK_VOLUME else bytearray(CHUNK_VOLUME)
+            for index, entry in entries:
+                grid[index] = int(entry["voxelType"]) & 0xFF
+            voxels = encode_base64(bytes(grid))
+        self._apply_server_chunk(coord, voxels, full.get("chunkState"))
+        meta = self._meta[coord]
+        for index, entry in entries:
+            if not entry.get("state"):
+                meta.hydrated_states.pop(index, None)
                 continue
-            if entry.get("state"):
-                with contextlib.suppress(Exception):
-                    meta.hydrated_states[voxel["x"] + voxel["y"] * 16 + voxel["z"] * 256] = (
-                        self._voxel_codec.decode(decode_base64(entry["state"]))
-                    )
+            with contextlib.suppress(Exception):
+                meta.hydrated_states[index] = self._voxel_codec.decode(
+                    decode_base64(entry["state"])
+                )
         meta.hydrated = True
         self._touch(meta)
 
