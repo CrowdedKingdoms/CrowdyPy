@@ -11,11 +11,13 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.5.0: open grids, and the ck-exec gateway check (CrowdyJS 18.1.0, CrowdyCPP 0.55.0).**
-- `client.exec.connect()` sends the connect token only to a gateway on the game API's estate
-  (or the release's default origin's); any other gateway is refused before it is dialed. A
-  gateway that refuses the token is reported as `Denied`, with its reason.
-- `game_apps.open_permissions()` and `set_open_permissions()`: grids open to every player.
+**v0.5.1: chunk loads keep recorded voxel edits (CrowdyJS 18.2.0, CrowdyCPP 0.56.0).**
+- `ChunkStore.hydrate()` puts every recorded voxel edit (`voxelStates`: a hub's or mod's
+  `world.set_voxels`, `updateVoxel`, realtime updates) on the grid, and a later
+  `ensure_around()` keeps a chunk it already loaded instead of reloading its bare voxels.
+- 0.5.0 brought the ck-exec gateway check (`client.exec.connect()` sends the connect token
+  only to a gateway on the game API's estate, and reports a refusal as `Denied`) and open
+  grids (`game_apps.open_permissions()` and `set_open_permissions()`).
 - 0.4 brought the headless Crowdy Studio (`crowdypy.studio`), player-host observation
   (`crowdypy.player_host`), the roots CrowdyCPP covers beyond CrowdyJS, and the strict parity
   gate ([`docs/parity-matrix.md`](docs/parity-matrix.md) has no gaps); 0.3.0 the World Stores,

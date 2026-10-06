@@ -62,11 +62,27 @@ struct ChunkWriteBackFailure {
   graphql::GraphQLOutcome error;
 };
 
+/// One `voxelStates` entry of a stored chunk: a voxel's type and its state. Since ck-api
+/// v2.33.0 the entries also carry every voxel edit recorded for the chunk (a hub's or mod's
+/// `world.set_voxels`, `updateVoxel`, a realtime voxel update), none of which is in its dense
+/// `voxels`.
+struct StoredVoxelState {
+  /// Within-chunk voxel coordinates (0-15); an entry outside them is ignored.
+  int x = 0;
+  int y = 0;
+  int z = 0;
+  std::int16_t voxelType = 0;
+  /// Empty when the voxel has no state.
+  std::vector<std::uint8_t> state;
+};
+
 /// One stored chunk, as a chunk source reports it.
 struct StoredChunk {
   ChunkCoord coord{};
   /// Dense 16^3 voxel types (kChunkVolume bytes); any other size is ignored.
   std::vector<std::uint8_t> voxels;
+  /// Applied over `voxels` on load: each entry's type at its voxel, and its state.
+  std::vector<StoredVoxelState> voxelStates;
 };
 
 /// Where a ChunkStore hydrates from and writes back to. The Game API's chunks
@@ -76,8 +92,9 @@ struct StoredChunk {
 class IChunkSource {
  public:
   virtual ~IChunkSource() = default;
-  /// Every stored chunk within `distance` (Chebyshev, 1-8) of `center`. May
-  /// throw; the exception surfaces from ensureAround().
+  /// Every stored chunk within `distance` (Chebyshev, 1-8) of `center`, with its
+  /// `voxelStates`: a source that leaves them out loses every edit a hub or mod
+  /// made there. May throw; the exception surfaces from ensureAround().
   virtual std::vector<StoredChunk> chunksAround(const std::string& appId,
                                                 const ChunkCoord& center, int distance) = 0;
   /// Persist one chunk's voxels. The outcome classifies a failure exactly as a
@@ -132,8 +149,11 @@ class ChunkStore {
                    std::move(options)) {}
 
   /// Load every stored chunk within `distance` of `center` from the durable
-  /// store (one round trip). Coordinates already cached are refreshed. Does
-  /// nothing without a durable store; the source's errors propagate.
+  /// store (one round trip). Each chunk's `voxelStates` go over its dense grid:
+  /// an entry's type at its voxel, and its state (an entry without one clears
+  /// the cached state there). Every voxel edit recorded for a chunk arrives only
+  /// that way. Coordinates already cached are refreshed. Does nothing without a
+  /// durable store; the source's errors propagate.
   std::size_t ensureAround(const ChunkCoord& center, int distance);
 
   /// Look up a cached chunk (nullptr when absent).

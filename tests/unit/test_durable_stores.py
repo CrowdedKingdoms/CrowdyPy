@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from crowdypy.client import AsyncCrowdyClient
+from crowdypy.codecs import json_codec
 from crowdypy.replication import Assignment, AsyncReplicationConnection, TokenMaterial
 from crowdypy.stores import WorldSessionCore, create_world_session
 from crowdypy.utils import decode_base64, encode_base64
@@ -197,4 +198,79 @@ async def test_chunks_hydrate_by_distance_and_write_back_with_refusals(setup: An
     failed = await session.chunks.flush()
     assert [(f.coord, f.reason, f.attempts) for f in failed] == [((9, 9, 9), "refused", 1)]
     assert failures == failed
+    session.dispose()
+
+
+def chunk_row(voxels: bytes | None, voxel_states: list[Any] | None = None) -> dict[str, Any]:
+    return {
+        "coordinates": {"x": "0", "y": "0", "z": "0"},
+        "voxels": encode_base64(voxels) if voxels is not None else None,
+        "voxelStates": voxel_states,
+    }
+
+
+def recorded(x: int, y: int, z: int, voxel_type: int, state: Any = None) -> dict[str, Any]:
+    return {
+        "voxelCoord": {"x": x, "y": y, "z": z},
+        "voxelType": voxel_type,
+        "state": encode_base64(json.dumps(state).encode()) if state is not None else None,
+    }
+
+
+async def test_a_later_bulk_load_keeps_the_recorded_edits_of_a_chunk_it_already_loaded(
+    setup: Any,
+) -> None:
+    # Since ck-api v2.33.0 a hub's world.set_voxels, updateVoxel and realtime voxel updates
+    # come back only as voxelStates entries: the stored voxels never hold them.
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [chunk_row(bytes(4096))]}
+    api.roots["getChunk"] = chunk_row(bytes(4096), [recorded(10, 0, 8, 3)])
+    session = WorldSessionCore(
+        client,
+        7,
+        connection,
+        chunk_options={"hydrate_voxel_states": True, "write_back_interval_ms": None},
+    )
+    at = (0, 0, 0)
+
+    # The cube around (0,0,-1) loads and hydrates 0:0:0.
+    await session.chunks.ensure_around((0, 0, -1), 1)
+    assert session.chunks.voxel_type_at(at, 10, 0, 8) == 3
+
+    # Moving to (0,0,0) asks for its cube, which returns 0:0:0 again.
+    await session.chunks.ensure_around(at, 1)
+    assert len(api.calls("getChunksByDistance")) == 2
+    assert session.chunks.voxel_type_at(at, 10, 0, 8) == 3, "the hydrated edit stays"
+    assert len(api.calls("getChunk")) == 1, "a hydrated chunk is not fetched again"
+    session.dispose()
+
+
+async def test_hydration_puts_recorded_edits_on_a_chunk_stored_without_voxels(setup: Any) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [chunk_row(None)]}
+    api.roots["getChunk"] = [
+        chunk_row(None, [recorded(1, 1, 1, 4, {"placedBy": "hub"}), recorded(2, 2, 2, 0)]),
+        # Later the server says the block at (1,1,1) was mined: type 0 and no state.
+        chunk_row(None, [recorded(1, 1, 1, 0)]),
+    ]
+    session = WorldSessionCore(
+        client,
+        7,
+        connection,
+        chunk_options={
+            "voxel_state_codec": json_codec(),
+            "hydrate_voxel_states": True,
+            "write_back_interval_ms": None,
+        },
+    )
+    at = (0, 0, 0)
+
+    await session.chunks.ensure_around(at, 1)
+    assert session.chunks.voxels(at) is not None, "the entries made a grid"
+    assert session.chunks.voxel_type_at(at, 1, 1, 1) == 4
+    assert session.chunks.voxel_state_at(at, 1, 1, 1) == {"placedBy": "hub"}
+
+    await session.chunks.hydrate(at)
+    assert session.chunks.voxel_type_at(at, 1, 1, 1) == 0
+    assert session.chunks.voxel_state_at(at, 1, 1, 1) is None, "the state goes too"
     session.dispose()
