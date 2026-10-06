@@ -15,7 +15,11 @@
 namespace crowdy::domains {
 
 /// client.chunks() — durable chunk storage. `voxels` blobs are base64 4096-
-/// byte dense grids (index x + y*16 + z*256).
+/// byte dense grids (index x + y*16 + z*256). `get` and `byDistance` also
+/// select each chunk's `voxelStates`: the states stored with it and every voxel
+/// edit recorded for it (a hub's or mod's `world.set_voxels`, `updateVoxel`,
+/// realtime voxel updates), which `voxels` does not hold. Apply each entry's
+/// `voxelType` over the grid, as ChunkStore does.
 class ChunksAPI : public DomainBase {
  public:
   using DomainBase::DomainBase;
@@ -53,7 +57,7 @@ class ChunksAPI : public DomainBase {
   }
 
   /// Bulk-load every stored chunk within `maxDistance` of `center`
-  /// (Chebyshev, 1-8).
+  /// (Chebyshev, 1-8), with their `voxelStates`.
   graphql::Json byDistance(std::string_view appId, const ChunkRef& center, int maxDistance) const {
     graphql::JVal vars;
     vars["input"]["appId"] = appId;
