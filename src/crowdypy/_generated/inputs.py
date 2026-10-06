@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 38c490a70f0bd92977fef5867e0b9e14a10d9467a2008dcd2c02bbc96878d8d3
+schema.gql sha256: f00952f685420f6c0f4bf58d56debda29aea8cce9b877754393611393ff63db1
 """
 
 from __future__ import annotations
@@ -1093,7 +1093,7 @@ class UpdateVoxelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
 
 
 class VoxelCoordinatesInput(msgspec.Struct, kw_only=True, omit_defaults=True):
-    'Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). Signed 16-bit integers; in-bounds positions are 0-15 on each axis for a 16x16x16 chunk.'
+    "Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). Each coordinate is 0-15 on a 16x16x16 chunk, and the voxel writes (updateVoxel, sendVoxelUpdate, updateChunk's voxelStates) refuse any other value. Teleport's voxelAddress, which is not a write, takes any signed 16-bit value."
     x: int
     y: int
     z: int

@@ -29,6 +29,18 @@ class ChunksApiSource final : public IChunkSource {
                      chunkJson["coordinates"]["z"].asBigInt()};
       auto voxels = core::base64Decode(chunkJson["voxels"].asStringView());
       if (voxels) chunk.voxels.assign(voxels->begin(), voxels->end());
+      chunkJson["voxelStates"].forEach([&](graphql::Json entry) {
+        StoredVoxelState voxel;
+        voxel.x = static_cast<int>(entry["voxelCoord"]["x"].asInt64(-1));
+        voxel.y = static_cast<int>(entry["voxelCoord"]["y"].asInt64(-1));
+        voxel.z = static_cast<int>(entry["voxelCoord"]["z"].asInt64(-1));
+        voxel.voxelType = static_cast<std::int16_t>(entry["voxelType"].asInt64());
+        // A state that is not base64 is dropped; the type still applies.
+        if (auto state = core::base64Decode(entry["state"].asStringView())) {
+          voxel.state.assign(state->begin(), state->end());
+        }
+        chunk.voxelStates.push_back(std::move(voxel));
+      });
       out.push_back(std::move(chunk));
     });
     return out;
@@ -244,6 +256,18 @@ std::size_t ChunkStore::ensureAround(const ChunkCoord& center, int distance) {
     c.hydratedAtMs = nowMs;
     if (chunk.voxels.size() == c.voxels.size()) {
       std::memcpy(c.voxels.data(), chunk.voxels.data(), c.voxels.size());
+    }
+    for (const StoredVoxelState& entry : chunk.voxelStates) {
+      if (entry.x < 0 || entry.x >= kChunkSize || entry.y < 0 || entry.y >= kChunkSize ||
+          entry.z < 0 || entry.z >= kChunkSize)
+        continue;
+      const int index = voxelIndex(entry.x, entry.y, entry.z);
+      c.voxels[static_cast<std::size_t>(index)] = static_cast<std::uint8_t>(entry.voxelType);
+      if (entry.state.empty()) {
+        c.voxelStates.erase(index);
+      } else {
+        c.voxelStates[index] = VoxelState{entry.voxelType, entry.state};
+      }
     }
     touch(c);
     ++hydrated;
