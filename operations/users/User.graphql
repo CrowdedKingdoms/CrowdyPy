@@ -1,0 +1,17 @@
+query User($id: BigInt!) {
+  user(id: $id) {
+    userId
+    email
+    gamertag
+    disambiguation
+    state
+    isConfirmed
+    createdAt
+    grantEarlyAccess
+    grantEarlyAccessOverride
+    orgId
+    externalId
+    userType
+    isSuperAdmin
+  }
+}

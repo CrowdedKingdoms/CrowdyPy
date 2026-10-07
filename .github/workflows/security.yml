@@ -59,12 +59,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions]
+        language: [actions, python, c-cpp]
     steps:
       - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
+          # No compile step: CodeQL extracts the C++ glue (native/) and the vendored
+          # CrowdyCPP sources without building them.
+          build-mode: none
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}

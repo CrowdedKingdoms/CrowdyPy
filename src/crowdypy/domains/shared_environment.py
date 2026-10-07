@@ -1,0 +1,247 @@
+"""Shared-environment publishing, spend caps and auto-billing (``client.shared_environment``).
+
+Publishing puts an app on the shared game-api; its runtime is then gated on the org's
+wallet and the app's spend caps.
+
+:meth:`SharedEnvironmentAPI.plans` is public. Everything else needs an identity session:
+the reads need membership of the org (``view_billing`` for auto-billing and payment
+methods), publishing needs ``manage_apps``, and the spend-cap, reservation, auto-billing
+and subscription mutations need the org's ``manage_billing``. Amounts are cents unless a
+field says otherwise. Reusing an idempotency key with different arguments is
+``IDEMPOTENCY_CONFLICT``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from msgspec import UNSET, UnsetType
+
+from crowdypy._generated import inputs
+from crowdypy._generated import operations as ops
+from crowdypy._generated.enums import PaymentProvider
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+__all__ = ["SharedEnvironmentAPI"]
+
+
+def _optional_bigint(value: str | int | None) -> str | None:
+    return bigint(value) if value is not None else None
+
+
+class SharedEnvironmentAPI(Domain):
+    """Publishing apps to the shared game-api and paying for what they use."""
+
+    async def plans(self) -> list[dict[str, Any]]:
+        """The legacy catalog of paid shared app-slot plans. Public.
+
+        Deprecated: shared publishes are billed from the org wallet instead.
+        """
+        result: list[dict[str, Any]] = await self._request(ops.SHARED_ENV_PLANS, {})
+        return result
+
+    async def free_app_quota(self, org_id: str | int) -> dict[str, Any]:
+        """An org's free shared-app slots and how many are used. Needs org membership."""
+        result: dict[str, Any] = await self._request(
+            ops.ORG_FREE_APP_QUOTA, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def app_subscription(self, app_id: str | int) -> dict[str, Any] | None:
+        """An app's paid shared subscription, or ``None`` on the free quota.
+
+        Needs membership of the app's org.
+        """
+        result: dict[str, Any] | None = await self._request(
+            ops.APP_SHARED_SUBSCRIPTION, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def app_runtime_state(self, app_id: str | int) -> dict[str, Any]:
+        """An app's shared-environment runtime gate and its current hour and day usage.
+
+        ``runtimeDenialReason`` says why an app is not running. Needs membership of the
+        app's org.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.APP_RUNTIME_STATE, {"appId": bigint(app_id)}
+        )
+        return result
+
+    async def auto_billing(self, org_id: str | int) -> dict[str, Any]:
+        """An org's off-session auto-billing configuration. Needs ``view_billing``."""
+        result: dict[str, Any] = await self._request(
+            ops.ORG_AUTO_BILLING, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def payment_methods(self, org_id: str | int) -> list[dict[str, Any]]:
+        """An org's saved payment methods: brand, last four digits and status only.
+
+        Needs ``view_billing``.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.ORG_PAYMENT_METHODS, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def publish_app(
+        self,
+        app_id: str | int,
+        plan_id: str | int | None = None,
+        provider: PaymentProvider | str | None = None,
+        success_url: str | None = None,
+        cancel_url: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Publish an app to the shared game-api. Needs ``manage_apps`` on the app's org.
+
+        Free under the org's app-slot quota (``free`` is true); beyond it, publishing still
+        succeeds and usage is billed from the org wallet. Refused when this deployment has
+        no shared environment. ``plan_id``, ``provider``, ``success_url`` and
+        ``cancel_url`` are deprecated and ignored by the API.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.PUBLISH_APP_TO_SHARED,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "planId": _optional_bigint(plan_id),
+                    "provider": provider,
+                    "successUrl": success_url,
+                    "cancelUrl": cancel_url,
+                    "idempotencyKey": idempotency_key,
+                }
+            ),
+        )
+        return result
+
+    async def cancel_subscription(
+        self, app_id: str | int, idempotency_key: str | None = None
+    ) -> dict[str, Any]:
+        """Cancel an app's paid shared subscription. Needs ``manage_billing``.
+
+        The app loses its paid slot (typically at ``currentPeriodEnd``) and may be denied
+        runtime once the period lapses, unless a free slot covers it.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.CANCEL_SHARED_SUBSCRIPTION,
+            omit_none({"appId": bigint(app_id), "idempotencyKey": idempotency_key}),
+        )
+        return result
+
+    async def set_spend_caps(
+        self,
+        app_id: str | int,
+        hourly_limit_cents: str | int | None = None,
+        daily_limit_cents: str | int | None = None,
+    ) -> dict[str, Any]:
+        """Set an app's hourly and daily spend caps in cents. Needs ``manage_billing``.
+
+        Every call sets both: a cap left at ``None`` is cleared. Exceeding a cap denies the
+        app's runtime (``runtimeDenialReason`` is ``spend_cap``). Answers the re-evaluated
+        runtime state.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.SET_APP_SPEND_CAPS,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "hourlyLimitCents": _optional_bigint(hourly_limit_cents),
+                    "dailyLimitCents": _optional_bigint(daily_limit_cents),
+                }
+            ),
+        )
+        return result
+
+    async def set_reserved_throughput(
+        self,
+        input: inputs.SetAppReservedThroughputInput | Mapping[str, Any],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Reserve realtime (UDP) capacity for a shared app. Needs ``manage_billing``.
+
+        A reservation is a floor, not a ceiling: the platform keeps that much capacity in
+        service for the app, and traffic above it is metered like any other rather than
+        refused. It buys capacity, not volume: every byte is metered from the first, and
+        the monthly fee comes on top. It does not lift the free tier's ~1 MB/s shaping;
+        funding the wallet or :meth:`set_auto_billing` does. Billed monthly whether used or
+        not; upgrades are prorated and lowering or clearing charges nothing.
+
+        ``reservedBytesPerSec`` is bytes per second (1,000,000 is 1 MB/s; 0 clears it). It
+        reserves the realtime dimension only: read both back from the app's
+        ``reservedUdpBytesPerSec`` and ``reservedGraphqlOpsPerSec``. With
+        ``idempotency_key`` a retry returns the first result instead of charging again.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.SET_APP_RESERVED_THROUGHPUT,
+            omit_none({"input": input, "idempotencyKey": idempotency_key}),
+        )
+        return result
+
+    async def set_auto_billing(
+        self,
+        org_id: str | int,
+        enabled: bool,
+        limit_cents: str | int | UnsetType | None = UNSET,
+        recharge_amount_cents: str | int | None = None,
+        low_water_threshold_cents: str | int | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Turn off-session auto-billing on or off for an org and set its amounts (cents).
+
+        When on and the wallet falls to the low-water threshold, the saved payment method
+        (:meth:`setup_payment_method`, required before enabling) is charged the recharge
+        amount. ``limit_cents`` caps what is auto-billed per period: leave it out to keep
+        the current cap, or pass ``None`` to remove it (no limit). ``recharge_amount_cents``
+        (2,000 at first) and ``low_water_threshold_cents`` keep their current values when
+        left at ``None``; the recharge must exceed the threshold. Needs ``manage_billing``.
+        """
+        variables = omit_none(
+            {
+                "orgId": bigint(org_id),
+                "enabled": enabled,
+                "rechargeAmountCents": _optional_bigint(recharge_amount_cents),
+                "lowWaterThresholdCents": _optional_bigint(low_water_threshold_cents),
+                "idempotencyKey": idempotency_key,
+            }
+        )
+        if limit_cents is not UNSET:
+            variables["limitCents"] = _optional_bigint(limit_cents)
+        result: dict[str, Any] = await self._request(ops.SET_AUTO_BILLING, variables)
+        return result
+
+    async def setup_payment_method(
+        self, org_id: str | int, idempotency_key: str | None = None
+    ) -> dict[str, Any]:
+        """Begin saving a card for auto-billing; nothing is charged. Needs ``manage_billing``.
+
+        Answers a Stripe SetupIntent client secret for the browser to confirm.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.SETUP_SHARED_PAYMENT_METHOD,
+            omit_none({"orgId": bigint(org_id), "idempotencyKey": idempotency_key}),
+        )
+        return result
+
+    async def remove_payment_method(
+        self, org_id: str | int, payment_method_id: str | int, idempotency_key: str | None = None
+    ) -> bool:
+        """Remove a saved payment method from an org. Needs ``manage_billing``.
+
+        If it backed auto-billing, recharges fail until another is set up.
+        """
+        return bool(
+            await self._request(
+                ops.REMOVE_SHARED_PAYMENT_METHOD,
+                omit_none(
+                    {
+                        "orgId": bigint(org_id),
+                        "paymentMethodId": bigint(payment_method_id),
+                        "idempotencyKey": idempotency_key,
+                    }
+                ),
+            )
+        )

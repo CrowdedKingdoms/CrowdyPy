@@ -1,0 +1,193 @@
+fragment PlayerCodeListingFields on PlayerCodeListing {
+  listingId
+  appId
+  ownerKind
+  ownerRef
+  name
+  description
+  mediaJson
+  licenseMode
+  acquisitionMode
+  priceCents
+  rentIntervalDays
+  windowDays
+  unitBudget
+  status
+  createdAt
+}
+
+fragment PlayerCodeAcquisitionFields on PlayerCodeAcquisition {
+  acquisitionId
+  listingId
+  appId
+  mode
+  status
+  expiresAt
+  unitBudget
+  unitsConsumed
+  acquiredAt
+}
+
+fragment GridClaimRequestFields on GridClaimRequest {
+  requestId
+  appId
+  gridId
+  requesterUserId
+  status
+  createdAt
+}
+
+# ---- Game API: browse / publish / acquire / install / consent -----------------
+
+# ---- Game API: D4 grid claim flows --------------------------------------------
+
+query MarketplaceGridClaimPolicy($appId: BigInt!) {
+  gridClaimPolicy(appId: $appId)
+}
+
+query MarketplaceGridClaimRequests($appId: BigInt!) {
+  gridClaimRequests(appId: $appId) {
+    ...GridClaimRequestFields
+  }
+}
+
+mutation MarketplaceClaimGridOwnership($appId: BigInt!, $gridId: BigInt!) {
+  claimGridOwnership(appId: $appId, gridId: $gridId) {
+    policy
+    ownershipAssigned
+    claimRequestId
+  }
+}
+
+mutation MarketplaceClaimGridChunk(
+  $appId: BigInt!
+  $chunk: ChunkCoordinatesInput!
+) {
+  claimGridChunk(appId: $appId, chunk: $chunk) {
+    gridId
+    lowChunk {
+      x
+      y
+      z
+    }
+    highChunk {
+      x
+      y
+      z
+    }
+    policy
+    ownership {
+      gridOwnershipId
+      ownerKind
+      ownerRef
+      tenure
+      acquiredVia
+      acquiredAt
+      expiresAt
+    }
+    moddable
+    effectivePermissionKeys
+  }
+}
+
+mutation MarketplaceReleaseClaimedGrid($appId: BigInt!, $gridId: BigInt!) {
+  releaseClaimedGrid(appId: $appId, gridId: $gridId) {
+    gridId
+    lowChunk {
+      x
+      y
+      z
+    }
+    highChunk {
+      x
+      y
+      z
+    }
+    policy
+    released
+  }
+}
+
+mutation MarketplaceDecideGridClaim(
+  $appId: BigInt!
+  $requestId: String!
+  $approve: Boolean!
+) {
+  decideGridClaim(appId: $appId, requestId: $requestId, approve: $approve) {
+    ...GridClaimRequestFields
+  }
+}
+
+mutation MarketplaceIssueGridClaimInvite(
+  $appId: BigInt!
+  $gridId: BigInt!
+  $inviteeUserId: BigInt!
+) {
+  issueGridClaimInvite(
+    appId: $appId
+    gridId: $gridId
+    inviteeUserId: $inviteeUserId
+  )
+}
+
+# ---- Management API: studio moderation / catalog administration ---------------
+
+query MarketplaceAdmissionQueue($appId: BigInt!) {
+  appCodeAdmissionQueue(appId: $appId) {
+    listing {
+      ...PlayerCodeListingFields
+    }
+    admissionState
+    admissionId
+    matchedSubjectKind
+  }
+}
+
+query MarketplaceAppListings($appId: BigInt!, $includeDelisted: Boolean) {
+  appPlayerCodeListings(appId: $appId, includeDelisted: $includeDelisted) {
+    ...PlayerCodeListingFields
+    updatedAt
+  }
+}
+
+query MarketplaceAppAcquisitions($appId: BigInt!) {
+  appPlayerCodeAcquisitions(appId: $appId) {
+    ...PlayerCodeAcquisitionFields
+    acquirerUserId
+    revokedAt
+  }
+}
+
+mutation MarketplaceTransferListing($input: TransferPlayerCodeListingInput!) {
+  transferPlayerCodeListing(input: $input) {
+    ...PlayerCodeListingFields
+    updatedAt
+  }
+}
+
+mutation MarketplaceSetListingStatus(
+  $appId: BigInt!
+  $listingId: String!
+  $status: PlayerCodeListingStatus!
+) {
+  setPlayerCodeListingStatus(
+    appId: $appId
+    listingId: $listingId
+    status: $status
+  ) {
+    ...PlayerCodeListingFields
+    updatedAt
+  }
+}
+
+mutation MarketplaceSetGridClaimPolicy(
+  $appId: BigInt!
+  $policy: GridClaimPolicy!
+  $approverUserIds: [BigInt!]
+) {
+  setAppGridClaimPolicy(
+    appId: $appId
+    policy: $policy
+    approverUserIds: $approverUserIds
+  )
+}

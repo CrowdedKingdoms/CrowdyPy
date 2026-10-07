@@ -1,0 +1,3 @@
+mutation LeaveTeam($groupId: BigInt!, $idempotencyKey: String) {
+  leaveTeam(groupId: $groupId, idempotencyKey: $idempotencyKey)
+}
