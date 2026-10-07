@@ -1,0 +1,206 @@
+{
+  "fixtureVersion": 1,
+  "crowdyJs": {
+    "version": "18.2.0",
+    "commit": "45238ee43ab1e78a8ebfe71331a0f55e17896001"
+  },
+  "storageKey": "ck:crowdy-studio:layout:v1",
+  "paneIds": [
+    "explorer",
+    "settings",
+    "agent",
+    "bottom"
+  ],
+  "defaults": {
+    "visible": {
+      "explorer": true,
+      "settings": false,
+      "agent": false,
+      "bottom": false
+    },
+    "sizes": {
+      "explorer": 230,
+      "settings": 280,
+      "agent": 340,
+      "bottom": 180
+    }
+  },
+  "ranges": {
+    "explorer": {
+      "min": 160,
+      "max": 480
+    },
+    "settings": {
+      "min": 220,
+      "max": 480
+    },
+    "agent": {
+      "min": 280,
+      "max": 620
+    },
+    "bottom": {
+      "min": 96,
+      "max": 480
+    }
+  },
+  "clamping": [
+    {
+      "pane": "explorer",
+      "input": "NaN",
+      "output": 230
+    },
+    {
+      "pane": "explorer",
+      "input": "-Infinity",
+      "output": 230
+    },
+    {
+      "pane": "explorer",
+      "input": "Infinity",
+      "output": 230
+    },
+    {
+      "pane": "explorer",
+      "input": -1000,
+      "output": 160
+    },
+    {
+      "pane": "explorer",
+      "input": 160.49,
+      "output": 160
+    },
+    {
+      "pane": "explorer",
+      "input": 160.5,
+      "output": 161
+    },
+    {
+      "pane": "explorer",
+      "input": 1480,
+      "output": 480
+    },
+    {
+      "pane": "settings",
+      "input": "NaN",
+      "output": 280
+    },
+    {
+      "pane": "settings",
+      "input": "-Infinity",
+      "output": 280
+    },
+    {
+      "pane": "settings",
+      "input": "Infinity",
+      "output": 280
+    },
+    {
+      "pane": "settings",
+      "input": -1000,
+      "output": 220
+    },
+    {
+      "pane": "settings",
+      "input": 220.49,
+      "output": 220
+    },
+    {
+      "pane": "settings",
+      "input": 220.5,
+      "output": 221
+    },
+    {
+      "pane": "settings",
+      "input": 1480,
+      "output": 480
+    },
+    {
+      "pane": "agent",
+      "input": "NaN",
+      "output": 340
+    },
+    {
+      "pane": "agent",
+      "input": "-Infinity",
+      "output": 340
+    },
+    {
+      "pane": "agent",
+      "input": "Infinity",
+      "output": 340
+    },
+    {
+      "pane": "agent",
+      "input": -1000,
+      "output": 280
+    },
+    {
+      "pane": "agent",
+      "input": 280.49,
+      "output": 280
+    },
+    {
+      "pane": "agent",
+      "input": 280.5,
+      "output": 281
+    },
+    {
+      "pane": "agent",
+      "input": 1620,
+      "output": 620
+    },
+    {
+      "pane": "bottom",
+      "input": "NaN",
+      "output": 180
+    },
+    {
+      "pane": "bottom",
+      "input": "-Infinity",
+      "output": 180
+    },
+    {
+      "pane": "bottom",
+      "input": "Infinity",
+      "output": 180
+    },
+    {
+      "pane": "bottom",
+      "input": -1000,
+      "output": 96
+    },
+    {
+      "pane": "bottom",
+      "input": 96.49,
+      "output": 96
+    },
+    {
+      "pane": "bottom",
+      "input": 96.5,
+      "output": 97
+    },
+    {
+      "pane": "bottom",
+      "input": 1480,
+      "output": 480
+    }
+  ],
+  "defaultPersistedJson": "{\"visible\":{\"explorer\":true,\"settings\":false,\"agent\":false,\"bottom\":false},\"sizes\":{\"explorer\":230,\"settings\":280,\"agent\":340,\"bottom\":180}}",
+  "scenario": {
+    "state": {
+      "visible": {
+        "explorer": false,
+        "settings": true,
+        "agent": false,
+        "bottom": false
+      },
+      "sizes": {
+        "explorer": 230,
+        "settings": 280,
+        "agent": 620,
+        "bottom": 112
+      }
+    },
+    "persistedJson": "{\"visible\":{\"explorer\":false,\"settings\":true,\"agent\":false,\"bottom\":false},\"sizes\":{\"explorer\":230,\"settings\":280,\"agent\":620,\"bottom\":112}}"
+  }
+}

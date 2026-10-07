@@ -1,0 +1,18 @@
+mutation CreateAccessTier($input: CreateAccessTierInput!) {
+  createAccessTier(input: $input) {
+    tierId
+    appId
+    name
+    tierOrder
+    isFree
+    isDefault
+    priceCents
+    currency
+    billingPeriod
+    description
+    permissionKeys
+    status
+    createdAt
+    updatedAt
+  }
+}

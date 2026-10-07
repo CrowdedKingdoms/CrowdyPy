@@ -1,0 +1,2199 @@
+{
+  "crowdyJs": {
+    "version": "18.2.0",
+    "commit": "45238ee43ab1e78a8ebfe71331a0f55e17896001"
+  },
+  "schemas": {
+    "GAME_COMMAND_RESULT_SCHEMA_V1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "status",
+        "commandKind"
+      ],
+      "maxProperties": 6,
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "minLength": 28,
+          "maxLength": 28,
+          "const": "crowdy.game-command-result/1"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 15,
+          "enum": [
+            "SUCCEEDED",
+            "FAILED",
+            "DENIED",
+            "OUTCOME_UNKNOWN"
+          ]
+        },
+        "commandKind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 18,
+          "enum": [
+            "MOVE",
+            "LOOK",
+            "STOP",
+            "INVENTORY_SELECT",
+            "INVENTORY_CONSUME",
+            "INVENTORY_TRANSFER",
+            "INTERACT",
+            "CRAFT",
+            "MOUNT",
+            "COMBAT_ATTACK",
+            "CHAT_SEND",
+            "TRAVEL_TELEPORT"
+          ]
+        },
+        "observationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "details": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 32,
+          "uniqueItems": false,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "value"
+            ],
+            "maxProperties": 2,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "value": {
+                "type": "string",
+                "minLength": 0,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message",
+            "retryable"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "enum": [
+                "AGENT_DISABLED",
+                "AGENT_UNAUTHENTICATED",
+                "AGENT_PERMISSION_DENIED",
+                "AGENT_SCOPE_DENIED",
+                "AGENT_CONTEXT_CHANGED",
+                "AGENT_CONTEXT_STALE",
+                "AGENT_SESSION_NOT_FOUND",
+                "AGENT_SESSION_CLOSED",
+                "AGENT_RUN_ALREADY_ACTIVE",
+                "AGENT_RUN_NOT_ACTIVE",
+                "AGENT_CANCELLED",
+                "AGENT_PREEMPTED",
+                "AGENT_OPERATOR_KILLED",
+                "AGENT_DISCONNECTED",
+                "AGENT_CLIENT_REATTACHED",
+                "AGENT_CLIENT_EPOCH_STALE",
+                "AGENT_EVENT_CURSOR_INVALID",
+                "AGENT_EVENT_GAP",
+                "AGENT_MODEL_NOT_ALLOWED",
+                "AGENT_PROVIDER_POLICY_UNSATISFIED",
+                "AGENT_PROVIDER_UNAVAILABLE",
+                "AGENT_PROVIDER_OUTPUT_INVALID",
+                "AGENT_PROVIDER_USAGE_UNAVAILABLE",
+                "AGENT_BUDGET_EXHAUSTED",
+                "AGENT_QUOTA_EXHAUSTED",
+                "AGENT_RATE_LIMITED",
+                "AGENT_TOOL_UNKNOWN",
+                "AGENT_TOOL_VERSION_UNSUPPORTED",
+                "AGENT_TOOL_INPUT_INVALID",
+                "AGENT_TOOL_OUTPUT_INVALID",
+                "AGENT_TOOL_DESCRIPTOR_INVALID",
+                "AGENT_TOOL_FAILED",
+                "AGENT_TOOL_TIMEOUT",
+                "AGENT_TOOL_OUTCOME_UNKNOWN",
+                "AGENT_HOST_UNAVAILABLE",
+                "AGENT_HOST_CAPABILITY_CHANGED",
+                "AGENT_OBSERVATION_STALE",
+                "AGENT_CONTROL_TARGET_CHANGED",
+                "AGENT_PARALLEL_TOOL_CALLS_UNSUPPORTED",
+                "AGENT_APPROVAL_REQUIRED",
+                "AGENT_APPROVAL_MISMATCH",
+                "AGENT_APPROVAL_EXPIRED",
+                "AGENT_APPROVAL_DENIED",
+                "AGENT_APPROVAL_REVOKED",
+                "AGENT_LEASE_REQUIRED",
+                "AGENT_LEASE_EXPIRED",
+                "AGENT_LEASE_REVOKED",
+                "AGENT_LEASE_SCOPE_MISSING",
+                "AGENT_IDEMPOTENCY_CONFLICT",
+                "AGENT_CHECKPOINT_NOT_FOUND",
+                "CROWDY_STUDIO_REVISION_CONFLICT"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "remediation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requiredScope": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        }
+      }
+    },
+    "GAME_COMMAND_SCHEMAS_V1": {
+      "MOVE": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "direction",
+          "intensity",
+          "durationMs"
+        ],
+        "maxProperties": 7,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4,
+            "enum": [
+              "MOVE"
+            ],
+            "const": "MOVE"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "direction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8,
+            "enum": [
+              "FORWARD",
+              "BACKWARD",
+              "LEFT",
+              "RIGHT",
+              "UP",
+              "DOWN"
+            ]
+          },
+          "intensity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 2000
+          }
+        }
+      },
+      "LOOK": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "deltaYaw",
+          "deltaPitch"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4,
+            "enum": [
+              "LOOK"
+            ],
+            "const": "LOOK"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "deltaYaw": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "deltaPitch": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          }
+        }
+      },
+      "STOP": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "maxProperties": 1,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4,
+            "enum": [
+              "STOP"
+            ],
+            "const": "STOP"
+          }
+        }
+      },
+      "INVENTORY_SELECT": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "slot"
+        ],
+        "maxProperties": 5,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16,
+            "enum": [
+              "INVENTORY_SELECT"
+            ],
+            "const": "INVENTORY_SELECT"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      },
+      "INVENTORY_CONSUME": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "slot",
+          "quantity"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 17,
+            "enum": [
+              "INVENTORY_CONSUME"
+            ],
+            "const": "INVENTORY_CONSUME"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        }
+      },
+      "INVENTORY_TRANSFER": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "direction",
+          "slot",
+          "quantity",
+          "containerRef"
+        ],
+        "maxProperties": 8,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 18,
+            "enum": [
+              "INVENTORY_TRANSFER"
+            ],
+            "const": "INVENTORY_TRANSFER"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "direction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 14,
+            "enum": [
+              "TO_CONTAINER",
+              "FROM_CONTAINER"
+            ]
+          },
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "containerRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "INTERACT": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "action",
+          "targetRef"
+        ],
+        "maxProperties": 7,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8,
+            "enum": [
+              "INTERACT"
+            ],
+            "const": "INTERACT"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8,
+            "enum": [
+              "MINE",
+              "PLACE",
+              "USE",
+              "FISH",
+              "NPC_TALK"
+            ]
+          },
+          "targetRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "inventorySlot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      },
+      "CRAFT": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "recipeId",
+          "quantity"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5,
+            "enum": [
+              "CRAFT"
+            ],
+            "const": "CRAFT"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "recipeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        }
+      },
+      "MOUNT": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "action"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5,
+            "enum": [
+              "MOUNT"
+            ],
+            "const": "MOUNT"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8,
+            "enum": [
+              "MOUNT",
+              "DISMOUNT"
+            ]
+          },
+          "mountRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "COMBAT_ATTACK": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "targetRef",
+          "attack"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 13,
+            "enum": [
+              "COMBAT_ATTACK"
+            ],
+            "const": "COMBAT_ATTACK"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "targetRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "attack": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 9,
+            "enum": [
+              "PRIMARY",
+              "SECONDARY"
+            ]
+          }
+        }
+      },
+      "CHAT_SEND": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "channel",
+          "text"
+        ],
+        "maxProperties": 6,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 9,
+            "enum": [
+              "CHAT_SEND"
+            ],
+            "const": "CHAT_SEND"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "channel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5,
+            "enum": [
+              "LOCAL",
+              "GROUP"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          }
+        }
+      },
+      "TRAVEL_TELEPORT": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "observationId",
+          "capabilityRevision",
+          "controlledEntityId",
+          "destinationRef"
+        ],
+        "maxProperties": 5,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 15,
+            "enum": [
+              "TRAVEL_TELEPORT"
+            ],
+            "const": "TRAVEL_TELEPORT"
+          },
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capabilityRevision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "controlledEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "destinationRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "GAME_COMMAND_SCHEMA_V1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "direction",
+            "intensity",
+            "durationMs"
+          ],
+          "maxProperties": 7,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4,
+              "enum": [
+                "MOVE"
+              ],
+              "const": "MOVE"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "direction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "enum": [
+                "FORWARD",
+                "BACKWARD",
+                "LEFT",
+                "RIGHT",
+                "UP",
+                "DOWN"
+              ]
+            },
+            "intensity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 2000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "deltaYaw",
+            "deltaPitch"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4,
+              "enum": [
+                "LOOK"
+              ],
+              "const": "LOOK"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "deltaYaw": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "deltaPitch": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "maxProperties": 1,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4,
+              "enum": [
+                "STOP"
+              ],
+              "const": "STOP"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "slot"
+          ],
+          "maxProperties": 5,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16,
+              "enum": [
+                "INVENTORY_SELECT"
+              ],
+              "const": "INVENTORY_SELECT"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "slot",
+            "quantity"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 17,
+              "enum": [
+                "INVENTORY_CONSUME"
+              ],
+              "const": "INVENTORY_CONSUME"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "direction",
+            "slot",
+            "quantity",
+            "containerRef"
+          ],
+          "maxProperties": 8,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 18,
+              "enum": [
+                "INVENTORY_TRANSFER"
+              ],
+              "const": "INVENTORY_TRANSFER"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "direction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 14,
+              "enum": [
+                "TO_CONTAINER",
+                "FROM_CONTAINER"
+              ]
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "containerRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "action",
+            "targetRef"
+          ],
+          "maxProperties": 7,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "enum": [
+                "INTERACT"
+              ],
+              "const": "INTERACT"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "action": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "enum": [
+                "MINE",
+                "PLACE",
+                "USE",
+                "FISH",
+                "NPC_TALK"
+              ]
+            },
+            "targetRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "inventorySlot": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "recipeId",
+            "quantity"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5,
+              "enum": [
+                "CRAFT"
+              ],
+              "const": "CRAFT"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "recipeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "action"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5,
+              "enum": [
+                "MOUNT"
+              ],
+              "const": "MOUNT"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "action": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "enum": [
+                "MOUNT",
+                "DISMOUNT"
+              ]
+            },
+            "mountRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "targetRef",
+            "attack"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 13,
+              "enum": [
+                "COMBAT_ATTACK"
+              ],
+              "const": "COMBAT_ATTACK"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "targetRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "attack": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 9,
+              "enum": [
+                "PRIMARY",
+                "SECONDARY"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "channel",
+            "text"
+          ],
+          "maxProperties": 6,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 9,
+              "enum": [
+                "CHAT_SEND"
+              ],
+              "const": "CHAT_SEND"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "channel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5,
+              "enum": [
+                "LOCAL",
+                "GROUP"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 280
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "observationId",
+            "capabilityRevision",
+            "controlledEntityId",
+            "destinationRef"
+          ],
+          "maxProperties": 5,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 15,
+              "enum": [
+                "TRAVEL_TELEPORT"
+              ],
+              "const": "TRAVEL_TELEPORT"
+            },
+            "observationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "capabilityRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "controlledEntityId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "destinationRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        }
+      ]
+    },
+    "GAME_OBSERVATION_SCHEMA_V1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "observationId",
+        "capabilityRevision",
+        "controlledEntityId",
+        "observedAt",
+        "expiresAt",
+        "player",
+        "controlledEntity",
+        "nearbyActors",
+        "nearbyVoxels",
+        "inputState"
+      ],
+      "maxProperties": 14,
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "minLength": 25,
+          "maxLength": 25,
+          "const": "crowdy.game-observation/1"
+        },
+        "observationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "capabilityRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "controlledEntityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "observedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "format": "date-time"
+        },
+        "player": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "position",
+            "velocity",
+            "look",
+            "health",
+            "alive"
+          ],
+          "maxProperties": 5,
+          "properties": {
+            "position": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "velocity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "look": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "yaw",
+                "pitch"
+              ],
+              "maxProperties": 2,
+              "properties": {
+                "yaw": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "pitch": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "health": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 48,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+            },
+            "alive": {
+              "type": "boolean"
+            }
+          }
+        },
+        "controlledEntity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "position",
+            "velocity"
+          ],
+          "maxProperties": 3,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 7,
+              "enum": [
+                "PLAYER",
+                "MOUNT",
+                "VEHICLE"
+              ]
+            },
+            "position": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "velocity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            }
+          }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "targetId",
+            "kind",
+            "distance"
+          ],
+          "maxProperties": 3,
+          "properties": {
+            "targetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6,
+              "enum": [
+                "ACTOR",
+                "VOXEL",
+                "OBJECT",
+                "NONE"
+              ]
+            },
+            "distance": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 48,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+            }
+          }
+        },
+        "inventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "selectedSlot",
+            "slots",
+            "craftableRecipeIds"
+          ],
+          "maxProperties": 3,
+          "properties": {
+            "selectedSlot": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "slots": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 256,
+              "uniqueItems": false,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "slot",
+                  "itemId",
+                  "quantity",
+                  "usable"
+                ],
+                "maxProperties": 4,
+                "properties": {
+                  "slot": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  },
+                  "itemId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "usable": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "craftableRecipeIds": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gridRef",
+            "low",
+            "high",
+            "effectiveScopes"
+          ],
+          "maxProperties": 4,
+          "properties": {
+            "gridRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "low": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "high": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "y",
+                "z"
+              ],
+              "maxProperties": 3,
+              "properties": {
+                "x": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "y": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                },
+                "z": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                }
+              }
+            },
+            "effectiveScopes": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 13,
+                "enum": [
+                  "observe",
+                  "locomotion",
+                  "interact",
+                  "craft",
+                  "combat",
+                  "communicate",
+                  "travel",
+                  "grid",
+                  "trust_consent",
+                  "commerce"
+                ]
+              }
+            }
+          }
+        },
+        "nearbyActors": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": false,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actorId",
+              "kind",
+              "position",
+              "distance",
+              "disposition"
+            ],
+            "maxProperties": 7,
+            "properties": {
+              "actorId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 7,
+                "enum": [
+                  "PLAYER",
+                  "NPC",
+                  "MOB",
+                  "OBJECT",
+                  "VEHICLE"
+                ]
+              },
+              "position": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "maxProperties": 3,
+                "properties": {
+                  "x": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  },
+                  "y": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  },
+                  "z": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  }
+                }
+              },
+              "distance": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 48,
+                "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+              },
+              "disposition": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8,
+                "enum": [
+                  "SELF",
+                  "FRIENDLY",
+                  "NEUTRAL",
+                  "HOSTILE",
+                  "UNKNOWN"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 0,
+                "maxLength": 128
+              },
+              "health": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 48,
+                "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+              }
+            }
+          }
+        },
+        "nearbyVoxels": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": false,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "position",
+              "material",
+              "interaction"
+            ],
+            "maxProperties": 3,
+            "properties": {
+              "position": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "maxProperties": 3,
+                "properties": {
+                  "x": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  },
+                  "y": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  },
+                  "z": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+                  }
+                }
+              },
+              "material": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "interaction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 5,
+                "enum": [
+                  "NONE",
+                  "MINE",
+                  "PLACE",
+                  "USE"
+                ]
+              }
+            }
+          }
+        },
+        "inputState": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "modalOpen",
+            "textInputFocused",
+            "humanInputActive"
+          ],
+          "maxProperties": 3,
+          "properties": {
+            "modalOpen": {
+              "type": "boolean"
+            },
+            "textInputFocused": {
+              "type": "boolean"
+            },
+            "humanInputActive": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "OBSERVE_REQUEST_SCHEMA_V1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detail",
+        "maxNearbyActors",
+        "maxNearbyVoxels"
+      ],
+      "maxProperties": 3,
+      "properties": {
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8,
+          "enum": [
+            "MINIMAL",
+            "STANDARD",
+            "TACTICAL"
+          ]
+        },
+        "maxNearbyActors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "maxNearbyVoxels": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        }
+      }
+    },
+    "PLAYER_HOST_CAPABILITIES_SCHEMA_V1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "gameId",
+        "revision",
+        "controlledEntityId",
+        "commands",
+        "observation",
+        "advertisedAt"
+      ],
+      "maxProperties": 7,
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 20,
+          "const": "crowdy.player-host/1"
+        },
+        "gameId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "controlledEntityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": false,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "toolName",
+              "risk",
+              "approval",
+              "rateLimitPerSecond"
+            ],
+            "maxProperties": 6,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 18,
+                "enum": [
+                  "MOVE",
+                  "LOOK",
+                  "STOP",
+                  "INVENTORY_SELECT",
+                  "INVENTORY_CONSUME",
+                  "INVENTORY_TRANSFER",
+                  "INTERACT",
+                  "CRAFT",
+                  "MOUNT",
+                  "COMBAT_ATTACK",
+                  "CHAT_SEND",
+                  "TRAVEL_TELEPORT"
+                ]
+              },
+              "toolName": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128
+              },
+              "requiredScope": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 13,
+                "enum": [
+                  "observe",
+                  "locomotion",
+                  "interact",
+                  "craft",
+                  "combat",
+                  "communicate",
+                  "travel",
+                  "grid",
+                  "trust_consent",
+                  "commerce"
+                ]
+              },
+              "risk": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 13,
+                "enum": [
+                  "READ_ONLY",
+                  "ROUTINE_WRITE",
+                  "WORLD_CONTROL",
+                  "DESTRUCTIVE",
+                  "TRUST_CONSENT",
+                  "ECONOMIC",
+                  "IRREVERSIBLE"
+                ]
+              },
+              "approval": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 11,
+                "enum": [
+                  "NONE",
+                  "REQUIRED",
+                  "CONDITIONAL"
+                ]
+              },
+              "rateLimitPerSecond": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "observation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxAgeMs",
+            "maxNearbyActors",
+            "maxNearbyVoxels"
+          ],
+          "maxProperties": 3,
+          "properties": {
+            "maxAgeMs": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 10000
+            },
+            "maxNearbyActors": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128
+            },
+            "maxNearbyVoxels": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256
+            }
+          }
+        },
+        "advertisedAt": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40,
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

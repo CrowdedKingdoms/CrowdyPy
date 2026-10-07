@@ -1,0 +1,168 @@
+fragment CrowdyStudioProjectFields on CrowdyStudioProject {
+  projectId
+  appId
+  ownerUserId
+  gridId
+  name
+  description
+  serverModuleName
+  clientModuleName
+  pairingPreference
+  sdkVersion
+  abiVersion
+  revision
+  archived
+  archivedAt
+  fileCount
+  totalBytes
+  source
+  githubOwner
+  githubRepo
+  githubBranch
+  githubSha
+  createdAt
+  updatedAt
+  files {
+    target
+    path
+    content
+    revision
+    provenance
+    provenanceLibraryFileId
+    provenanceLibraryRevision
+    provenanceCommonVersionId
+    createdAt
+    updatedAt
+  }
+}
+
+query CrowdyStudioProjects(
+  $appId: BigInt!
+  $includeArchived: Boolean
+  $limit: Int
+  $offset: Int
+) {
+  crowdyStudioProjects(
+    appId: $appId
+    includeArchived: $includeArchived
+    limit: $limit
+    offset: $offset
+  ) {
+    projectId
+    gridId
+    name
+    serverModuleName
+    clientModuleName
+    pairingPreference
+    revision
+    archived
+    source
+    githubOwner
+    githubRepo
+    githubBranch
+    githubSha
+    updatedAt
+  }
+}
+
+query CrowdyStudioProject($appId: BigInt!, $projectId: String!) {
+  crowdyStudioProject(appId: $appId, projectId: $projectId) {
+    ...CrowdyStudioProjectFields
+  }
+}
+
+mutation CrowdyStudioProjectCreate($input: CreateCrowdyStudioProjectInput!) {
+  crowdyStudioProjectCreate(input: $input) {
+    ...CrowdyStudioProjectFields
+  }
+}
+
+mutation CrowdyStudioProjectSave($input: SaveCrowdyStudioProjectInput!) {
+  crowdyStudioProjectSave(input: $input) {
+    ...CrowdyStudioProjectFields
+  }
+}
+
+query CrowdyStudioLibraryFiles(
+  $appId: BigInt!
+  $includeArchived: Boolean
+  $limit: Int
+  $offset: Int
+) {
+  crowdyStudioLibraryFiles(
+    appId: $appId
+    includeArchived: $includeArchived
+    limit: $limit
+    offset: $offset
+  ) {
+    libraryFileId
+    appId
+    ownerUserId
+    title
+    pathHint
+    target
+    tags
+    content
+    revision
+    archived
+    archivedAt
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CrowdyStudioLibrarySave($input: SaveCrowdyStudioLibraryFileInput!) {
+  crowdyStudioLibrarySave(input: $input) {
+    libraryFileId
+    appId
+    ownerUserId
+    title
+    pathHint
+    target
+    tags
+    content
+    revision
+    archived
+    archivedAt
+    createdAt
+    updatedAt
+  }
+}
+
+query CrowdyStudioCommonFiles(
+  $appId: BigInt!
+  $target: CrowdyStudioTarget
+  $limit: Int
+  $offset: Int
+) {
+  crowdyStudioCommonFiles(
+    appId: $appId
+    target: $target
+    limit: $limit
+    offset: $offset
+  ) {
+    commonFileId
+    appId
+    slug
+    title
+    description
+    path
+    target
+    tags
+    status
+    versionId
+    versionNo
+    content
+    contentSha256
+    publishedByUserId
+    publishedAt
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CrowdyStudioProjectImportFile($input: ImportCrowdyStudioProjectFileInput!) {
+  crowdyStudioProjectImportFile(input: $input) {
+    ...CrowdyStudioProjectFields
+  }
+}

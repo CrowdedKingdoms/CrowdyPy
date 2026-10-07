@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace crowdy::studio::generated {
+
+inline constexpr std::string_view kCrowdyJsStudioLayoutFixtureV1 =
+    R"crowdyjson(@CROWDY_STUDIO_LAYOUT_FIXTURE_JSON@)crowdyjson";
+
+}  // namespace crowdy::studio::generated
