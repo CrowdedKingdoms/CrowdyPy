@@ -18,6 +18,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_STUDIO_GRID_ID` | no | a grid in the app that the owner controls (Studio suite) |
 | `CROWDY_E2E_SLOW=1` | no | long-running suites |
 | `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards) |
+| `CROWDY_E2E_PROVISIONING_TOKEN` | dev and test | dev and test are staff-only, so a new derived player is refused (`TIER_ACCESS_REQUIRED`) unless `register` carries a provisioning token covering its address. Use the `harness` token (Secrets Manager `infra-cp/<tier>/loadtest/provisioning-token-harness`, `token` key) with `CROWDY_E2E_EMAIL=crowdy-e2e@test.invalid`. Sent on `register` only; other tiers ignore it |
 
 ```bash
 pytest tests/e2e -q
