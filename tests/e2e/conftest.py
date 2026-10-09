@@ -12,6 +12,10 @@ Configuration (the variables CrowdyCPP's suites read):
   otherwise a fresh derived owner registers.
 - ``CROWDY_E2E_HTTP_URL``: the game API origin, when not the minted ``game_api_url``.
 - ``CROWDY_E2E_STUDIO_GRID_ID``: an owner grid for the Studio suite.
+- ``CROWDY_E2E_PROVISIONING_TOKEN``: sent as ``X-CK-Provisioning-Token`` when a player
+  registers. Dev and test are staff-only, so without it a new derived account is refused
+  there (``TIER_ACCESS_REQUIRED``); it must cover ``<local>+*@<domain>`` of
+  ``CROWDY_E2E_EMAIL`` (Secrets Manager ``infra-cp/<tier>/loadtest/provisioning-token-sdk-e2e``).
 - ``CROWDY_E2E_SLOW=1``: the long-running suites.
 """
 
@@ -25,10 +29,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 import pytest
 
 import crowdypy
 from crowdypy.domains.portal import AppTokenResponse
+from crowdypy.graphql import graphql_endpoint
 
 TIER_NAME = "crowdypy-e2e-video"
 TIER_PERMISSIONS = ["access", "teleport", "update_voxel_data", "use_voice_chat", "use_video_chat"]
@@ -102,12 +108,52 @@ class Player:
         await self.identity.aclose()
 
 
+_REGISTER = (
+    "mutation R($i: RegisterUserInput!) "
+    "{ register(registerUserInput: $i) { token user { userId } } }"
+)
+
+
+async def register_with_provisioning_token(email: str, token: str) -> tuple[str, str]:
+    """Dev and test are staff-only: a new account there needs the provisioning token, which
+    only ``register`` reads. The SDK sends no test-only header, so this one request goes
+    direct; the session it returns is handed to an ordinary client."""
+    variables = {
+        "i": {
+            "email": email,
+            "password": derive_password(email),
+            "acceptLegal": True,
+            "attestAgeOfMajority": True,
+        }
+    }
+    async with httpx.AsyncClient(timeout=60.0) as http:
+        res = await http.post(
+            graphql_endpoint(CONFIG.api_url) or CONFIG.api_url,
+            json={"query": _REGISTER, "variables": variables},
+            headers={"x-ck-provisioning-token": token},
+        )
+    payload = res.json()
+    if payload.get("errors"):
+        raise RuntimeError(f"register {email}: {payload['errors']}")
+    registered = payload["data"]["register"]
+    return registered["token"], str(registered["user"]["userId"])
+
+
 async def identity_client(
     email: str, password: str | None = None
 ) -> tuple[crowdypy.AsyncCrowdyClient, str]:
     """Signed in: ``login`` with ``password``, otherwise ``register`` a fresh account that
     has accepted the legal documents and attested its age, as a player ticking both boxes."""
     client = crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url)
+    provisioning = _env("CROWDY_E2E_PROVISIONING_TOKEN")
+    if not password and provisioning:
+        try:
+            token, user_id = await register_with_provisioning_token(email, provisioning)
+        except BaseException:
+            await client.aclose()
+            raise
+        client.set_token(token)
+        return client, user_id
     try:
         auth = (
             await client.auth.login(email, password)

@@ -9,7 +9,9 @@ On a deployed tier, sign in as its existing org admin instead and create only th
     CROWDY_E2E_OWNER_PASSWORD=... python tools/e2e/provision.py --api-url <origin> \
         --email you@example.com --owner-email admin@example.com --org-id 123
 
-Everything goes through the public API, as the suites do.
+Everything goes through the public API, as the suites do. Dev and test are staff-only: a
+fresh owner registers there only with ``CROWDY_E2E_PROVISIONING_TOKEN`` (sent as
+``X-CK-Provisioning-Token``, read by ``register`` alone), or sign in as the existing owner.
 """
 
 from __future__ import annotations
@@ -20,7 +22,33 @@ import os
 import secrets
 import shlex
 
+import httpx
+
 import crowdypy
+from crowdypy.graphql import graphql_endpoint
+
+
+async def _register_with_token(api_url: str, email: str, password: str, token: str) -> str:
+    """``register`` with the provisioning token, which the SDK does not send; returns the session."""
+    query = "mutation R($i: RegisterUserInput!) { register(registerUserInput: $i) { token } }"
+    variables = {
+        "i": {
+            "email": email,
+            "password": password,
+            "acceptLegal": True,
+            "attestAgeOfMajority": True,
+        }
+    }
+    async with httpx.AsyncClient(timeout=60.0) as http:
+        res = await http.post(
+            graphql_endpoint(api_url) or api_url,
+            json={"query": query, "variables": variables},
+            headers={"x-ck-provisioning-token": token},
+        )
+    payload = res.json()
+    if payload.get("errors"):
+        raise SystemExit(f"register {email}: {payload['errors']}")
+    return str(payload["data"]["register"]["token"])
 
 
 async def provision(
@@ -31,9 +59,12 @@ async def provision(
     existing = owner_email is not None
     owner = owner_email or f"{local}+py-owner-{suffix}@{domain}"
     password = os.environ["CROWDY_E2E_OWNER_PASSWORD"] if existing else "Aa1!e2e-" + owner
+    provisioning = os.environ.get("CROWDY_E2E_PROVISIONING_TOKEN", "").strip()
     async with crowdypy.AsyncCrowdyClient(http_url=api_url) as client:
         if existing:
             await client.auth.login(owner, password)
+        elif provisioning:
+            client.set_token(await _register_with_token(api_url, owner, password, provisioning))
         else:
             await client.auth.register(
                 owner, password, accept_legal=True, attest_age_of_majority=True
