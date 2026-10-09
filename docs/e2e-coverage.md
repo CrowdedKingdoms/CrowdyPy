@@ -54,6 +54,7 @@ player once and signs it in for the later suites.
 | 2026-10-01 | dev tier, app `96701660793088` | `crowdypy 0.4.1.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12; the first version published by trusted publishing) | 8 passed; Studio skipped |
 | 2026-10-01 | dev tier, app `96701660793088`; the open-grid suite in its own throwaway org and app (`CROWDY_E2E_THROWAWAY_OWNER=1`) | `crowdypy 0.5.0.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12) | 10 passed; Studio skipped |
 | 2026-10-08 | local stack: ck-api at the distance-limited channel branch (off `dev`), two replication servers serving message type 32, the 3-node Citus lab | 0.6.0 (branch) | identity, ranged channel, replication, world and world data suites: 10 passed |
+| 2026-10-09 | dev tier, app `96701660793088`, after replication server v0.35.0 and ck-api v2.38.0 reached dev | `crowdypy 0.6.0.dev1` from PyPI (installed into a clean Python 3.12 with uv) | identity (incl. the terms gate), ranged channel, replication, world and world data suites: 10 passed |
 
 ## Not covered here
 
