@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 import crowdypy
-from e2e.conftest import CONFIG, derive_email, provision_player
+from e2e.conftest import (
+    CONFIG,
+    derive_email,
+    derive_password,
+    ensure_tier,
+    owner_client,
+    provision_player,
+)
 
 
 async def test_a_player_signs_in_mints_and_refreshes() -> None:
@@ -22,6 +29,30 @@ async def test_a_player_signs_in_mints_and_refreshes() -> None:
         assert await player.game.server_status.server_with_least_clients() is not None
     finally:
         await player.aclose()
+
+
+async def test_a_gameplay_token_waits_for_the_players_consents() -> None:
+    email = derive_email("py-consent")
+    async with crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url) as client:
+        auth = await client.auth.register(email, derive_password(email))
+        assert await client.auth.player_legal_acceptance() is False
+        owner = await owner_client()
+        try:
+            tier = await ensure_tier(owner, CONFIG.app_id)
+            await owner.admin.app_access.grant(
+                {"appId": CONFIG.app_id, "userId": auth.user.user_id, "tierId": tier}
+            )
+        finally:
+            await owner.aclose()
+        with pytest.raises(crowdypy.CrowdyError) as refused:
+            await client.portal.mint_app_token(CONFIG.app_id)
+        assert crowdypy.is_legal_acceptance_required_error(refused.value)
+        assert await client.auth.record_player_consents(
+            accept_legal=True, attest_age_of_majority=True
+        )
+        assert await client.auth.player_legal_acceptance() is True
+        minted = await client.portal.mint_app_token(CONFIG.app_id)
+        assert len(minted.token) == 64
 
 
 async def test_a_wrong_password_is_refused() -> None:

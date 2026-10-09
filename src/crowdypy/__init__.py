@@ -95,6 +95,7 @@ _LAZY: dict[str, str] = {
     "PortalConsentRequiredError": "crowdypy.domains.portal",
     "default_hosted_sign_in_url": "crowdypy.domains.portal",
     "is_hosted_sign_in_required_error": "crowdypy.domains.portal",
+    "is_legal_acceptance_required_error": "crowdypy.domains.portal",
     "AuthResponse": "crowdypy.domains.auth",
     "is_already_registered_error": "crowdypy.domains.auth",
     "is_invalid_current_password_error": "crowdypy.domains.auth",
@@ -329,6 +330,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.portal import (
         is_hosted_sign_in_required_error as is_hosted_sign_in_required_error,
+    )
+    from crowdypy.domains.portal import (
+        is_legal_acceptance_required_error as is_legal_acceptance_required_error,
     )
     from crowdypy.domains.quotas import (
         QuotasAPI as QuotasAPI,

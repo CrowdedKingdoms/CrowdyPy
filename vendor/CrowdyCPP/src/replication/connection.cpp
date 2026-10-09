@@ -409,6 +409,34 @@ Result<std::uint8_t> Connection::sendChannelMessage(std::int64_t channelId,
   return params.sequence;
 }
 
+Result<std::uint8_t> Connection::sendRangedChannelMessage(std::int64_t channelId,
+                                                          const core::ActorUuid& uuid,
+                                                          Bytes payload,
+                                                          const wire::ChunkCoord& origin,
+                                                          std::uint32_t maxDistance) {
+  if (!socket_.isOpen()) return Errc::NotConnected;
+  if (maxDistance > wire::channel_ranged::kMaxDistance) return Errc::InvalidArgument;
+  const Credentials creds = credentials();
+
+  wire::RangedChannelMessageParams params;
+  params.channelId = channelId;
+  params.uuid = uuid;
+  params.appId = config_.appId;
+  params.origin = origin;
+  params.maxDistance = maxDistance;
+  params.payload = payload;
+  params.gameTokenId = creds.gameTokenId;
+  params.sequence = nextSequence();
+
+  std::uint8_t buf[wire::kMaxDatagramSize];
+  auto n = wire::encodeRangedChannelMessage(crypto_, params, creds.token,
+                                            MutableBytes(buf, sizeof(buf)), creds.mac.get());
+  if (!n.ok()) return n.error();
+  Status st = transmit(buf, n.value());
+  if (!st.ok()) return st.code;
+  return params.sequence;
+}
+
 Result<std::uint8_t> Connection::sendCapabilities() {
   std::uint8_t flags[4];
   le::writeU32(flags, wire::ClientCapability::kAll);

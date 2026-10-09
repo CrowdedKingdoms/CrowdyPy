@@ -140,6 +140,21 @@ def test_a_send_is_signed_with_crowdyjs_defaults(server: FakeServer) -> None:
         assert (audio.type, audio.distance, audio.decay) == (MessageType.CLIENT_AUDIO_PACKET, 1, 0)
 
 
+def test_a_ranged_channel_send_carries_the_connection_app(server: FakeServer) -> None:
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        sequence = connection.send_ranged_channel_message(321, ME, b"near", (4, -5, 6), 12)
+        connection.flush_sends()
+        (datagram,) = server.messages()
+        assert datagram == wire.encode_ranged_channel_message(
+            TOKEN, 321, ME, b"near", app_id=7, chunk=(4, -5, 6), max_distance=12,
+            game_token_id=TOKEN_ID, sequence=sequence,
+        )  # fmt: skip
+        for bad in (-1, wire.CHANNEL_RANGED_MAX_DISTANCE + 1):
+            with pytest.raises(CrowdyReplicationError) as refused:
+                connection.send_ranged_channel_message(321, ME, b"near", (0, 0, 0), bad)
+            assert refused.value.code == "InvalidArgument"
+
+
 def test_notifications_arrive_as_columns_and_rows(server: FakeServer) -> None:
     with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
         connection.send_heartbeat((0, 0, 0), ME)

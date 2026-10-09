@@ -131,6 +131,15 @@ class Connection {
   /// Publish to a channel (requires membership + send_messages).
   Result<std::uint8_t> sendChannelMessage(std::int64_t channelId, const core::ActorUuid& uuid,
                                           Bytes payload);
+  /// Publish to a channel so that only members with a live actor in this
+  /// connection's app within maxDistance chunks of `origin` receive it (Euclidean
+  /// between chunk coordinates, boundary included; 0..2147483647; Buddy v0.35.0).
+  /// Members receive an ordinary channel notification. Same send right as
+  /// sendChannelMessage; a refusal arrives as a GenericError for the returned
+  /// sequence. InvalidArgument for a distance over wire::channel_ranged::kMaxDistance.
+  Result<std::uint8_t> sendRangedChannelMessage(std::int64_t channelId, const core::ActorUuid& uuid,
+                                                Bytes payload, const wire::ChunkCoord& origin,
+                                                std::uint32_t maxDistance);
   /// Idle keep-alive for your own actor (no fan-out). Send every ~2 s while
   /// idle so presence never lapses.
   Result<std::uint8_t> sendHeartbeat(const wire::ChunkCoord& chunk, const core::ActorUuid& uuid);

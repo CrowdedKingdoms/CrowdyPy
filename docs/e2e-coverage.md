@@ -36,10 +36,11 @@ player once and signs it in for the later suites.
 
 | Suite | Scenarios | CrowdyCPP counterpart |
 |---|---|---|
-| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
+| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a player registered without the legal consents is refused a gameplay token (`LEGAL_ACCEPTANCE_REQUIRED`) until `record_player_consents`, and `player_legal_acceptance` follows; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
 | `test_e2e_replication.py` | two players over native UDP: an actor update reaches the other player and echoes back to the sender; a 16-entity batched frame (`send_actor_updates`) reaches the other player; voxel updates and client events reach the other player | `e2e_two_client_actor`, `e2e_self_echo`, `e2e_spatial_distance` |
 | `test_e2e_world.py` | two World Stores sessions: each sees the other's actor natively; a voxel edit lands in the other session's chunk store | `e2e_stores_live`, `e2e_world_session` |
 | `test_e2e_world_data.py` | a GraphQL voxel write by an entitled player is recorded and listed back | `e2e_chunks` |
+| `test_e2e_ranged_channel.py` | the owner's invite channel with four members, each keeping an actor at its own chunk: a distance-limited channel message from A reaches B at 5 chunks with `max_distance` 5 but not C (about 5.66) or D (7); 6 adds C, 7 adds D; A never receives its own; no send is refused | `e2e_ranged_channel` |
 | `test_e2e_open_grid_exec_gateway.py` | as a throwaway org admin (`CROWDY_E2E_THROWAWAY_OWNER=1`): open a nested grid, read it back, a player holds its keys, a player-code key is refused `BAD_REQUEST`, close it; the tier's ck-exec gateway passes `exec_gateway_refusal`, a connection pings, and a tampered connect token is `Denied` with the gateway's HTTP 401 reason | `e2e_open_grid_exec_gateway` |
 | `test_e2e_studio.py` | the headless Studio controller creates a project from the mod starter, edits it with autosave, and archives it (optional: needs `CROWDY_E2E_STUDIO_GRID_ID`) | `e2e_crowdy_studio` |
 
@@ -52,6 +53,7 @@ player once and signs it in for the later suites.
 | 2026-10-01 | dev tier, app `96701660793088` | the published `dev/v0.4.0` wheel (`0.4.0.dev1`, manylinux x86_64, installed into a clean Python 3.12) | 8 passed |
 | 2026-10-01 | dev tier, app `96701660793088` | `crowdypy 0.4.1.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12; the first version published by trusted publishing) | 8 passed; Studio skipped |
 | 2026-10-01 | dev tier, app `96701660793088`; the open-grid suite in its own throwaway org and app (`CROWDY_E2E_THROWAWAY_OWNER=1`) | `crowdypy 0.5.0.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12) | 10 passed; Studio skipped |
+| 2026-10-08 | local stack: ck-api at the distance-limited channel branch (off `dev`), two replication servers serving message type 32, the 3-node Citus lab | 0.6.0 (branch) | identity, ranged channel, replication, world and world data suites: 10 passed |
 
 ## Not covered here
 

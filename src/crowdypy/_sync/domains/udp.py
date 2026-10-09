@@ -369,3 +369,22 @@ class UdpAPI:
     def send_channel_message(self, channel_id: str | int, uuid: str, payload: Any) -> int:
         """Publish to a channel (needs membership and ``send_messages``)."""
         return self._live().send_channel_message(channel_id, uuid, payload)
+
+    def send_ranged_channel_message(
+        self,
+        channel_id: str | int,
+        uuid: str,
+        payload: Any,
+        *,
+        chunk: Sequence[int],
+        max_distance: int,
+    ) -> int:
+        """Publish to a channel, delivered only to members whose own actor is within
+        ``max_distance`` chunks of ``chunk``: straight-line distance between chunk
+        coordinates, inclusive (``max_distance`` 0 reaches only the origin chunk). The same
+        right as :meth:`send_channel_message`; members receive an ordinary
+        ``channel_message``. Members with no actor of their own, and the sender, are never
+        reached."""
+        return self._live().send_ranged_channel_message(
+            channel_id, uuid, payload, chunk, max_distance
+        )

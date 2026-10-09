@@ -552,6 +552,19 @@ class PyConnection {
     return sent(result, "sendChannelMessage");
   }
 
+  int sendRangedChannel(std::int64_t channelId, nb::handle uuid, nb::handle payload, std::int64_t x,
+                        std::int64_t y, std::int64_t z, std::uint32_t maxDistance) {
+    const core::ActorUuid id = uuid_from(uuid);
+    BufferView body(payload);
+    Result<std::uint8_t> result = Errc::InvalidArgument;
+    {
+      nb::gil_scoped_release release;
+      result = connection_->sendRangedChannelMessage(channelId, id, body.bytes(), {x, y, z},
+                                                     maxDistance);
+    }
+    return sent(result, "sendRangedChannelMessage");
+  }
+
   int sendHeartbeat(std::int64_t x, std::int64_t y, std::int64_t z, nb::handle uuid) {
     const core::ActorUuid id = uuid_from(uuid);
     Result<std::uint8_t> result = Errc::InvalidArgument;

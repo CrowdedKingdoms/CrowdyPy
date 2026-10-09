@@ -280,6 +280,9 @@ void register_replication(nb::module_& m) {
            nb::arg("z"), nb::arg("uuid"), nb::arg("payload"))
       .def("send_channel_message", &PyConnection::sendChannel, nb::arg("channel_id"),
            nb::arg("uuid"), nb::arg("payload"))
+      .def("send_ranged_channel_message", &PyConnection::sendRangedChannel, nb::arg("channel_id"),
+           nb::arg("uuid"), nb::arg("payload"), nb::arg("x"), nb::arg("y"), nb::arg("z"),
+           nb::arg("max_distance"))
       .def("send_heartbeat", &PyConnection::sendHeartbeat, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("uuid"))
       .def("send_video_frame", &PyConnection::sendVideoFrame, nb::arg("x"), nb::arg("y"),
