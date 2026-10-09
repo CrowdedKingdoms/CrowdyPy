@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: b5ddbf1baf05c4c83dae55008178ec91261a7eb1e41f2245347eba42654a2ac0
-// operations sha256: 9abc3be640876f499f47f8f4beeba306f2c2bca2bc301d7aad8d1156703566a4
+// schema.gql sha256: fdce0edc2f48aafbb5236b2aa67d22a3633766d3d28d8c4683e95ed27f98cb3d
+// operations sha256: 06af4a74547a29dced2230ad89ca1e2e1d7166acee126d1a74fb9e050376734f
 
 #pragma once
 
@@ -846,6 +846,7 @@ inline constexpr std::string_view kAppDocument = R"gql(query App($appId: BigInt!
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     deploymentTarget
     reservedUdpBytesPerSec
@@ -873,6 +874,7 @@ inline constexpr std::string_view kAppIsolatedDocument = R"gql(query App($appId:
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     deploymentTarget
     reservedUdpBytesPerSec
@@ -903,6 +905,7 @@ inline constexpr std::string_view kAppBySlugDocument = R"gql(query AppBySlug($or
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -925,6 +928,7 @@ inline constexpr std::string_view kAppBySlugIsolatedDocument = R"gql(query AppBy
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -969,6 +973,7 @@ inline constexpr std::string_view kAppsForOrgDocument = R"gql(query AppsForOrg($
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -986,6 +991,7 @@ inline constexpr std::string_view kAppsForOrgIsolatedDocument = R"gql(query Apps
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -1126,6 +1132,7 @@ inline constexpr std::string_view kCreateAppDocument = R"gql(mutation CreateApp(
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     createdAt
   }
 })gql";
@@ -1140,6 +1147,7 @@ inline constexpr std::string_view kCreateAppIsolatedDocument = R"gql(mutation Cr
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     createdAt
   }
 })gql";
@@ -1292,6 +1300,7 @@ inline constexpr std::string_view kMyAppsDocument = R"gql(query MyApps {
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -1314,6 +1323,7 @@ inline constexpr std::string_view kMyAppsIsolatedDocument = R"gql(query MyApps {
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     splitMode
     gameApiUrl
     createdAt
@@ -1339,6 +1349,7 @@ inline constexpr std::string_view kUpdateAppDocument = R"gql(mutation UpdateApp(
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     updatedAt
   }
 })gql";
@@ -1353,6 +1364,7 @@ inline constexpr std::string_view kUpdateAppIsolatedDocument = R"gql(mutation Up
     status
     metadata
     wildernessWritesOpen
+    replayLoggingEnabled
     updatedAt
   }
 })gql";
@@ -6060,6 +6072,161 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
 }
 
 }  // namespace host
+
+namespace inputLog {
+
+/// inputLog/InputLogMessages.graphql
+inline constexpr std::string_view kInputLogMessagesDocument = R"gql(query InputLogMessages(
+  $appId: BigInt!
+  $gameTokenId: BigInt!
+  $first: Int
+  $after: String
+  $filter: InputLogMessageFilter
+) {
+  inputLogMessages(
+    appId: $appId
+    gameTokenId: $gameTokenId
+    first: $first
+    after: $after
+    filter: $filter
+  ) {
+    edges {
+      cursor
+      node {
+        receivedAt
+        receivedAtMicros
+        userId
+        gameTokenId
+        messageType
+        seq
+        fromBundle
+        signed
+        sizeBytes
+        body
+        chunkX
+        chunkY
+        chunkZ
+        actorUuid
+        channelId
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+})gql";
+inline constexpr std::string_view kInputLogMessagesIsolatedDocument = R"gql(query InputLogMessages($appId: BigInt!, $gameTokenId: BigInt!, $first: Int, $after: String, $filter: InputLogMessageFilter) {
+  inputLogMessages(
+    appId: $appId
+    gameTokenId: $gameTokenId
+    first: $first
+    after: $after
+    filter: $filter
+  ) {
+    edges {
+      cursor
+      node {
+        receivedAt
+        receivedAtMicros
+        userId
+        gameTokenId
+        messageType
+        seq
+        fromBundle
+        signed
+        sizeBytes
+        body
+        chunkX
+        chunkY
+        chunkZ
+        actorUuid
+        channelId
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+})gql";
+inline constexpr std::string_view kInputLogMessagesOperationName = "InputLogMessages";
+
+/// inputLog/InputLogSessions.graphql
+inline constexpr std::string_view kInputLogSessionsDocument = R"gql(query InputLogSessions(
+  $appId: BigInt!
+  $first: Int
+  $after: String
+  $filter: InputLogSessionFilter
+) {
+  inputLogSessions(appId: $appId, first: $first, after: $after, filter: $filter) {
+    edges {
+      cursor
+      node {
+        appId
+        gameTokenId
+        userId
+        datacenter
+        startedAt
+        lastSeenAt
+        endedAt
+        endReason
+        messageCount
+        byteCount
+        messageTypes
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+})gql";
+inline constexpr std::string_view kInputLogSessionsIsolatedDocument = R"gql(query InputLogSessions($appId: BigInt!, $first: Int, $after: String, $filter: InputLogSessionFilter) {
+  inputLogSessions(appId: $appId, first: $first, after: $after, filter: $filter) {
+    edges {
+      cursor
+      node {
+        appId
+        gameTokenId
+        userId
+        datacenter
+        startedAt
+        lastSeenAt
+        endedAt
+        endReason
+        messageCount
+        byteCount
+        messageTypes
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+})gql";
+inline constexpr std::string_view kInputLogSessionsOperationName = "InputLogSessions";
+
+inline constexpr std::string_view documentFor(std::string_view operationName) {
+  if (operationName == "InputLogMessages") return kInputLogMessagesIsolatedDocument;
+  if (operationName == "InputLogSessions") return kInputLogSessionsIsolatedDocument;
+  return {};
+}
+
+}  // namespace inputLog
 
 namespace marketplace {
 

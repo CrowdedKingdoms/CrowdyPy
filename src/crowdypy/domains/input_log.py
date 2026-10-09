@@ -1,0 +1,78 @@
+"""The input log (``client.input_log``): recorded client inputs of an app with replay logging on.
+
+An app with replay logging on (``App.replayLoggingEnabled``, set with ``client.apps.update``)
+has every client input the realtime servers accept recorded. These calls read them back on
+the app-scoped client for the app; an identity session token is refused. A player reads only
+the sessions and inputs they sent; a holder of ``manage_apps`` on the app reads every session.
+Inputs are kept for the input log's published retention, so an old session can still be listed
+after its inputs are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without input
+logging.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from crowdypy._generated import inputs
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+__all__ = ["InputLogAPI"]
+
+
+class InputLogAPI(Domain):
+    async def sessions(
+        self,
+        app_id: str | int,
+        *,
+        first: int | None = None,
+        after: str | None = None,
+        filter: inputs.InputLogSessionFilter | Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """An app's recorded sessions, newest first: ``edges { cursor node }``, ``pageInfo``,
+        ``totalCount``. A session is one game token's inputs.
+
+        ``filter`` takes ``userId`` (another user's needs ``manage_apps``, else ``FORBIDDEN``),
+        ``from`` / ``to`` and ``messageType``. Page with ``first`` (default 50, max 200) and the
+        previous page's ``pageInfo.endCursor`` as ``after``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.INPUT_LOG_SESSIONS,
+            omit_none({"appId": bigint(app_id), "first": first, "after": after, "filter": filter}),
+        )
+        return result
+
+    async def messages(
+        self,
+        app_id: str | int,
+        game_token_id: str | int,
+        *,
+        first: int | None = None,
+        after: str | None = None,
+        filter: inputs.InputLogMessageFilter | Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """One session's recorded inputs (``game_token_id`` from :meth:`sessions`), oldest first.
+
+        ``body`` is the client message in base64 (``decode_base64`` gives the bytes), from its
+        type byte up to its authentication tail, which is not recorded; ``sizeBytes`` is what
+        stored input logs are billed on. Spatial inputs carry their chunk and actor, channel
+        inputs their channel. **Keep paging while ``pageInfo.hasNextPage`` is true**: a page can
+        be short, or empty, when it reached the server's time or scan limit. ``filter`` takes
+        ``from`` / ``to`` and ``messageTypes`` (at most 64). Another user's session answers
+        ``NOT_FOUND`` without ``manage_apps``.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.INPUT_LOG_MESSAGES,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "gameTokenId": bigint(game_token_id),
+                    "first": first,
+                    "after": after,
+                    "filter": filter,
+                }
+            ),
+        )
+        return result

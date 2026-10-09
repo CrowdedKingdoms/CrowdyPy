@@ -11,6 +11,12 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.7.0: the input log (CrowdyJS 18.6.0, CrowdyCPP 0.59.0).**
+- `client.input_log.sessions(app_id)` and `messages(app_id, game_token_id)` read the client
+  inputs recorded for an app with replay logging on (`replayLoggingEnabled`, now on every app
+  read and set with `client.apps.update`). A player reads their own; `manage_apps` reads every
+  session. Keep paging while `pageInfo.hasNextPage` is true: a messages page can be short.
+
 **v0.6.0: distance-limited channel messages and the terms gate (CrowdyJS 18.5.0, CrowdyCPP 0.58.0).**
 - `client.udp.send_ranged_channel_message(..., chunk=, max_distance=)` publishes to a channel
   but reaches only the members whose own actor is within `max_distance` chunks of `chunk`,

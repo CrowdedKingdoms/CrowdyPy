@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 29d59267d8bf5a0497b272ac22b5edfb702c4872087b0cffaa1542a81c917834
+schema.gql sha256: d5e7cbf04aa4f0b9fbdf1ca9e7bf264650c5807553a3fe6407a9467b1c038686
 """
 
 from __future__ import annotations
@@ -558,6 +558,21 @@ class ImportCrowdyStudioProjectFileInput(msgspec.Struct, kw_only=True, omit_defa
     idempotency_key: str | None | UnsetType = UNSET
 
 
+class InputLogMessageFilter(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'from_': 'from', 'message_types': 'messageTypes'}):
+    'Narrows inputLogMessages. All fields are optional and AND-combined.'
+    from_: str | None | UnsetType = UNSET
+    to: str | None | UnsetType = UNSET
+    message_types: list[int] | None | UnsetType = UNSET
+
+
+class InputLogSessionFilter(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'user_id': 'userId', 'from_': 'from', 'message_type': 'messageType'}):
+    'Narrows inputLogSessions. All fields are optional and AND-combined.'
+    user_id: str | None | UnsetType = UNSET
+    from_: str | None | UnsetType = UNSET
+    to: str | None | UnsetType = UNSET
+    message_type: int | None | UnsetType = UNSET
+
+
 class InviteOrgMemberInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'user_id': 'userId'}):
     org_id: str
     user_id: str
@@ -1019,7 +1034,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1027,6 +1042,7 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     status: AppStatus | None | UnsetType = UNSET
     metadata: str | None | UnsetType = UNSET
     wilderness_writes_open: bool | None | UnsetType = UNSET
+    replay_logging_enabled: bool | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -1207,6 +1223,8 @@ __all__ = [
     'GrantGridPermissionsInput',
     'GrantTierFeatureInput',
     'ImportCrowdyStudioProjectFileInput',
+    'InputLogMessageFilter',
+    'InputLogSessionFilter',
     'InviteOrgMemberInput',
     'LinkIdentityInput',
     'ListVoxelUpdatesByDistanceInput',

@@ -24,6 +24,7 @@ from crowdypy.domains.chunks import ChunksAPI
 from crowdypy.domains.game_apps import GameAppsAPI
 from crowdypy.domains.grids import GridsAPI
 from crowdypy.domains.host import HostAPI
+from crowdypy.domains.input_log import InputLogAPI
 from crowdypy.domains.state import StateAPI
 from crowdypy.domains.teleport import TeleportAPI
 from crowdypy.domains.voxels import VoxelsAPI
@@ -76,6 +77,7 @@ PORTED: dict[type[Domain], set[str]] = {
     },
     StateAPI: {"get_one", "get_all", "update", "delete"},
     TeleportAPI: {"request"},
+    InputLogAPI: {"sessions", "messages"},
     HostAPI: {"get", "am_i_host", "heartbeat"},
     GameAppsAPI: {
         "ownership",
@@ -122,6 +124,25 @@ def by_input(
 
 
 CASES = [
+    # the input log: BigInt ids as decimal strings, paging and filters passed through
+    case(InputLogAPI, "sessions", (42,), "InputLogSessions", {"appId": "42"}),
+    case(
+        InputLogAPI,
+        "sessions",
+        ("42",),
+        "InputLogSessions",
+        {"appId": "42", "first": 20, "after": "c1", "filter": {"userId": "7", "messageType": 129}},
+        kwargs={"first": 20, "after": "c1", "filter": {"userId": "7", "messageType": 129}},
+        label="filtered",
+    ),
+    case(
+        InputLogAPI,
+        "messages",
+        (42, 9001),
+        "InputLogMessages",
+        {"appId": "42", "gameTokenId": "9001", "first": 200, "filter": {"messageTypes": [129]}},
+        kwargs={"first": 200, "filter": inputs.InputLogMessageFilter(message_types=[129])},
+    ),
     # chunks: every method takes its input object as given
     by_input(ChunksAPI, "get", "GetChunk", {**AT_CHUNK, "includeAllLods": True}, reply=None),
     by_input(ChunksAPI, "get_lods", "GetChunkLods", {**AT_CHUNK, "lodLevels": [0, 2]}),
