@@ -122,8 +122,8 @@ commit = "ae249cbe5661c5d14394994f66083d2731fab7e0"
 
 [tool.crowdypy.crowdycpp]
 version = "0.58.0"
-tag = "ab1b4bf460d2e514e745f5c0e5a8cead35036acf"
-commit = "ab1b4bf460d2e514e745f5c0e5a8cead35036acf"
+tag = "dev/v0.58.0"
+commit = "cae2f4af8a7af79cec12b612213b738c41969b1d"
 tree-sha256 = "18db491aa66a14e209437b296d1bdd002746ebb811c5f39309a93b7bbb9d98d2"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
