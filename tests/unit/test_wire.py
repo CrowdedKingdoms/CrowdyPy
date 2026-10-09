@@ -95,6 +95,49 @@ def test_crowdycpp_golden_reconnect() -> None:
     assert not wire.verify_command_reconnect(JS_TOKEN, CPP_GOLDEN_RECONNECT)
 
 
+# CrowdyCPP tests/wire_test.cpp testRangedChannelGolden: token "A" x 64, gameTokenId 555,
+# channel 100, uuid "u" x 32, app 2, chunk (-3,4,5), maxDistance 12, payload "hi", seq 9.
+RANGED_TOKEN = b"A" * 64
+RANGED_GOLDEN = bytes.fromhex(
+    "206400000000000000" + "75" * 32 + "0200000000000000fdffffffffffffff0400000000000000"
+    "05000000000000000c00000002006869017f1c386fd1ec421f0a72745fae881f8adbcb17bcd8a0bb3e"
+    "446565651d18533d2b0200000000000009"
+)
+
+
+def _ranged(max_distance: int, payload: bytes = b"hi") -> bytes:
+    return wire.encode_ranged_channel_message(
+        RANGED_TOKEN,
+        100,
+        b"u" * 32,
+        payload,
+        app_id=2,
+        chunk=(-3, 4, 5),
+        max_distance=max_distance,
+        game_token_id=555,
+        sequence=9,
+    )
+
+
+def test_ranged_channel_golden_and_hmac() -> None:
+    assert wire.MessageType.CHANNEL_MESSAGE_RANGED_REQUEST == 32
+    assert wire.CHANNEL_RANGED_MAX_DISTANCE == 2**31 - 1
+    encoded = _ranged(12)
+    assert encoded == RANGED_GOLDEN
+    expected = hmac.new(RANGED_TOKEN, encoded[:-41] + RANGED_TOKEN, hashlib.sha256).digest()
+    assert encoded[-41:-9] == expected
+
+
+def test_ranged_channel_refusals() -> None:
+    assert len(_ranged(wire.CHANNEL_RANGED_MAX_DISTANCE, b"")) == 121
+    assert len(_ranged(0, b"x" * wire.MAX_CHANNEL_PAYLOAD)) == 121 + wire.MAX_CHANNEL_PAYLOAD
+    for bad in (-1, wire.CHANNEL_RANGED_MAX_DISTANCE + 1):
+        with pytest.raises(CrowdyProtocolError, match="InvalidArgument"):
+            _ranged(bad)
+    with pytest.raises(CrowdyProtocolError, match="InvalidArgument"):
+        _ranged(5, b"x" * (wire.MAX_CHANNEL_PAYLOAD + 1))
+
+
 def test_buffers_are_accepted_without_copying() -> None:
     for view in (bytearray(CPP_GOLDEN_SPATIAL), memoryview(CPP_GOLDEN_SPATIAL)):
         assert wire.parse_long_spatial(view).sequence == 42
@@ -118,6 +161,18 @@ def _encode_uplink(kind: str, i: dict[str, Any]) -> bytes:
             int(i["channelId"]),
             i["uuid"].encode(),
             _b64(i["payload"]),
+            game_token_id=JS_TOKEN_ID,
+            sequence=seq,
+        )
+    if kind == "rangedChannelMessage":
+        return wire.encode_ranged_channel_message(
+            JS_TOKEN,
+            int(i["channelId"]),
+            i["uuid"].encode(),
+            _b64(i["payload"]),
+            app_id=int(i["appId"]),
+            chunk=_chunk(i["chunk"]),
+            max_distance=int(i["maxDistance"]),
             game_token_id=JS_TOKEN_ID,
             sequence=seq,
         )

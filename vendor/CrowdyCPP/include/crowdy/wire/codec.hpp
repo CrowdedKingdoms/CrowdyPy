@@ -309,6 +309,57 @@ inline Result<std::size_t> encodeChannelMessage(const core::ICrypto& crypto,
   return total;
 }
 
+struct RangedChannelMessageParams {
+  std::int64_t channelId = 0;
+  core::ActorUuid uuid{};
+  std::int64_t appId = 0;
+  ChunkCoord origin;
+  std::uint32_t maxDistance = 0;
+  Bytes payload;
+  std::int64_t gameTokenId = 0;
+  std::uint8_t sequence = 0;
+};
+
+inline constexpr std::size_t rangedChannelRequestSize(std::size_t payloadLen) {
+  return channel_ranged::kHeaderSize + payloadLen + channel::kRequestTailSize;
+}
+
+/// Encode and sign a CHANNEL_MESSAGE_RANGED_REQUEST (Buddy v0.35.0). Signed like
+/// encodeChannelMessage. InvalidArgument for a payload over channel::kMaxPayload or a
+/// maxDistance over channel_ranged::kMaxDistance (the server would refuse either).
+inline Result<std::size_t> encodeRangedChannelMessage(const core::ICrypto& crypto,
+                                                      const RangedChannelMessageParams& p,
+                                                      const Token64& token, MutableBytes out,
+                                                      const core::IMac* mac = nullptr) {
+  if (p.payload.size() > channel::kMaxPayload) return Errc::InvalidArgument;
+  if (p.maxDistance > channel_ranged::kMaxDistance) return Errc::InvalidArgument;
+  const std::size_t total = rangedChannelRequestSize(p.payload.size());
+  if (out.size() < total) return Errc::BufferTooSmall;
+  const Status cryptoStatus = crypto.availability();
+  if (!cryptoStatus.ok()) return cryptoStatus.code;
+
+  std::uint8_t* b = out.data();
+  b[0] = static_cast<std::uint8_t>(MessageType::ChannelMessageRangedRequest);
+  le::writeI64(b + channel::kChannelIdOffset, p.channelId);
+  std::memcpy(b + channel::kUuidOffset, p.uuid.data(), kUuidSize);
+  le::writeI64(b + channel_ranged::kAppIdOffset, p.appId);
+  le::writeI64(b + channel_ranged::kChunkXOffset, p.origin.x);
+  le::writeI64(b + channel_ranged::kChunkYOffset, p.origin.y);
+  le::writeI64(b + channel_ranged::kChunkZOffset, p.origin.z);
+  le::writeU32(b + channel_ranged::kMaxDistanceOffset, p.maxDistance);
+  le::writeU16(b + channel_ranged::kPayloadLenOffset, static_cast<std::uint16_t>(p.payload.size()));
+  if (!p.payload.empty())
+    std::memcpy(b + channel_ranged::kPayloadOffset, p.payload.data(), p.payload.size());
+
+  const std::size_t authOffset = channel_ranged::kPayloadOffset + p.payload.size();
+  b[authOffset] = 1;  // containsAuth
+  const std::size_t prefixLen = authOffset + 1;
+  if (!spatialHmac(crypto, Bytes(b, prefixLen), token, b + prefixLen, mac)) return Errc::Malformed;
+  le::writeI64(b + prefixLen + kHmacTagSize, p.gameTokenId);
+  b[total - 1] = p.sequence;
+  return total;
+}
+
 struct ChannelNotificationView {
   std::int64_t channelId;
   const char* senderUuid;  // 32 bytes

@@ -151,6 +151,19 @@ REGISTER = inline_operation(
     + _AUTH_RESPONSE_FIELDS
     + " } }",
 )
+RECORD_PLAYER_CONSENTS = inline_operation(
+    "RecordPlayerConsents",
+    "mutation",
+    "recordPlayerConsents",
+    "mutation RecordPlayerConsents($acceptLegal: Boolean!, $attestAgeOfMajority: Boolean!) { "
+    "recordPlayerConsents(acceptLegal: $acceptLegal, attestAgeOfMajority: $attestAgeOfMajority) }",
+)
+PLAYER_LEGAL_ACCEPTANCE = inline_operation(
+    "PlayerLegalAcceptance",
+    "query",
+    "playerLegalAcceptance",
+    "query PlayerLegalAcceptance { playerLegalAcceptance }",
+)
 REQUEST_PASSWORD_RESET = inline_operation(
     "RequestPasswordReset",
     "mutation",
@@ -231,6 +244,8 @@ INLINE_OPERATIONS = (
     SOCIAL_LOGIN_COMPLETE,
     LOGIN,
     REGISTER,
+    RECORD_PLAYER_CONSENTS,
+    PLAYER_LEGAL_ACCEPTANCE,
     REQUEST_PASSWORD_RESET,
     RESET_PASSWORD,
     CHANGE_PASSWORD,
@@ -296,13 +311,57 @@ class AuthAPI(Domain):
         return self._signed_in(payload)
 
     async def register(
-        self, email: str, password: str, gamertag: str | None = None
+        self,
+        email: str,
+        password: str,
+        gamertag: str | None = None,
+        *,
+        accept_legal: bool | None = None,
+        attest_age_of_majority: bool | None = None,
     ) -> AuthResponse:
-        """Create an account and sign in to it."""
+        """Create an account and sign in to it.
+
+        ``accept_legal``: the player agreed to the current required legal documents.
+        ``attest_age_of_majority``: the player is at least 18, or the age of majority where
+        they live if higher. Send both ``True`` once the player has ticked both boxes and
+        the account starts accepted; omit them and call :meth:`record_player_consents`
+        before the first gameplay token.
+        """
         input_: dict[str, Any] = {"email": email, "password": password}
         if gamertag is not None:
             input_["gamertag"] = gamertag
+        if accept_legal is not None:
+            input_["acceptLegal"] = accept_legal
+        if attest_age_of_majority is not None:
+            input_["attestAgeOfMajority"] = attest_age_of_majority
         return self._signed_in(await self._request(REGISTER, {"registerUserInput": input_}))
+
+    async def record_player_consents(
+        self, *, accept_legal: bool, attest_age_of_majority: bool
+    ) -> bool:
+        """Store the signed-in player's agreement to the current required legal documents
+        and their attestation that they are at least 18, or the age of majority where they
+        live if higher. Requires the identity session token; both must be ``True``, and
+        repeating it is harmless.
+
+        A gameplay token (``portal.mint_app_token``, ``portal.create_authorization_code``,
+        ``portal.refresh``) is refused with ``LEGAL_ACCEPTANCE_REQUIRED``
+        (:func:`~crowdypy.domains.portal.is_legal_acceptance_required_error`) until this is
+        stored. It records the PLAYER's agreement: call it only after they have ticked both
+        boxes in your own UI, linking each document.
+        """
+        return bool(
+            await self._request(
+                RECORD_PLAYER_CONSENTS,
+                {"acceptLegal": accept_legal, "attestAgeOfMajority": attest_age_of_majority},
+            )
+        )
+
+    async def player_legal_acceptance(self) -> bool:
+        """Whether the signed-in player has the current required documents and the age
+        attestation stored, i.e. whether a gameplay token would be issued. Requires the
+        identity session token."""
+        return bool(await self._request(PLAYER_LEGAL_ACCEPTANCE))
 
     async def check_auth_method(self, email: str) -> dict[str, Any]:
         result: dict[str, Any] = await self._request(CHECK_AUTH_METHOD, {"input": {"email": email}})

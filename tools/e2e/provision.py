@@ -35,7 +35,9 @@ async def provision(
         if existing:
             await client.auth.login(owner, password)
         else:
-            await client.auth.register(owner, password)
+            await client.auth.register(
+                owner, password, accept_legal=True, attest_age_of_majority=True
+            )
         org = (
             {"orgId": org_id}
             if org_id

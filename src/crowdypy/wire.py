@@ -22,6 +22,7 @@ from crowdypy.errors import CrowdyProtocolError
 _wire: Any = _native.wire
 
 __all__ = [
+    "CHANNEL_RANGED_MAX_DISTANCE",
     "HMAC_TAG_SIZE",
     "LONG_SPATIAL_HEADER_SIZE",
     "MAX_BUNDLE_MEMBERS",
@@ -42,6 +43,7 @@ __all__ = [
     "encode_channel_message",
     "encode_event_payload",
     "encode_long_spatial",
+    "encode_ranged_channel_message",
     "encode_voxel_payload",
     "parse_channel_notification",
     "parse_datagram",
@@ -64,6 +66,8 @@ TOKEN_OCTETS: int = _wire.TOKEN_OCTETS
 MAX_BUNDLE_MEMBERS: int = _wire.MAX_BUNDLE_MEMBERS
 MAX_CHANNEL_PAYLOAD: int = _wire.MAX_CHANNEL_PAYLOAD
 MAX_DISTANCE: int = _wire.MAX_DISTANCE
+#: The largest ``max_distance`` a distance-limited channel message takes, in chunks.
+CHANNEL_RANGED_MAX_DISTANCE: int = _wire.CHANNEL_RANGED_MAX_DISTANCE
 
 
 class MessageType(IntEnum):
@@ -76,6 +80,7 @@ class MessageType(IntEnum):
     CLIENT_ACTOR_HEARTBEAT = 26
     CLIENT_CAPABILITIES = 29
     MESSAGE_BUNDLE_SIGNED = 30
+    CHANNEL_MESSAGE_RANGED_REQUEST = 32
     ACTOR_UPDATE_REQUEST = 128
     ACTOR_UPDATE_NOTIFICATION = 130
     VOXEL_UPDATE_REQUEST = 131
@@ -231,6 +236,42 @@ def encode_channel_message(
         int(channel_id),
         uuid,
         payload,
+        int(game_token_id),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
+def encode_ranged_channel_message(
+    token: Any,
+    channel_id: int,
+    uuid: Any,
+    payload: Any,
+    *,
+    app_id: int,
+    chunk: Sequence[int],
+    max_distance: int,
+    game_token_id: int,
+    sequence: int = 0,
+) -> bytes:
+    """A CHANNEL_MESSAGE_RANGED_REQUEST: a channel publish that reaches only members whose
+    own actor is within ``max_distance`` chunks of ``chunk`` (straight-line distance,
+    inclusive). Members receive the ordinary CHANNEL_MESSAGE_NOTIFICATION."""
+    if not 0 <= int(max_distance) <= CHANNEL_RANGED_MAX_DISTANCE:
+        raise CrowdyProtocolError(
+            f"InvalidArgument: max_distance must be 0..{CHANNEL_RANGED_MAX_DISTANCE}"
+        )
+    result: bytes = _call(
+        _wire.encode_ranged_channel_message,
+        token,
+        int(channel_id),
+        uuid,
+        payload,
+        int(app_id),
+        int(chunk[0]),
+        int(chunk[1]),
+        int(chunk[2]),
+        int(max_distance),
         int(game_token_id),
         int(sequence) & 0xFF,
     )

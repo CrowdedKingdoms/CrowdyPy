@@ -28,6 +28,10 @@ enum class MessageType : std::uint8_t {
   ChannelMessageRequest = 17,
   /// Server -> client: a channel message delivered to a member.
   ChannelMessageNotification = 18,
+  /// Client -> server (Buddy v0.35.0): publish to a channel so that only members
+  /// with a live actor within maxDistance chunks (Euclidean) of an origin chunk
+  /// receive it, as an ordinary ChannelMessageNotification. Always HMAC-signed.
+  ChannelMessageRangedRequest = 32,
   /// Server -> client: reconnect to a different server (load shedding).
   /// [type][32B HMAC over the type byte]. Always sent un-bundled.
   CommandReconnect = 22,
@@ -195,6 +199,25 @@ constexpr std::size_t kMinRequestSize = kHeaderSize + kRequestTailSize;         
 constexpr std::size_t kMinNotificationSize = kHeaderSize + kNotificationTailSize;  // 52
 constexpr std::size_t kMaxPayload = 1024;
 }  // namespace channel
+
+// Ranged request (client -> server, Buddy v0.35.0): opcode 17's type, channelId and
+// uuid, then the origin and the distance, then 17's payload and tail.
+//   [1B type=32][8B channelId][32B uuid][8B appId][8B chunkX][8B chunkY][8B chunkZ]
+//   [4B maxDistance u32][2B payloadLen][payload][1B containsAuth=1][32B HMAC]
+//   [8B gameTokenId][1B seq]
+namespace channel_ranged {
+constexpr std::size_t kAppIdOffset = 41;
+constexpr std::size_t kChunkXOffset = 49;
+constexpr std::size_t kChunkYOffset = 57;
+constexpr std::size_t kChunkZOffset = 65;
+constexpr std::size_t kMaxDistanceOffset = 73;
+constexpr std::size_t kPayloadLenOffset = 77;
+constexpr std::size_t kHeaderSize = 79;  // through payloadLen
+constexpr std::size_t kPayloadOffset = kHeaderSize;
+constexpr std::size_t kMinRequestSize = kHeaderSize + channel::kRequestTailSize;  // 121
+/// Largest maxDistance the server accepts (the GraphQL Int ceiling).
+constexpr std::uint32_t kMaxDistance = 0x7FFFFFFFu;
+}  // namespace channel_ranged
 
 // ---- Event payload ----------------------------------------------------------
 // Client/server event messages carry [2B eventType][state...] in the payload

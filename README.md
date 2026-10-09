@@ -11,10 +11,16 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.5.1: chunk loads keep recorded voxel edits (CrowdyJS 18.2.0, CrowdyCPP 0.56.0).**
-- `ChunkStore.hydrate()` puts every recorded voxel edit (`voxelStates`: a hub's or mod's
-  `world.set_voxels`, `updateVoxel`, realtime updates) on the grid, and a later
-  `ensure_around()` keeps a chunk it already loaded instead of reloading its bare voxels.
+**v0.6.0: distance-limited channel messages and the terms gate (CrowdyJS 18.5.0, CrowdyCPP 0.58.0).**
+- `client.udp.send_ranged_channel_message(..., chunk=, max_distance=)` publishes to a channel
+  but reaches only the members whose own actor is within `max_distance` chunks of `chunk`,
+  by straight-line distance. Members receive the ordinary `channel_message`.
+- `client.auth.record_player_consents()` and `player_legal_acceptance()`, `register`'s
+  `accept_legal` and `attest_age_of_majority`, and `is_legal_acceptance_required_error`: a
+  gameplay token now waits for the player's agreement to the legal documents and age
+  attestation.
+- 0.5.1 made `ChunkStore.hydrate()` keep every recorded voxel edit (`voxelStates`) and
+  `ensure_around()` keep a chunk it already loaded.
 - 0.5.0 brought the ck-exec gateway check (`client.exec.connect()` sends the connect token
   only to a gateway on the game API's estate, and reports a refusal as `Denied`) and open
   grids (`game_apps.open_permissions()` and `set_open_permissions()`).
@@ -96,7 +102,10 @@ There is one API origin but two tokens, as in every Crowded Kingdoms SDK:
    token**: account, studio administration and minting. It is not accepted for gameplay.
 2. Gameplay needs a short-lived **app-scoped token** per app
    (`portal.mint_app_token(app_id)`), which is also the HMAC key for native UDP. Refresh it
-   with `client.refresh_gameplay_token()` (concurrent callers share one refresh).
+   with `client.refresh_gameplay_token()` (concurrent callers share one refresh). It is
+   refused with `LEGAL_ACCEPTANCE_REQUIRED` until the player's agreement to the legal
+   documents and age attestation are stored: show both checkboxes, then call
+   `auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)`.
 3. Build one identity client and one client per game. The game client points at the app's
    datacenter (`game_api_url`) with `discovery_url` set, so it can find the app again if
    that instance stops answering.

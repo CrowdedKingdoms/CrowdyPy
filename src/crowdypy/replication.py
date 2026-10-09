@@ -31,7 +31,7 @@ from typing import Any, Final, NamedTuple, Protocol
 
 from crowdypy import _native
 from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
-from crowdypy.wire import DecayRate, ErrorCode, MessageType
+from crowdypy.wire import CHANNEL_RANGED_MAX_DISTANCE, DecayRate, ErrorCode, MessageType
 
 __all__ = [
     "STATUS",
@@ -637,6 +637,29 @@ class _ConnectionCore:
     def send_channel_message(self, channel_id: int | str, uuid: str | bytes, payload: Any) -> int:
         try:
             result: int = self._native.send_channel_message(int(channel_id), uuid, payload)
+        except ValueError as exc:
+            raise _replication_error(exc) from None
+        return result
+
+    def send_ranged_channel_message(
+        self,
+        channel_id: int | str,
+        uuid: str | bytes,
+        payload: Any,
+        chunk: Sequence[int],
+        max_distance: int,
+    ) -> int:
+        """A channel publish that reaches only the members whose own actor is within
+        ``max_distance`` chunks of ``chunk`` (straight-line distance, inclusive). The origin
+        is the connection's app; members receive an ordinary channel message."""
+        if not 0 <= int(max_distance) <= CHANNEL_RANGED_MAX_DISTANCE:
+            raise CrowdyReplicationError(
+                f"max_distance must be 0..{CHANNEL_RANGED_MAX_DISTANCE}", code="InvalidArgument"
+            )
+        try:
+            result: int = self._native.send_ranged_channel_message(
+                int(channel_id), uuid, payload, chunk[0], chunk[1], chunk[2], int(max_distance)
+            )
         except ValueError as exc:
             raise _replication_error(exc) from None
         return result

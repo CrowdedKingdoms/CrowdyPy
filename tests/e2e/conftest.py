@@ -105,13 +105,16 @@ class Player:
 async def identity_client(
     email: str, password: str | None = None
 ) -> tuple[crowdypy.AsyncCrowdyClient, str]:
-    """Signed in: ``login`` with ``password``, otherwise ``register`` a fresh account."""
+    """Signed in: ``login`` with ``password``, otherwise ``register`` a fresh account that
+    has accepted the legal documents and attested its age, as a player ticking both boxes."""
     client = crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url)
     try:
         auth = (
             await client.auth.login(email, password)
             if password
-            else await client.auth.register(email, derive_password(email))
+            else await client.auth.register(
+                email, derive_password(email), accept_legal=True, attest_age_of_majority=True
+            )
         )
     except BaseException:
         await client.aclose()

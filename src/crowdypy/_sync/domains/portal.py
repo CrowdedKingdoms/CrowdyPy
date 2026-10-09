@@ -45,6 +45,7 @@ __all__ = [
     "PortalConsentRequiredError",
     "default_hosted_sign_in_url",
     "is_hosted_sign_in_required_error",
+    "is_legal_acceptance_required_error",
 ]
 
 
@@ -92,6 +93,24 @@ def is_hosted_sign_in_required_error(error: object) -> bool:
     return (
         "HOSTED_SIGN_IN_REQUIRED" in message or "only available to first-party" in message.lower()
     )
+
+
+def is_legal_acceptance_required_error(error: object) -> bool:
+    """``LEGAL_ACCEPTANCE_REQUIRED``: the player has not stored the current required legal
+    documents and the age-of-majority attestation, so no gameplay token is issued
+    (:meth:`PortalAPI.mint_app_token`, :meth:`PortalAPI.create_authorization_code`,
+    :meth:`PortalAPI.refresh`). Show your own clickwrap, then call
+    ``auth.record_player_consents``."""
+    code = getattr(error, "code", None)
+    if code == "LEGAL_ACCEPTANCE_REQUIRED":
+        return True
+    extensions = getattr(error, "extensions", None)
+    if isinstance(extensions, dict) and extensions.get("code") == "LEGAL_ACCEPTANCE_REQUIRED":
+        return True
+    for entry in getattr(error, "graphql_errors", None) or ():
+        if (entry.get("extensions") or {}).get("code") == "LEGAL_ACCEPTANCE_REQUIRED":
+            return True
+    return "LEGAL_ACCEPTANCE_REQUIRED" in str(error)
 
 
 _APP_TOKEN_FIELDS = (

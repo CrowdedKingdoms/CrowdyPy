@@ -3,6 +3,37 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.6.0
+
+CrowdyJS 18.5.0 and CrowdyCPP 0.58.0. Additive.
+
+- **Distance-limited channel messages.**
+  `client.udp.send_ranged_channel_message(channel_id, uuid, payload, *, chunk, max_distance)`
+  publishes to a channel but reaches only the members whose own actor is within
+  `max_distance` chunks of `chunk`. Distance is the straight line between chunk coordinates,
+  inclusive: 0 reaches only the origin chunk, and 5 reaches a member 3 chunks east and 4
+  north but not one 4 east and 4 north (about 5.66). It takes the same right as
+  `send_channel_message`, and members receive the ordinary `channel_message`, so receivers
+  change nothing. A member with no actor of its own is not reached, nor is the sender.
+  `max_distance` is 0 to `crowdypy.wire.CHANNEL_RANGED_MAX_DISTANCE` (2^31 - 1); the origin's
+  app is the connection's. Underneath it is
+  `ReplicationConnection.send_ranged_channel_message(channel_id, uuid, payload, chunk,
+  max_distance)`, and `crowdypy.wire.encode_ranged_channel_message` encodes the
+  CHANNEL_MESSAGE_RANGED_REQUEST (32) for a custom transport. It needs a replication server
+  that serves message type 32; one that does not delivers nothing.
+- **The terms and age gate** (CrowdyJS 18.4.0). Since ck-api v2.35.0 no gameplay token
+  (`portal.mint_app_token`, `portal.create_authorization_code`, `portal.refresh`) is issued
+  until the player has agreed to the current required legal documents and attested that they
+  are at least 18, or the age of majority where they live if higher; the refusal is
+  `LEGAL_ACCEPTANCE_REQUIRED`, which `crowdypy.is_legal_acceptance_required_error` reads.
+  Show your own two checkboxes, linking each document, then call
+  `client.auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)` before
+  minting; `client.auth.player_legal_acceptance()` says whether that is still needed.
+  `client.auth.register` takes `accept_legal` and `attest_age_of_majority`, and an account
+  registered with both `True` starts accepted. Record them only for a player who ticked both
+  boxes: they are the player's agreement. Against an older API the two new calls fail as
+  GraphQL validation errors.
+
 ## 0.5.1
 
 CrowdyJS 18.2.0 and CrowdyCPP 0.56.0. No API change; one behaviour fix.

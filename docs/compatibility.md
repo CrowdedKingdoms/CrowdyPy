@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.5.1`
+- CrowdyPy `0.6.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -38,3 +38,8 @@ requirement names one exactly, the same way a caret never matches an npm prerele
   `exec*` roots answers those calls with a GraphQL validation error.
 - Direct sign-in (`auth.login`, `auth.register`) is served to non-browser callers. CrowdyPy
   sends no `Origin` header, so it is exempt from `HOSTED_SIGN_IN_REQUIRED`.
+- `auth.record_player_consents` and `auth.player_legal_acceptance` need ck-api v2.35.0; an
+  older API answers them with a GraphQL validation error. From v2.35.0 a gameplay token
+  waits for both consents (`LEGAL_ACCEPTANCE_REQUIRED`).
+- `udp.send_ranged_channel_message` needs a replication server that serves message type 32
+  (CHANNEL_MESSAGE_RANGED_REQUEST); one that does not delivers nothing.

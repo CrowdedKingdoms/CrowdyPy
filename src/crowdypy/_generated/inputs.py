@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: f00952f685420f6c0f4bf58d56debda29aea8cce9b877754393611393ff63db1
+schema.gql sha256: 29d59267d8bf5a0497b272ac22b5edfb702c4872087b0cffaa1542a81c917834
 """
 
 from __future__ import annotations
@@ -646,10 +646,28 @@ class PublishFileInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     sha256: str
 
 
-class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True):
+class RangedChannelMessageInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'channel_id': 'channelId', 'app_id': 'appId', 'max_distance': 'maxDistance', 'sequence_number': 'sequenceNumber'}):
+    'Input for publishing a channel message that only reaches members near an origin chunk. A member receives it when one of its live actors is in the same app within maxDistance chunks of the origin, measured as the straight-line (Euclidean) distance between chunk coordinates, boundary included; a member with no live actor does not receive it. Members receive an ordinary ChannelMessageNotification. The sender must have the channel send_messages permission, exactly as for sendChannelMessage.'
+    channel_id: str
+    uuid: str
+    payload: str
+    app_id: str
+    chunk: ChunkCoordinatesInput
+    max_distance: int
+    sequence_number: int | None | UnsetType = UNSET
+
+
+class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'up_to_units': 'upToUnits', 'price_cents': 'priceCents'}):
+    up_to_units: str | None | UnsetType = UNSET
+    price_cents: float
+
+
+class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'accept_legal': 'acceptLegal', 'attest_age_of_majority': 'attestAgeOfMajority'}):
     email: str
     password: str
     gamertag: str | None | UnsetType = UNSET
+    accept_legal: bool | None | UnsetType = UNSET
+    attest_age_of_majority: bool | None | UnsetType = UNSET
 
 
 class ReinstateOrganizationInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
@@ -904,7 +922,7 @@ class SetQuotaInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'o
     idempotency_key: str | None | UnsetType = UNSET
 
 
-class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth'}):
+class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth', 'price_bands': 'priceBands', 'clear_price_bands': 'clearPriceBands'}):
     scope: RateScope
     metric: str
     price_cents: float | None | UnsetType = UNSET
@@ -915,6 +933,8 @@ class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
     free_units: str | None | UnsetType = UNSET
     free_period: AllowancePeriod | None | UnsetType = UNSET
     free_per_month: str | None | UnsetType = UNSET
+    price_bands: list[RateCardBandInput] | None | UnsetType = UNSET
+    clear_price_bands: bool | None | UnsetType = UNSET
     reason: str
 
 
@@ -1199,6 +1219,8 @@ __all__ = [
     'NearbyGridsInput',
     'PublishCrowdyStudioCommonFileInput',
     'PublishFileInput',
+    'RangedChannelMessageInput',
+    'RateCardBandInput',
     'RegisterUserInput',
     'ReinstateOrganizationInput',
     'RequestLoginLinkInput',

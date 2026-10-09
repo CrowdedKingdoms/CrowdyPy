@@ -99,6 +99,29 @@ nb::bytes encode_channel_message(nb::handle token_obj, std::int64_t channel_id,
   return to_bytes(Bytes(buf, n.value()));
 }
 
+nb::bytes encode_ranged_channel_message(nb::handle token_obj, std::int64_t channel_id,
+                                        nb::handle uuid_obj, nb::handle payload_obj,
+                                        std::int64_t app_id, std::int64_t chunk_x,
+                                        std::int64_t chunk_y, std::int64_t chunk_z,
+                                        std::uint32_t max_distance, std::int64_t game_token_id,
+                                        std::uint8_t sequence) {
+  const auto token = token_from(token_obj);
+  BufferView payload(payload_obj);
+  wire::RangedChannelMessageParams p;
+  p.channelId = channel_id;
+  p.uuid = uuid_from(uuid_obj);
+  p.appId = app_id;
+  p.origin = {chunk_x, chunk_y, chunk_z};
+  p.maxDistance = max_distance;
+  p.payload = payload.bytes();
+  p.gameTokenId = game_token_id;
+  p.sequence = sequence;
+  std::uint8_t buf[wire::kMaxDatagramSize];
+  auto n = wire::encodeRangedChannelMessage(crypto(), p, token, MutableBytes(buf, sizeof(buf)));
+  if (!n.ok()) raise(n.error(), "cannot encode this ranged channel message");
+  return to_bytes(Bytes(buf, n.value()));
+}
+
 nb::tuple parse_channel_notification(nb::handle datagram_obj) {
   BufferView datagram(datagram_obj);
   auto v = wire::parseChannelNotification(datagram.bytes());
@@ -173,6 +196,7 @@ void register_wire(nb::module_& m) {
   m.attr("MAX_BUNDLE_MEMBERS") = wire::kMaxBundleMembers;
   m.attr("MAX_BUNDLE_MEMBER_SIZE") = wire::kMaxBundleMemberSize;
   m.attr("MAX_CHANNEL_PAYLOAD") = wire::channel::kMaxPayload;
+  m.attr("CHANNEL_RANGED_MAX_DISTANCE") = wire::channel_ranged::kMaxDistance;
   m.attr("MAX_DISTANCE") = wire::kMaxDistance;
   m.attr("CLIENT_CAPABILITIES_ALL") = wire::ClientCapability::kAll;
 
@@ -189,6 +213,10 @@ void register_wire(nb::module_& m) {
   m.def("encode_channel_message", &encode_channel_message, nb::arg("token"),
         nb::arg("channel_id"), nb::arg("uuid"), nb::arg("payload"), nb::arg("game_token_id"),
         nb::arg("sequence"));
+  m.def("encode_ranged_channel_message", &encode_ranged_channel_message, nb::arg("token"),
+        nb::arg("channel_id"), nb::arg("uuid"), nb::arg("payload"), nb::arg("app_id"),
+        nb::arg("chunk_x"), nb::arg("chunk_y"), nb::arg("chunk_z"), nb::arg("max_distance"),
+        nb::arg("game_token_id"), nb::arg("sequence"));
   m.def("parse_channel_notification", &parse_channel_notification, nb::arg("datagram"));
   m.def("parse_generic_error", &parse_generic_error, nb::arg("datagram"));
   m.def("encode_voxel_payload", &encode_voxel_payload, nb::arg("x"), nb::arg("y"),
