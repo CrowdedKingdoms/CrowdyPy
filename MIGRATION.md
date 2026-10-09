@@ -18,7 +18,8 @@ CrowdyJS 18.6.0 and CrowdyCPP 0.59.0. Additive.
   time or scan limit. Both are game plane (the app-scoped client). A player reads their own
   sessions, and a holder of `manage_apps` reads every one; without it, listing another
   user's sessions is `FORBIDDEN` and reading another user's session is `NOT_FOUND`. Both
-  answer `INPUT_LOG_UNAVAILABLE` on a deployment without input logging.
+  answer `INPUT_LOG_UNAVAILABLE` on a deployment without input logging, and `messages` also
+  answers it, retryable with the same cursor, when the log cannot be read right now.
 - **`replayLoggingEnabled`** is selected on every app read. Turning it on with
   `client.apps.update` is refused with `INPUT_LOG_FUNDS_NEEDED` unless the org's wallet has a
   spendable balance or the org is exempt from billing.

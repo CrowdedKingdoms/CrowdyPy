@@ -7,7 +7,8 @@ the app-scoped client for the app; an identity session token is refused. A playe
 the sessions and inputs they sent; a holder of ``manage_apps`` on the app reads every session.
 Inputs are kept for the input log's published retention, so an old session can still be listed
 after its inputs are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without input
-logging.
+logging, and :meth:`InputLogAPI.messages` also answers it, retryable with the same cursor, when the
+log cannot be read right now.
 """
 
 from __future__ import annotations
