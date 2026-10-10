@@ -23,6 +23,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.disconnectUdpProxy" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.sendActorUpdate" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.sendAudioPacket" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
+"mutation.sendChannelAudio" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.sendChannelMessage" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.sendClientEvent" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 "mutation.sendRangedChannelMessage" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
@@ -152,6 +153,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "payloadBytesOf" = { kind = "native-equivalent", reason = "connection.stats(): CrowdyCPP's counters (datagrams, messages and bytes, by message type)" }
 "serializeActorUpdate" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeAudioPacket" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
+"serializeChannelAudio" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_audio" }
 "serializeChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_message with the message type" }
 "serializeClientEvent" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeRangedChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_ranged_channel_message" }
