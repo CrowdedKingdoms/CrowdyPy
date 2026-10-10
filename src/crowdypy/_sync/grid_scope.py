@@ -96,7 +96,10 @@ class GridChannels:
         description: str | None = None,
         membership_policy: str | None = None,
         members_can_send: bool | None = None,
+        members_can_speak: bool | None = None,
     ) -> dict[str, Any]:
+        """``members_can_speak`` gives the default member role ``send_voice`` (channel
+        audio)."""
         request: dict[str, Any] = {
             "appId": self._scope.app_id,
             "gridId": self._scope.grid_id,
@@ -108,6 +111,8 @@ class GridChannels:
             request["membershipPolicy"] = membership_policy
         if members_can_send is not None:
             request["membersCanSend"] = members_can_send
+        if members_can_speak is not None:
+            request["membersCanSpeak"] = members_can_speak
         return self._grids.create_channel(request)
 
     def join(self, channel_id: str | int) -> dict[str, Any]:
@@ -119,6 +124,11 @@ class GridChannels:
     def send(self, channel_id: str | int, uuid: str, payload: Any) -> int:
         """Publish to one of the grid's channels over ``client.udp``; returns the sequence."""
         return _udp(self._udp).send_channel_message(channel_id, uuid, payload)
+
+    def send_audio(self, channel_id: str | int, uuid: str, payload: Any) -> int:
+        """Channel audio over ``client.udp``: needs ``send_voice`` on the channel and the
+        player's ``use_voice_chat``. Returns the sequence."""
+        return _udp(self._udp).send_channel_audio(channel_id, uuid, payload)
 
 
 class GridSends:

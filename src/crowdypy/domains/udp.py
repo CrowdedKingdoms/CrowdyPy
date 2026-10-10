@@ -230,6 +230,9 @@ class UdpAPI:
         distance: int = 8,
         decay: int = DecayRate.NONE,
     ) -> int:
+        """One voxel edit: the position and type are the app's signed 16-bit values and the
+        state is at most 1,024 bytes (``InvalidArgument`` otherwise, nothing sent). The server
+        echoes every accepted edit to its sender as a ``voxel_update``."""
         return self._live().send_voxel_update(
             chunk, uuid, voxel, voxel_type, voxel_state, distance=distance, decay=decay
         )
@@ -375,6 +378,16 @@ class UdpAPI:
     async def send_channel_message(self, channel_id: str | int, uuid: str, payload: Any) -> int:
         """Publish to a channel (needs membership and ``send_messages``)."""
         return self._live().send_channel_message(channel_id, uuid, payload)
+
+    async def send_channel_audio(self, channel_id: str | int, uuid: str, payload: Any) -> int:
+        """Send audio to a channel: every active member receives it wherever they are, as a
+        ``channel_audio`` notification (party or guild voice). ``payload`` is at most 1,024
+        bytes, typically one :class:`crowdypy.media.VoicePacketizer` packet. Needs the
+        channel's ``send_voice`` (``members_can_speak`` on creation gives the member role it)
+        and the player's ``use_voice_chat``; without either the server answers
+        ``UNAUTHORIZED`` for the returned sequence. The sender gets no echo. Every member's
+        downlink is billed as egress, so keep voice channels small."""
+        return self._live().send_channel_audio(channel_id, uuid, payload)
 
     async def send_ranged_channel_message(
         self,

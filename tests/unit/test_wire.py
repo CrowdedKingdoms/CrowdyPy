@@ -317,6 +317,83 @@ def test_capabilities_message_encodes() -> None:
     assert encoded[68:72] == b"\x01\x00\x00\x00"
 
 
+AUDIO_TOKEN = b"T" * 64
+AUDIO_UUID = b"v" * 32
+# The vector CrowdyJS's channel-audio test and CrowdyCPP's wire_test pin for channel audio:
+# channel 4242, payload 01..05, gameTokenId 777, seq 200.
+AUDIO_GOLDEN = bytes.fromhex(
+    "23921000000000000076767676767676767676767676767676767676767676767676767676767676"
+    "760500010203040501f7c505bbdfc07169f661cb3e3c8d061bbf0065ef4bdc239df40c77112ff8"
+    "85150903000000000000c8"
+)
+
+
+def test_channel_audio_is_a_channel_message_with_type_byte_35() -> None:
+    assert wire.MessageType.CHANNEL_AUDIO_REQUEST == 35
+    assert wire.MessageType.CHANNEL_AUDIO_NOTIFICATION == 36
+    payload = bytes([1, 2, 3, 4, 5])
+    audio = wire.encode_channel_audio(
+        AUDIO_TOKEN, 4242, AUDIO_UUID, payload, game_token_id=777, sequence=200
+    )
+    assert audio == AUDIO_GOLDEN
+    message = wire.encode_channel_message(
+        AUDIO_TOKEN, 4242, AUDIO_UUID, payload, game_token_id=777, sequence=200
+    )
+    prefix = 1 + 8 + 32 + 2 + len(payload) + 1
+    assert (audio[0], message[0]) == (35, 17)
+    assert audio[1:prefix] == message[1:prefix]
+    tag = hmac.new(AUDIO_TOKEN, audio[:prefix] + AUDIO_TOKEN, hashlib.sha256).digest()
+    assert audio[prefix : prefix + 32] == tag
+    with pytest.raises(CrowdyProtocolError, match="InvalidArgument"):
+        wire.encode_channel_audio(AUDIO_TOKEN, 1, AUDIO_UUID, bytes(1025), game_token_id=1)
+
+
+def _channel_audio_notification(payload: bytes) -> bytes:
+    return (
+        bytes([wire.MessageType.CHANNEL_AUDIO_NOTIFICATION])
+        + (9).to_bytes(8, "little")
+        + AUDIO_UUID
+        + len(payload).to_bytes(2, "little")
+        + payload
+        + (1_700_000_000_555).to_bytes(8, "little")
+        + bytes([4])
+    )
+
+
+def test_channel_audio_notifications_parse_standalone_and_bundled() -> None:
+    frame = _channel_audio_notification(b"\x01\x01\x07\x00")
+    expected = wire.ChannelAudioNotification(
+        9, AUDIO_UUID, b"\x01\x01\x07\x00", 1_700_000_000_555, 4
+    )
+    assert list(wire.parse_datagram(frame)) == [expected]
+    assert list(wire.parse_datagram(wire.bundle([frame, frame]))) == [expected, expected]
+    assert tuple(wire.parse_channel_notification(frame)) == tuple(expected)
+    assert not isinstance(next(wire.parse_datagram(frame)), wire.ChannelNotification)
+    with pytest.raises(CrowdyProtocolError):
+        wire.parse_channel_notification(frame[:30])
+
+
+def test_app_paused_is_udp_error_33() -> None:
+    assert wire.ErrorCode.APP_PAUSED == 33
+    assert wire.parse_generic_error(bytes([3, 9, 33])) == (9, wire.ErrorCode.APP_PAUSED)
+
+
+def test_assert_voxel_edit_takes_the_apps_int16s_and_a_bounded_state() -> None:
+    assert wire.VOXEL_STATE_MAX_BYTES == 1024
+    wire.assert_voxel_edit((-32768, 32767, 16), -1, bytes(1024))
+    wire.assert_voxel_edit((0, 0, 0), 300)
+    for voxel, voxel_type, name in (
+        ((32768, 0, 0), 1, "voxel x"),
+        ((0, -32769, 0), 1, "voxel y"),
+        ((0, 0, 1.5), 1, "voxel z"),
+        ((0, 0, 0), 40000, "voxel type"),
+    ):
+        with pytest.raises(ValueError, match=name):
+            wire.assert_voxel_edit(voxel, voxel_type)
+    with pytest.raises(ValueError, match="1025 bytes; at most 1024"):
+        wire.assert_voxel_edit((0, 0, 0), 1, bytes(1025))
+
+
 def test_argument_errors_are_protocol_errors() -> None:
     with pytest.raises(CrowdyProtocolError, match="InvalidArgument"):
         wire.encode_long_spatial(b"short", 128, 1, (0, 0, 0), b"", game_token_id=1)

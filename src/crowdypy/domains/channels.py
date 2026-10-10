@@ -83,7 +83,9 @@ class ChannelsAPI(Domain):
         The app's creation policy (``admin``, ``member`` or ``anyone``) decides whether the
         caller may. With ``members_can_send`` true (the default) joiners get a default
         ``member`` role granting ``send_messages``, an open chat channel; false makes an
-        announce channel where only roles you grant may post. ``name`` is at most 128
+        announce channel where only roles you grant may post. ``members_can_speak`` (default
+        false) also gives that role ``send_voice``, the right to send channel audio
+        (``client.udp.send_channel_audio``) for party or guild voice. ``name`` is at most 128
         characters and unique in the app. Raises ``BAD_USER_INPUT`` (a long or taken name)
         or ``FORBIDDEN`` (the policy refuses).
         """
