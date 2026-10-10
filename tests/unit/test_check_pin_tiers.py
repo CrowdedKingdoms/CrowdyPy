@@ -5,10 +5,14 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "check_pin_tiers", ROOT / "scripts" / "ci" / "check_pin_tiers.py"
-)
+SCRIPT = ROOT / "scripts" / "ci" / "check_pin_tiers.py"
+if not SCRIPT.exists():
+    # The wheel builds run tests/unit from a copy that carries no scripts/.
+    pytest.skip("scripts/ci is not in this test tree", allow_module_level=True)
+_spec = importlib.util.spec_from_file_location("check_pin_tiers", SCRIPT)
 assert _spec
 assert _spec.loader
 check = importlib.util.module_from_spec(_spec)
