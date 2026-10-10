@@ -15,6 +15,7 @@ permission. ``BigInt`` ids take an ``int`` or a decimal string.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from crowdypy._generated import inputs
@@ -23,6 +24,14 @@ from crowdypy._sync.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
 __all__ = ["AppAccessAPI"]
+
+
+def _instant(value: datetime | str) -> str:
+    if isinstance(value, str):
+        return value
+    if value.tzinfo is None:
+        raise ValueError("until must be a timezone-aware datetime (or an ISO-8601 string)")
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class AppAccessAPI(Domain):
@@ -160,13 +169,62 @@ class AppAccessAPI(Domain):
     def revoke(self, app_id: str | int, user_id: str | int) -> dict[str, Any]:
         """Revoke a user's access to an app. Needs ``manage_access_tiers``.
 
-        The user loses runtime access at once. The record is kept, and :meth:`grant`
-        restores it.
+        Their gameplay tokens for the app are deleted and their realtime sessions ended at
+        once, and a new token is refused with ``ACCESS_REVOKED``. The record is kept, and
+        :meth:`grant` restores it. For a ban that lifts by itself use :meth:`suspend`.
         """
         result: dict[str, Any] = self._request(
             ops.REVOKE_APP_ACCESS, {"appId": bigint(app_id), "userId": bigint(user_id)}
         )
         return result
+
+    def suspend(
+        self,
+        app_id: str | int,
+        user_id: str | int,
+        until: datetime | str,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Suspend a player's access to an app until ``until``: a timed ban that lifts by
+        itself. Needs ``manage_access_tiers``.
+
+        Until then their gameplay tokens are refused with ``ACCESS_SUSPENDED`` (carrying
+        ``suspendedUntil``; see :func:`crowdypy.access_refusal_of`), and the tokens they hold
+        for the app are deleted and their realtime sessions ended at once. ``until`` (a
+        timezone-aware ``datetime`` or an ISO-8601 string) must be in the future and at most
+        365 days away, and the player must have an access record. A replay with the same
+        ``idempotency_key`` and arguments returns the first result. Returns the access
+        record, with ``suspendedUntil`` set.
+        """
+        result: dict[str, Any] = self._request(
+            ops.SUSPEND_APP_ACCESS,
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "userId": bigint(user_id),
+                    "until": _instant(until),
+                    "idempotencyKey": idempotency_key,
+                }
+            ),
+        )
+        return result
+
+    def unsuspend(self, app_id: str | int, user_id: str | int) -> dict[str, Any]:
+        """Lift a player's suspension before it lapses; a no-op for a player who is not
+        suspended. Needs ``manage_access_tiers``. Returns the access record, with
+        ``suspendedUntil`` cleared."""
+        result: dict[str, Any] = self._request(
+            ops.UNSUSPEND_APP_ACCESS, {"appId": bigint(app_id), "userId": bigint(user_id)}
+        )
+        return result
+
+    def resync_tier_grid_permissions(self, app_id: str | int) -> bool:
+        """Re-apply every player's tier keys that follow onto the app's world grid and
+        rebuild the world grid's permissions. Tier changes made through this API already do
+        it; call it after a change made another way. Needs ``manage_access_tiers``."""
+        return bool(
+            self._request(ops.RESYNC_TIER_GRID_PERMISSIONS, {"appId": bigint(app_id)})
+        )
 
     def define_feature(
         self, input: inputs.DefineAppFeatureInput | Mapping[str, Any]

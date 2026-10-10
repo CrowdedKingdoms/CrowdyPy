@@ -34,7 +34,13 @@ class ServerStatusAPI(Domain):
         return result
 
     async def game_client_bootstrap(self, app_id: str | int) -> dict[str, Any]:
-        """Per-app version info, UDP status, spatial limits and the app's endpoints."""
+        """Per-app version info, UDP status, spatial limits and the app's endpoints.
+
+        ``runtimeGate`` (``status``, ``reason``) answers for a paused app too: tell the player
+        the world is paused when :func:`crowdypy.is_app_paused` says so, instead of showing an
+        empty one. ``wildernessWritesOpen`` false means voxel edits on land only the world
+        grid covers are refused, so a client can stop a player before sending one.
+        """
         result: dict[str, Any] = await self._request(
             ops.GAME_CLIENT_BOOTSTRAP, {"appId": bigint(app_id)}
         )

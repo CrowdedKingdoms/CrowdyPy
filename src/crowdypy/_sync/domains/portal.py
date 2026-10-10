@@ -32,10 +32,11 @@ from crowdypy._sync.graphql import GraphQLClient
 from crowdypy.pkce import generate_pkce_pair, generate_state
 from crowdypy.session import SessionStore
 from crowdypy.utils import bigint
-from crowdypy.domains.portal import AppAuthorizationGrant, AppTokenResponse, AuthorizedServer, CurrentServer, MemoryPkceStore, PkceStore, PortalConsentRequiredError  # one class in both clients
+from crowdypy.domains.portal import AppAuthorizationGrant, AppRuntimeGate, AppTokenResponse, AuthorizedServer, CurrentServer, MemoryPkceStore, PkceStore, PortalConsentRequiredError  # one class in both clients
 
 __all__ = [
     "AppAuthorizationGrant",
+    "AppRuntimeGate",
     "AppTokenResponse",
     "AuthorizedServer",
     "CurrentServer",
@@ -47,6 +48,8 @@ __all__ = [
     "is_hosted_sign_in_required_error",
     "is_legal_acceptance_required_error",
 ]
+
+
 
 
 
@@ -114,7 +117,8 @@ def is_legal_acceptance_required_error(error: object) -> bool:
 
 
 _APP_TOKEN_FIELDS = (
-    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl"
+    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl "
+    "runtimeGate { status reason }"
 )
 
 MINT_APP_TOKEN = inline_operation(

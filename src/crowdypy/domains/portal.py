@@ -34,6 +34,7 @@ from crowdypy.utils import bigint
 
 __all__ = [
     "AppAuthorizationGrant",
+    "AppRuntimeGate",
     "AppTokenResponse",
     "AuthorizedServer",
     "CurrentServer",
@@ -52,6 +53,18 @@ class AuthorizedServer(msgspec.Struct, rename="camel", frozen=True, kw_only=True
     client_port: int
 
 
+class AppRuntimeGate(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """An app's runtime gate as a player's client may read it. Any ``status`` but ``ACTIVE``
+    means the app is paused: replication delivers nothing and refuses sends with
+    ``APP_PAUSED``, and hub calls are refused. Tell the player the world is paused instead of
+    showing an empty one (:func:`crowdypy.is_app_paused`)."""
+
+    #: ``ACTIVE``, ``GRACE``, ``DENIED`` or ``SUSPENDED`` (an open set).
+    status: str
+    #: ``insufficient_funds``, ``spend_cap`` or ``subscription_lapsed``; ``None`` while active.
+    reason: str | None = None
+
+
 class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     """A gameplay token and where to use it. Its repr never shows the token."""
 
@@ -65,6 +78,10 @@ class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True
     launch_url: str | None = None
     #: Set on a refresh that named its current server and was installed there.
     authorized_server: AuthorizedServer | None = None
+    #: The app's runtime gate when the token was minted. A paused app still mints, so check
+    #: :func:`crowdypy.is_app_paused` before entering the world. ``None`` when the server
+    #: could not read it.
+    runtime_gate: AppRuntimeGate | None = None
 
     def __repr__(self) -> str:
         return (
@@ -176,7 +193,8 @@ def is_legal_acceptance_required_error(error: object) -> bool:
 
 
 _APP_TOKEN_FIELDS = (
-    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl"
+    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl "
+    "runtimeGate { status reason }"
 )
 
 MINT_APP_TOKEN = inline_operation(

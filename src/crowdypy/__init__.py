@@ -49,8 +49,16 @@ _LAZY: dict[str, str] = {
     "AsyncExecConnection": "crowdypy.exec_gateway",
     "ExecConnection": "crowdypy.exec_gateway",
     # errors
+    "ACCESS_NOT_GRANTED_CODE": "crowdypy.errors",
+    "ACCESS_REVOKED_CODE": "crowdypy.errors",
+    "ACCESS_SUSPENDED_CODE": "crowdypy.errors",
+    "ACTOR_EXISTS_CODE": "crowdypy.errors",
+    "APP_PAUSED_CODE": "crowdypy.errors",
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
+    "CrowdyAccessRefusal": "crowdypy.errors",
+    "CrowdyActorExists": "crowdypy.errors",
+    "CrowdyAppPaused": "crowdypy.errors",
     "CrowdyAppUnavailableError": "crowdypy.errors",
     "CrowdyError": "crowdypy.errors",
     "CrowdyGraphQLError": "crowdypy.errors",
@@ -63,6 +71,10 @@ _LAZY: dict[str, str] = {
     "CrowdyTimeoutError": "crowdypy.errors",
     "CrowdyUserCodeFaultError": "crowdypy.errors",
     "GridScopeError": "crowdypy.errors",
+    "access_refusal_of": "crowdypy.errors",
+    "actor_exists_of": "crowdypy.errors",
+    "app_paused_of": "crowdypy.errors",
+    "is_app_paused": "crowdypy.errors",
     "player_fault_of": "crowdypy.errors",
     # sessions, tokens, routing
     "AuthState": "crowdypy.auth_state",
@@ -89,6 +101,7 @@ _LAZY: dict[str, str] = {
     "validate_chunk_coordinates": "crowdypy.utils",
     "validate_crowdy_uuid": "crowdypy.utils",
     # identity results and helpers
+    "AppRuntimeGate": "crowdypy.domains.portal",
     "AppTokenResponse": "crowdypy.domains.portal",
     "CurrentServer": "crowdypy.domains.portal",
     "MemoryPkceStore": "crowdypy.domains.portal",
@@ -315,6 +328,9 @@ if TYPE_CHECKING:
         PlayerWalletAPI as PlayerWalletAPI,
     )
     from crowdypy.domains.portal import (
+        AppRuntimeGate as AppRuntimeGate,
+    )
+    from crowdypy.domains.portal import (
         AppTokenResponse as AppTokenResponse,
     )
     from crowdypy.domains.portal import (
@@ -372,10 +388,34 @@ if TYPE_CHECKING:
         VoxelsAPI as VoxelsAPI,
     )
     from crowdypy.errors import (
+        ACCESS_NOT_GRANTED_CODE as ACCESS_NOT_GRANTED_CODE,
+    )
+    from crowdypy.errors import (
+        ACCESS_REVOKED_CODE as ACCESS_REVOKED_CODE,
+    )
+    from crowdypy.errors import (
+        ACCESS_SUSPENDED_CODE as ACCESS_SUSPENDED_CODE,
+    )
+    from crowdypy.errors import (
+        ACTOR_EXISTS_CODE as ACTOR_EXISTS_CODE,
+    )
+    from crowdypy.errors import (
+        APP_PAUSED_CODE as APP_PAUSED_CODE,
+    )
+    from crowdypy.errors import (
         APP_UNAVAILABLE_CODE as APP_UNAVAILABLE_CODE,
     )
     from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
+    )
+    from crowdypy.errors import (
+        CrowdyAccessRefusal as CrowdyAccessRefusal,
+    )
+    from crowdypy.errors import (
+        CrowdyActorExists as CrowdyActorExists,
+    )
+    from crowdypy.errors import (
+        CrowdyAppPaused as CrowdyAppPaused,
     )
     from crowdypy.errors import (
         CrowdyAppUnavailableError as CrowdyAppUnavailableError,
@@ -412,6 +452,18 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         GridScopeError as GridScopeError,
+    )
+    from crowdypy.errors import (
+        access_refusal_of as access_refusal_of,
+    )
+    from crowdypy.errors import (
+        actor_exists_of as actor_exists_of,
+    )
+    from crowdypy.errors import (
+        app_paused_of as app_paused_of,
+    )
+    from crowdypy.errors import (
+        is_app_paused as is_app_paused,
     )
     from crowdypy.errors import (
         player_fault_of as player_fault_of,
