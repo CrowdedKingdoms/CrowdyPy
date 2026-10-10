@@ -39,6 +39,7 @@ from crowdypy._sync.domains.exec import ExecAPI
 from crowdypy._sync.domains.game_apps import GameAppsAPI
 from crowdypy._sync.domains.grids import GridsAPI
 from crowdypy._sync.domains.host import HostAPI
+from crowdypy._sync.domains.input_log import InputLogAPI
 from crowdypy._sync.domains.marketplace import MarketplaceAPI
 from crowdypy._sync.domains.organizations import OrganizationsAPI
 from crowdypy._sync.domains.payments import PaymentsAPI
@@ -139,6 +140,7 @@ class CrowdyClient:
         self.voxels = VoxelsAPI(self.graphql)
         self.actors = ActorsAPI(self.graphql)
         self.teleport = TeleportAPI(self.graphql)
+        self.input_log = InputLogAPI(self.graphql)
         self.state = StateAPI(self.graphql)
         self.server_status = ServerStatusAPI(self.graphql)
         self.channels = ChannelsAPI(self.graphql)

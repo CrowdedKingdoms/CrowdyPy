@@ -35,17 +35,23 @@ GraphQLClient = "AsyncGraphQLClient"
 
 # --- browser-exclusion
 "mutation.abandonGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.addTierAccessRule" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.beginGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.claimGameHosting" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.completeGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.cpBillingCreditOverbill" = { kind = "browser-exclusion", reason = "operator-only ledger control (credit an over-billed charge); not a game-client surface" }
 "mutation.cpSetCrowdyStudioAgentAppKill" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.cpSetCrowdyStudioAgentPlatformPolicy" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.createTierAccessProvisioningToken" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.creditOrgWallet" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.endTierAccessSessions" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.forceLogoutUser" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.forgetEmailDeliverability" = { kind = "browser-exclusion", reason = "operator-only email deliverability control; not a game-client surface" }
+"mutation.grantTierAccessByPattern" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.reinstateOrganization" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle; not a game-client surface" }
 "mutation.retireOrganization" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle; not a game-client surface" }
+"mutation.revokeTierAccessProvisioningToken" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.revokeTierAccessRule" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.runSharedUsageBillingTick" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.sendTestEmail" = { kind = "browser-exclusion", reason = "operator-only email deliverability control; not a game-client surface" }
 "mutation.setAppVisibility" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -57,6 +63,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.setOrgBillingExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setOrgStatus" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setSuperAdmin" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.setTierAccessMode" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.setUserTierAccess" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.takeDownHostedGame" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.updateUserType" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.agentRateCards" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
@@ -79,9 +87,16 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.hostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.meteredRateCard" = { kind = "browser-exclusion", reason = "public price list for the pricing page and dashboard; a game client has no use for it" }
 "query.myHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.myTierAccess" = { kind = "browser-exclusion", reason = "the dev/test staff-only gate as sign-in pages show it; CrowdyJS wraps neither" }
 "query.paymentEvents" = { kind = "browser-exclusion", reason = "super-admin only (cross-tenant audit); the SDK wraps nothing for platform roles (tooling calls it directly). CrowdyCPP waives it as deprecated offset pagination" }
 "query.paymentEventsConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.retiredOrganizations" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle reads; not a game-client surface" }
+"query.tierAccessInventory" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.tierAccessPolicy" = { kind = "browser-exclusion", reason = "the dev/test staff-only gate as sign-in pages show it; CrowdyJS wraps neither" }
+"query.tierAccessProvisioningTokens" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.tierAccessRules" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.tierAccessSettings" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.userTierAccess" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.usersConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.usersPaginated" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 

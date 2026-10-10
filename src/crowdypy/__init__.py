@@ -133,6 +133,7 @@ _LAZY: dict[str, str] = {
     "StateAPI": "crowdypy.domains.state",
     "TeamsAPI": "crowdypy.domains.teams",
     "TeleportAPI": "crowdypy.domains.teleport",
+    "InputLogAPI": "crowdypy.domains.input_log",
     "UsageAPI": "crowdypy.domains.usage",
     "UsersAPI": "crowdypy.domains.users",
     "VoxelsAPI": "crowdypy.domains.voxels",
@@ -294,6 +295,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.host import (
         HostAPI as HostAPI,
+    )
+    from crowdypy.domains.input_log import (
+        InputLogAPI as InputLogAPI,
     )
     from crowdypy.domains.marketplace import (
         MarketplaceAPI as MarketplaceAPI,

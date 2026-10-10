@@ -3,6 +3,27 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.7.0
+
+CrowdyJS 18.6.0 and CrowdyCPP 0.59.0. Additive.
+
+- **The input log.** An app with replay logging on has every client input the realtime
+  servers accept recorded. `client.input_log.sessions(app_id, *, first=, after=, filter=)`
+  lists the app's recorded sessions, newest first (`edges`, `pageInfo`, `totalCount`; a
+  session is one game token's inputs), and `client.input_log.messages(app_id, game_token_id,
+  *, first=, after=, filter=)` reads one session's inputs, oldest first. `body` is the client
+  message in base64 without its authentication tail (`decode_base64` gives the bytes), and
+  `sizeBytes` is what stored input logs are billed on. Keep paging while
+  `pageInfo.hasNextPage` is true: a page can be short, or empty, when it reached the server's
+  time or scan limit. Both are game plane (the app-scoped client). A player reads their own
+  sessions, and a holder of `manage_apps` reads every one; without it, listing another
+  user's sessions is `FORBIDDEN` and reading another user's session is `NOT_FOUND`. Both
+  answer `INPUT_LOG_UNAVAILABLE` on a deployment without input logging, and `messages` also
+  answers it, retryable with the same cursor, when the log cannot be read right now.
+- **`replayLoggingEnabled`** is selected on every app read. Turning it on with
+  `client.apps.update` is refused with `INPUT_LOG_FUNDS_NEEDED` unless the org's wallet has a
+  spendable balance or the org is exempt from billing.
+
 ## 0.6.0
 
 CrowdyJS 18.5.0 and CrowdyCPP 0.58.0. Additive.
