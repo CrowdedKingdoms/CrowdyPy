@@ -337,13 +337,16 @@ class ExecBuild(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     """A build, its log and one module per crate.
 
     ``status`` is ``queued``, ``building``, ``succeeded`` or ``failed``; ``kind`` is ``exec``
-    for ck-exec modules and ``client`` for the CLIENT half of a mod.
+    for ck-exec modules and ``client`` for the CLIENT half of a mod. ``sdk_version`` is the
+    ``ckx-sdk`` version the platform compiled against (``crowdy-client-sdk``'s for a CLIENT
+    half), whatever version the crate names; ``None`` until the build starts (ck-api v2.40.2).
     """
 
     build_id: str
     status: str
     kind: str
     log: str | None = None
+    sdk_version: str | None = None
     created_at: str
     started_at: str | None = None
     finished_at: str | None = None

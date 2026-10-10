@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.9.0
+
+CrowdyJS 18.8.0 and CrowdyCPP 0.61.0. Additive, with one floor: the build documents select
+`ExecBuild.sdkVersion`, so `exec.build`, `build_status`, `wait_for_build`, `mod_build`,
+`mod_client_build`, `mod_build_status` and `wait_for_mod_build` need ck-api v2.40.2 (an older
+one refuses the selection).
+
+- **`ExecBuild.sdk_version`**: the version of `ckx-sdk` the platform compiled the build against
+  (`crowdy-client-sdk` for a CLIENT half), from the toolchain of the API instance that ran it. The
+  platform points a crate at its own copy of the SDK whatever version the crate names, so this,
+  not your manifest, says what your code was checked against. `None` until the build starts.
+
 ## 0.8.0
 
 CrowdyJS 18.7.0 and CrowdyCPP 0.60.0. Additive, with reads that change for values they used to

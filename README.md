@@ -11,6 +11,9 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.9.0: builds report the SDK they compiled against (CrowdyJS 18.8.0, CrowdyCPP 0.61.0).** See the 0.9.0
+bullet below.
+
 **v0.8.0: voice, channel audio, wide voxels, and pause and access refusals (CrowdyJS 18.7.0, CrowdyCPP 0.60.0).**
 - Voice: `crowdypy.media`'s voice helpers (an optional 10-byte header per codec frame,
   `VoicePacketizer`, `VoiceJitterBuffer`), and `client.udp.send_channel_audio()` with the
@@ -23,6 +26,9 @@ wheel. Python never touches a datagram.
   carry, and `app_paused_of`, `access_refusal_of` and `actor_exists_of` read the new refusals.
 - New calls: `users.player_profile(s)`, `app_access.suspend` and `unsuspend`, and
   `exec.restart_type`.
+- 0.9.0: every build (`exec.build`, `build_status`, `wait_for_build` and the mod builds) carries
+  `sdk_version`, the `ckx-sdk` (CLIENT half: `crowdy-client-sdk`) version the platform compiled it
+  against, whatever the crate names. It needs ck-api v2.40.2, since the build documents select it.
 - 0.8.0 needs the ck-api release after v2.39.0, since the token mutations select
   `runtimeGate`. Channel audio and the voxel echo need replication server v0.37.0.
 - 0.7.0 brought the input log (`client.input_log.sessions()` and `messages()`, and

@@ -1194,6 +1194,7 @@ BUILD = {
     "status": "queued",
     "kind": "exec",
     "log": None,
+    "sdkVersion": None,
     "createdAt": "t",
     "startedAt": None,
     "finishedAt": None,
@@ -1446,6 +1447,7 @@ async def test_starters_build_and_the_build_poll(
             "ExecBuildStatus": lambda _: {
                 **BUILD,
                 "status": statuses.pop(0),
+                "sdkVersion": "0.9.0",
                 "artifacts": [artifact],
             },
         },
@@ -1475,6 +1477,8 @@ async def test_starters_build_and_the_build_poll(
     assert msgspec.to_builtins(queued) == BUILD
     done = await exec_api.wait_for_build("77", "b1", interval_ms=250)
     assert done.status == "succeeded"
+    # The SDK the platform compiled against, whatever the crate names (ck-api v2.40.2).
+    assert done.sdk_version == "0.9.0"
     assert msgspec.to_builtins(done.artifacts) == [{**artifact, "capabilitySummary": None}]
     assert slept == [0.25, 0.25]
 
