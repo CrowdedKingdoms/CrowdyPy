@@ -71,3 +71,10 @@ These CrowdyCPP suites have no CrowdyPy counterpart yet; the reason is in each r
 | `e2e_soak_two_clients`, `e2e_permission_refresh` | long-running; slated for `CROWDY_E2E_SLOW=1` suites |
 | `e2e_host_election`, `e2e_durable_stores`, `e2e_chunk_store_live` | the World Stores' host, save and chunk persistence run over GraphQL timers covered by unit suites against fakes; live coverage needs a dedicated app (chunk write-back closes the wilderness) |
 | `e2e_cross_app`, `e2e_cross_tenant`, `e2e_malicious_input` | platform isolation properties the CrowdyCPP suites already exercise against the same API |
+
+0.8.0's additions (channel audio, the echo of your own voxel edit, `APP_PAUSED`, access
+suspension, player profiles, `exec.restart_type`) have no live suite yet, in CrowdyPy or in
+CrowdyCPP. The unit suites cover them against a fake replication server and a mocked API. From
+0.8.0 every suite mints with `runtimeGate` selected, so run them only against a tier whose
+ck-api is the release after v2.39.0 or later; an older one refuses the mint as a GraphQL
+validation error. Channel audio and the voxel echo need replication server v0.37.0 as well.

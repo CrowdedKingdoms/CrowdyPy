@@ -3,6 +3,116 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.8.0
+
+CrowdyJS 18.7.0 and CrowdyCPP 0.60.0. Additive, with reads that change for values they used to
+get wrong (wide voxels) and one new floor: every token mutation (`portal.mint_app_token`,
+`exchange_code`, `refresh`) selects `runtimeGate`, so 0.8.0 needs the ck-api release after
+v2.39.0 that serves it; an older one refuses the selection. Channel audio and the echo of your
+own voxel edits need replication server v0.37.0.
+
+- **Voice helpers** (`crowdypy.media`), an optional convention for what an audio payload
+  carries: a 10-byte little-endian header in front of each codec frame (version 1, codec 0 raw,
+  1 Opus 48 kHz mono or 2 G.711 µ-law 8 kHz, `u16` seq, `u32` timestamp in codec samples,
+  the frame's duration in ms, and the talk-spurt flags `VoiceFlag.SPURT_START` and
+  `SPURT_END`).
+  - `encode_voice_header(VoiceHeader(...))` and `encode_voice_packet(header, frame)` write it;
+    `decode_voice_packet(packet)` returns `None` for a packet shorter than 10 bytes or of
+    another version, and never raises on bytes from the network.
+  - `VoicePacketizer(codec, frame_ms, *, seq=0, timestamp=0)` numbers one sender's frames
+    across the seq and timestamp wraps (`packetize(frame, last=)`, `skip(frames)` for
+    silence).
+  - `VoiceJitterBuffer(target_delay_ms=60, max_frames=64, reset_after_ms=200)`:
+    `push(key, packet, now_ms)` answers `"buffered"`, `"late"`, `"duplicate"` or
+    `"malformed"`, and `pull(key, now_ms)` / `poll(now_ms)` return the due `VoicePlayout`s in
+    seq order, a gap (`frame` `None`) for each frame that never came.
+  - CrowdyCPP's implementation runs natively. Arguments are checked as CrowdyJS checks them, so
+    an option or field out of range raises `ValueError` where CrowdyCPP would clamp it.
+  - The helpers replay CrowdyJS's `voice-frames.json` byte for byte.
+  - No codec ships, and the wheel links none: which codec an app uses, and the library that
+    encodes it, is the app's choice.
+- **Channel audio** (party and guild voice).
+  - `client.udp.send_channel_audio(channel_id, uuid, payload)` sends message type 35, the
+    channel message's layout and signing with its own type byte, at most 1,024 bytes. It needs
+    the channel's `send_voice` and the player's `use_voice_chat`; without them the server
+    answers `UNAUTHORIZED` for the returned sequence. The sender gets no echo.
+  - Members receive message type 36, standalone or bundled, on the new `channel_audio` handler
+    of `udp.subscribe` (`notification.channel_id`, the sender's `uuid`, `payload`).
+  - In the World Stores it is `session.on("channel_audio", ...)`; the channel inbox does not
+    get it. Key a jitter buffer by channel and sender, so one player in two channels is two
+    streams.
+  - `channels.create`, `grids.create_channel` and `GridScope.channels.create` take
+    `members_can_speak` (default false), which gives the member role `send_voice`.
+    `GridScope.channels.send_audio(channel_id, uuid, payload)` sends on the grid's channels.
+  - Underneath are `ReplicationConnection.send_channel_audio`, and
+    `crowdypy.wire.encode_channel_audio` and `ChannelAudioNotification` (from `parse_datagram`)
+    for a custom transport.
+- **App-defined spatial messages** (`GENERIC_SPATIAL_1`, 140) reach
+  `session.on("generic_spatial", ...)` while a World Stores session is attached
+  (CrowdyCPP's `onGenericSpatial`). Without a session, `udp.subscribe`'s `generic_spatial`
+  already received them.
+- **`session.on("voxel_update", ...)`** fires for every inbound voxel edit after
+  `session.chunks` merged it, with its sender, voxel and state: CrowdyCPP's `onVoxel`, for a
+  game that keeps its own world. It includes the echo of your own edits; compare the uuid and
+  sequence with your send's.
+- **`ChunkStore` keeps wide voxel types and other addresses.** Positions and types are the app's
+  signed 16-bit values, which the platform does not check.
+  - An edit the 16x16x16 one-byte grid cannot hold (a type outside 0-255, a position outside
+    0-15) is kept whole in the chunk's overlay. That covers a realtime update, a hydrated
+    `voxelStates` entry and a local `set_voxel`.
+  - `ChunkStore.overlay(chunk)` returns the overlay as `ChunkOverlayVoxel(x, y, z,
+    voxel_type, state)` values keyed by `voxel_key(x, y, z)` (`"x:y:z"`), and `voxel_type_at`
+    and `voxel_state_at` read it first.
+  - What changes: hydration no longer stores a type outside 0-255 truncated (300 used to read
+    as 44), and keeps an entry outside 0-15 instead of skipping it. `voxels()` holds 0 under
+    an in-grid voxel whose type is in the overlay.
+  - `set_voxel` keeps a position outside 0-15 in the overlay and sends it, where it used to be
+    refused. It raises `ValueError`, before anything changes or is sent, for a position or type
+    outside 16 bits or a state over 1,024 bytes (`crowdypy.wire.assert_voxel_edit`,
+    `VOXEL_STATE_MAX_BYTES`).
+  - `udp.send_voxel_update` and `ReplicationConnection.send_voxel_update` refuse a state over
+    1,024 bytes (`CrowdyReplicationError`, `InvalidArgument`); the server refuses one with
+    `INVALID_REQUEST`.
+- **The echo of your own voxel edit.** Replication server v0.37.0 delivers every accepted edit
+  back to its sender. `ChunkStore` matches the echo to the `set_voxel` that sent it (sender,
+  sequence, voxel) and does not apply it again, so a local edit fires `on_chunk_changed` once.
+  The echo is applied only when another client's edit of the voxel arrived in between (the
+  server ordered yours last).
+- **Hydration goes through the native store.** `ChunkStore.hydrate()` hands each loaded chunk
+  to CrowdyCPP's `ChunkStore`, which puts the entries the grid cannot hold in the overlay. An
+  entry without a state now clears the voxel's state, also one a local `set_voxel` gave it (0.5.1
+  kept that until the next realtime update). `voxel_state_at` reads the native cache only, and
+  `prune_beyond` keeps a dirty chunk's states and overlay as well as its grid.
+- **UDP error 33, `APP_PAUSED`** (`crowdypy.wire.ErrorCode.APP_PAUSED`): the replication
+  server refuses a paused app's sends.
+- **Pause and access refusals.**
+  - `crowdypy.is_app_paused(gate)` reads `AppTokenResponse.runtime_gate` (`AppRuntimeGate`,
+    `status` and `reason`) and the `runtimeGate` of `server_status.game_client_bootstrap`.
+    Anything but `ACTIVE` is paused. A paused app still mints, so check before entering the
+    world.
+  - `crowdypy.app_paused_of(error)` reads `APP_PAUSED` (`reason`).
+  - `crowdypy.access_refusal_of(error)` reads `ACCESS_REVOKED`, `ACCESS_SUSPENDED`
+    (`suspended_until`) or `ACCESS_NOT_GRANTED`.
+  - `crowdypy.actor_exists_of(error)` reads `ACTOR_EXISTS` (`owned_by_caller`).
+  - Each reader takes a raised `CrowdyGraphQLError` or one raw error entry. The `*_CODE`
+    constants name the codes.
+- **New API wraps.**
+  - `users.player_profile(user_id)` and `users.player_profiles(user_ids)` return the public
+    `userId`, `gamertag` and `disambiguation`. `player_profiles` takes at most
+    `PLAYER_PROFILES_MAX` (100) ids, raises `ValueError` above that, and sends nothing for
+    none. `users.get` documents that another user's private fields come back `None`.
+  - `app_access.suspend(app_id, user_id, until, idempotency_key=None)` takes a timezone-aware
+    `datetime` or an ISO-8601 string. With it come `unsuspend` and
+    `resync_tier_grid_permissions` (`manage_access_tiers`), and `suspendedUntil` on every
+    access record.
+  - `exec.restart_type(app_id, node_type)` returns `ExecRestartResult(node_type, stopped)`
+    (`manage_compute`). `ExecAppStatus` gains `budget_pause_reason`, `max_instances`,
+    `max_reserved_mb`, `instance_limit`, `instances` and `reserved_mb`.
+  - `apps.get` and `apps.update` carry `claimOwnerKeys`, chunk reads `voxelStatesTruncated`,
+    and `game_client_bootstrap` `runtimeGate` and `wildernessWritesOpen`.
+- The keyframe and heartbeat defaults stay. Idle players on different servers meet at the first
+  full update after joining (replication server v0.37.0).
+
 ## 0.7.0
 
 CrowdyJS 18.6.0 and CrowdyCPP 0.59.0. Additive.
