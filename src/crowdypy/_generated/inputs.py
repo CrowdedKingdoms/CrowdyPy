@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: d5e7cbf04aa4f0b9fbdf1ca9e7bf264650c5807553a3fe6407a9467b1c038686
+schema.gql sha256: 37865a07e4cde0703fa5c165b25ed309272f02ab96aed8d46439a2afc044f95b
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, ServerState, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class ActorFilterInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -33,6 +33,13 @@ class ActorUpdateRequestInput(msgspec.Struct, kw_only=True, omit_defaults=True, 
     distance: int | None | UnsetType = UNSET
     decay_rate: int | None | UnsetType = UNSET
     sequence_number: int | None | UnsetType = UNSET
+
+
+class AddTierAccessRuleInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'expires_at': 'expiresAt'}):
+    kind: TierAccessRuleKind
+    value: str
+    note: str | None | UnsetType = UNSET
+    expires_at: str | None | UnsetType = UNSET
 
 
 class AdmitAppCodeInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'subject_kind': 'subjectKind', 'subject_ref': 'subjectRef', 'version_range': 'versionRange'}):
@@ -315,6 +322,13 @@ class CreateTeamInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
+
+
+class CreateTierAccessProvisioningTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'email_patterns': 'emailPatterns', 'max_accounts': 'maxAccounts', 'expires_in_days': 'expiresInDays'}):
+    label: str
+    email_patterns: list[str]
+    max_accounts: int
+    expires_in_days: int
 
 
 class CreateUserAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
@@ -1158,6 +1172,7 @@ class VoxelUpdateRequestInput(msgspec.Struct, kw_only=True, omit_defaults=True, 
 __all__ = [
     'ActorFilterInput',
     'ActorUpdateRequestInput',
+    'AddTierAccessRuleInput',
     'AdmitAppCodeInput',
     'AppMarketplaceFilterInput',
     'AssignGridOwnershipInput',
@@ -1192,6 +1207,7 @@ __all__ = [
     'CreateOrganizationInput',
     'CreatePortalAuthorizationCodeInput',
     'CreateTeamInput',
+    'CreateTierAccessProvisioningTokenInput',
     'CreateUserAppStateInput',
     'CrowdyStudioAgentFundingPolicyInput',
     'CrowdyStudioAgentPlayerDayLimitsInput',

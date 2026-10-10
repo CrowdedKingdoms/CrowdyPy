@@ -607,7 +607,8 @@ class TeleportAPI : public DomainBase {
 /// refused. A player reads only the sessions and inputs they sent; a holder of manage_apps on
 /// the app reads every session. Inputs are kept for the input log's published retention, so
 /// an old session can still be listed after its inputs are gone. INPUT_LOG_UNAVAILABLE on a
-/// deployment without input logging.
+/// deployment without input logging, and from messages(), retryable with the same cursor, when
+/// the log cannot be read right now.
 class InputLogAPI : public DomainBase {
  public:
   using DomainBase::DomainBase;

@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: fdce0edc2f48aafbb5236b2aa67d22a3633766d3d28d8c4683e95ed27f98cb3d
+// schema.gql sha256: 2eb1444fba49f89177594a21591aae81486ddb99ddc7f753197d6ad5024c51ba
 // operations sha256: 06af4a74547a29dced2230ad89ca1e2e1d7166acee126d1a74fb9e050376734f
 
 #pragma once
@@ -1165,6 +1165,91 @@ inline std::optional<ServerState> serverStateFromString(std::string_view s) {
   if (s == "Offline") return ServerState::Offline;
   if (s == "NearCapacity") return ServerState::NearCapacity;
   if (s == "Full") return ServerState::Full;
+  return std::nullopt;
+}
+
+enum class TierAccessMode {
+  OFF,
+  OBSERVE,
+  ENFORCE,
+};
+
+inline constexpr std::string_view toString(TierAccessMode v) {
+  switch (v) {
+    case TierAccessMode::OFF: return "OFF";
+    case TierAccessMode::OBSERVE: return "OBSERVE";
+    case TierAccessMode::ENFORCE: return "ENFORCE";
+  }
+  return "";
+}
+
+inline std::optional<TierAccessMode> tierAccessModeFromString(std::string_view s) {
+  if (s == "OFF") return TierAccessMode::OFF;
+  if (s == "OBSERVE") return TierAccessMode::OBSERVE;
+  if (s == "ENFORCE") return TierAccessMode::ENFORCE;
+  return std::nullopt;
+}
+
+enum class TierAccessRuleKind {
+  EMAIL,
+  EMAIL_DOMAIN,
+};
+
+inline constexpr std::string_view toString(TierAccessRuleKind v) {
+  switch (v) {
+    case TierAccessRuleKind::EMAIL: return "EMAIL";
+    case TierAccessRuleKind::EMAIL_DOMAIN: return "EMAIL_DOMAIN";
+  }
+  return "";
+}
+
+inline std::optional<TierAccessRuleKind> tierAccessRuleKindFromString(std::string_view s) {
+  if (s == "EMAIL") return TierAccessRuleKind::EMAIL;
+  if (s == "EMAIL_DOMAIN") return TierAccessRuleKind::EMAIL_DOMAIN;
+  return std::nullopt;
+}
+
+enum class TierAccessStatus {
+  NOT_RESTRICTED,
+  GRANTED,
+  PENDING_VERIFICATION,
+  DENIED,
+};
+
+inline constexpr std::string_view toString(TierAccessStatus v) {
+  switch (v) {
+    case TierAccessStatus::NOT_RESTRICTED: return "NOT_RESTRICTED";
+    case TierAccessStatus::GRANTED: return "GRANTED";
+    case TierAccessStatus::PENDING_VERIFICATION: return "PENDING_VERIFICATION";
+    case TierAccessStatus::DENIED: return "DENIED";
+  }
+  return "";
+}
+
+inline std::optional<TierAccessStatus> tierAccessStatusFromString(std::string_view s) {
+  if (s == "NOT_RESTRICTED") return TierAccessStatus::NOT_RESTRICTED;
+  if (s == "GRANTED") return TierAccessStatus::GRANTED;
+  if (s == "PENDING_VERIFICATION") return TierAccessStatus::PENDING_VERIFICATION;
+  if (s == "DENIED") return TierAccessStatus::DENIED;
+  return std::nullopt;
+}
+
+enum class TierAccessStoredMode {
+  OBSERVE,
+  ENFORCE,
+};
+
+inline constexpr std::string_view toString(TierAccessStoredMode v) {
+  switch (v) {
+    case TierAccessStoredMode::OBSERVE: return "OBSERVE";
+    case TierAccessStoredMode::ENFORCE: return "ENFORCE";
+  }
+  return "";
+}
+
+inline std::optional<TierAccessStoredMode> tierAccessStoredModeFromString(std::string_view s) {
+  if (s == "OBSERVE") return TierAccessStoredMode::OBSERVE;
+  if (s == "ENFORCE") return TierAccessStoredMode::ENFORCE;
   return std::nullopt;
 }
 
