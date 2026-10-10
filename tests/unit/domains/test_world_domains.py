@@ -135,6 +135,25 @@ CASES = [
         kwargs={"first": 20, "after": "c1", "filter": {"userId": "7", "messageType": 129}},
         label="filtered",
     ),
+    # a userId given as an int goes out as the decimal string every id is on the wire
+    case(
+        InputLogAPI,
+        "sessions",
+        (42,),
+        "InputLogSessions",
+        {"appId": "42", "filter": {"userId": "9007199254740993"}},
+        kwargs={"filter": {"userId": 9007199254740993}},
+        label="int user id, mapping",
+    ),
+    case(
+        InputLogAPI,
+        "sessions",
+        (42,),
+        "InputLogSessions",
+        {"appId": "42", "filter": {"userId": "7"}},
+        kwargs={"filter": inputs.InputLogSessionFilter(user_id=7)},  # type: ignore[arg-type]
+        label="int user id, struct",
+    ),
     case(
         InputLogAPI,
         "messages",
