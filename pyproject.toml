@@ -83,6 +83,8 @@ CROWDY_BUILD_EXAMPLES = "OFF"
 CROWDY_WITH_CURL = "OFF"
 CROWDY_WITH_CURL_WEBSOCKETS = "OFF"
 CROWDY_WITH_OPENSSL = "ON"
+# The voice helpers carry codec frames without reading them; the app picks its codec.
+CROWDY_WITH_OPUS = "OFF"
 
 [tool.cibuildwheel]
 build-frontend = "build[uv]"
