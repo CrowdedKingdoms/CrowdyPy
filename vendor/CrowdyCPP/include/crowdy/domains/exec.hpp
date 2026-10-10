@@ -338,11 +338,13 @@ class ExecAPI : public DomainBase {
   graphql::Json starters(std::string appId) const;
   void startersAsync(std::string appId, graphql::GraphQLCallback done) const;
   /// Build crates into modules on the platform (`execBuild`), so you need no Rust
-  /// toolchain. Returns the build at once, queued: `{ buildId, status, kind, log, createdAt,
-  /// startedAt, finishedAt, artifacts: [{ crate, digest, sizeBytes, capabilitySummaryJson,
-  /// capabilityHash, tickIntervalMs }] }`. `kind` is `exec` here and `client` for a CLIENT half
-  /// (`modClientBuild`), whose artifact alone carries the three capability fields. Requires
-  /// `manage_compute`.
+  /// toolchain. Returns the build at once, queued: `{ buildId, status, kind, log, sdkVersion,
+  /// createdAt, startedAt, finishedAt, artifacts: [{ crate, digest, sizeBytes,
+  /// capabilitySummaryJson, capabilityHash, tickIntervalMs }] }`. `kind` is `exec` here and
+  /// `client` for a CLIENT half (`modClientBuild`), whose artifact alone carries the three
+  /// capability fields. `sdkVersion` is the `ckx-sdk` (CLIENT half: `crowdy-client-sdk`) version
+  /// the platform compiled against, whatever version the crate names; null until the build
+  /// starts (ck-api v2.40.2 or later). Requires `manage_compute`.
   graphql::Json build(std::string appId, const std::vector<ExecCrate>& crates) const;
   void buildAsync(std::string appId, const std::vector<ExecCrate>& crates, graphql::GraphQLCallback done) const;
   /// A build's status, log and modules (`execBuildStatus`), or null. Requires

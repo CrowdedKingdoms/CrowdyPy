@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: 8b9776b0f2bfc4658d3c7afad6beef116eeefde83eda6f904d43e8b5fff4c7a8
-// operations sha256: feb13d90ee1376c2c925e197413ed238c43c7091cad515bbde1292a9214e775b
+// schema.gql sha256: 4b9c470a996a1c6c423849546fc23eda164605753e2aa2083485156b27a8da1c
+// operations sha256: 56c3830a074c020782259846f3597932060a419b7b0868ad6b0d1b70e166fa21
 
 #pragma once
 
@@ -4634,6 +4634,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
@@ -5133,6 +5134,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
@@ -5157,6 +5159,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
@@ -5193,6 +5196,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
@@ -5217,6 +5221,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
@@ -5485,6 +5490,7 @@ fragment ExecBuildFields on ExecBuild {
   status
   kind
   log
+  sdkVersion
   createdAt
   startedAt
   finishedAt
