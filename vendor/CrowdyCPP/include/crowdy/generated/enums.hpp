@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: 2eb1444fba49f89177594a21591aae81486ddb99ddc7f753197d6ad5024c51ba
-// operations sha256: 06af4a74547a29dced2230ad89ca1e2e1d7166acee126d1a74fb9e050376734f
+// schema.gql sha256: 8b9776b0f2bfc4658d3c7afad6beef116eeefde83eda6f904d43e8b5fff4c7a8
+// operations sha256: feb13d90ee1376c2c925e197413ed238c43c7091cad515bbde1292a9214e775b
 
 #pragma once
 
@@ -1287,6 +1287,7 @@ enum class UdpErrorCode {
   CANNOT_DELETE_DEFAULT_WORLD_GRID,
   GRID_HAS_NESTED_CHILDREN,
   TOKEN_EXPIRED,
+  APP_PAUSED,
 };
 
 inline constexpr std::string_view toString(UdpErrorCode v) {
@@ -1324,6 +1325,7 @@ inline constexpr std::string_view toString(UdpErrorCode v) {
     case UdpErrorCode::CANNOT_DELETE_DEFAULT_WORLD_GRID: return "CANNOT_DELETE_DEFAULT_WORLD_GRID";
     case UdpErrorCode::GRID_HAS_NESTED_CHILDREN: return "GRID_HAS_NESTED_CHILDREN";
     case UdpErrorCode::TOKEN_EXPIRED: return "TOKEN_EXPIRED";
+    case UdpErrorCode::APP_PAUSED: return "APP_PAUSED";
   }
   return "";
 }
@@ -1362,6 +1364,7 @@ inline std::optional<UdpErrorCode> udpErrorCodeFromString(std::string_view s) {
   if (s == "CANNOT_DELETE_DEFAULT_WORLD_GRID") return UdpErrorCode::CANNOT_DELETE_DEFAULT_WORLD_GRID;
   if (s == "GRID_HAS_NESTED_CHILDREN") return UdpErrorCode::GRID_HAS_NESTED_CHILDREN;
   if (s == "TOKEN_EXPIRED") return UdpErrorCode::TOKEN_EXPIRED;
+  if (s == "APP_PAUSED") return UdpErrorCode::APP_PAUSED;
   return std::nullopt;
 }
 

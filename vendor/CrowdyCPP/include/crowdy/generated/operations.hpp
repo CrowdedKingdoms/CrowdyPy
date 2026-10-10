@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: 2eb1444fba49f89177594a21591aae81486ddb99ddc7f753197d6ad5024c51ba
-// operations sha256: 06af4a74547a29dced2230ad89ca1e2e1d7166acee126d1a74fb9e050376734f
+// schema.gql sha256: 8b9776b0f2bfc4658d3c7afad6beef116eeefde83eda6f904d43e8b5fff4c7a8
+// operations sha256: feb13d90ee1376c2c925e197413ed238c43c7091cad515bbde1292a9214e775b
 
 #pragma once
 
@@ -397,6 +397,7 @@ inline constexpr std::string_view kAppUserAccessByAppDocument = R"gql(query AppU
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -425,6 +426,8 @@ query AppUserAccessConnection(
         grantedBy
         subscriptionId
         expiresAt
+        suspendedUntil
+    suspendedUntil
         createdAt
         updatedAt
       }
@@ -453,6 +456,7 @@ inline constexpr std::string_view kAppUserAccessByAppIsolatedDocument = R"gql(qu
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -476,6 +480,8 @@ inline constexpr std::string_view kAppUserAccessConnectionIsolatedDocument = R"g
         grantedBy
         subscriptionId
         expiresAt
+        suspendedUntil
+        suspendedUntil
         createdAt
         updatedAt
       }
@@ -519,6 +525,7 @@ inline constexpr std::string_view kClaimFreeAppAccessDocument = R"gql(mutation C
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -533,6 +540,7 @@ inline constexpr std::string_view kClaimFreeAppAccessIsolatedDocument = R"gql(mu
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -606,6 +614,7 @@ inline constexpr std::string_view kGrantAppAccessDocument = R"gql(mutation Grant
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -620,6 +629,7 @@ inline constexpr std::string_view kGrantAppAccessIsolatedDocument = R"gql(mutati
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -637,6 +647,7 @@ inline constexpr std::string_view kGrantMyAppAccessDocument = R"gql(mutation Gra
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -651,6 +662,7 @@ inline constexpr std::string_view kGrantMyAppAccessIsolatedDocument = R"gql(muta
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -685,6 +697,7 @@ inline constexpr std::string_view kMyAppAccessDocument = R"gql(query MyAppAccess
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -699,11 +712,21 @@ inline constexpr std::string_view kMyAppAccessIsolatedDocument = R"gql(query MyA
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
 })gql";
 inline constexpr std::string_view kMyAppAccessOperationName = "MyAppAccess";
+
+/// appAccess/ResyncTierGridPermissions.graphql
+inline constexpr std::string_view kResyncTierGridPermissionsDocument = R"gql(mutation ResyncTierGridPermissions($appId: BigInt!) {
+  resyncTierGridPermissions(appId: $appId)
+})gql";
+inline constexpr std::string_view kResyncTierGridPermissionsIsolatedDocument = R"gql(mutation ResyncTierGridPermissions($appId: BigInt!) {
+  resyncTierGridPermissions(appId: $appId)
+})gql";
+inline constexpr std::string_view kResyncTierGridPermissionsOperationName = "ResyncTierGridPermissions";
 
 /// appAccess/RevokeAppAccess.graphql
 inline constexpr std::string_view kRevokeAppAccessDocument = R"gql(mutation RevokeAppAccess($appId: BigInt!, $userId: BigInt!) {
@@ -716,6 +739,7 @@ inline constexpr std::string_view kRevokeAppAccessDocument = R"gql(mutation Revo
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -730,6 +754,7 @@ inline constexpr std::string_view kRevokeAppAccessIsolatedDocument = R"gql(mutat
     grantedBy
     subscriptionId
     expiresAt
+    suspendedUntil
     createdAt
     updatedAt
   }
@@ -754,6 +779,54 @@ inline constexpr std::string_view kRuntimePermissionsIsolatedDocument = R"gql(qu
 })gql";
 inline constexpr std::string_view kRuntimePermissionsOperationName = "RuntimePermissions";
 
+/// appAccess/SuspendAppAccess.graphql
+inline constexpr std::string_view kSuspendAppAccessDocument = R"gql(mutation SuspendAppAccess(
+  $appId: BigInt!
+  $userId: BigInt!
+  $until: DateTime!
+  $idempotencyKey: String
+) {
+  suspendAppAccess(
+    appId: $appId
+    userId: $userId
+    until: $until
+    idempotencyKey: $idempotencyKey
+  ) {
+    appUserAccessId
+    appId
+    userId
+    tierId
+    status
+    grantedBy
+    subscriptionId
+    expiresAt
+    suspendedUntil
+    createdAt
+    updatedAt
+  }
+})gql";
+inline constexpr std::string_view kSuspendAppAccessIsolatedDocument = R"gql(mutation SuspendAppAccess($appId: BigInt!, $userId: BigInt!, $until: DateTime!, $idempotencyKey: String) {
+  suspendAppAccess(
+    appId: $appId
+    userId: $userId
+    until: $until
+    idempotencyKey: $idempotencyKey
+  ) {
+    appUserAccessId
+    appId
+    userId
+    tierId
+    status
+    grantedBy
+    subscriptionId
+    expiresAt
+    suspendedUntil
+    createdAt
+    updatedAt
+  }
+})gql";
+inline constexpr std::string_view kSuspendAppAccessOperationName = "SuspendAppAccess";
+
 /// appAccess/TierFeatures.graphql
 inline constexpr std::string_view kTierFeaturesDocument = R"gql(query TierFeatures($appId: BigInt!, $tierId: BigInt) {
   gameModelTierFeatures(appId: $appId, tierId: $tierId) {
@@ -770,6 +843,39 @@ inline constexpr std::string_view kTierFeaturesIsolatedDocument = R"gql(query Ti
   }
 })gql";
 inline constexpr std::string_view kTierFeaturesOperationName = "TierFeatures";
+
+/// appAccess/UnsuspendAppAccess.graphql
+inline constexpr std::string_view kUnsuspendAppAccessDocument = R"gql(mutation UnsuspendAppAccess($appId: BigInt!, $userId: BigInt!) {
+  unsuspendAppAccess(appId: $appId, userId: $userId) {
+    appUserAccessId
+    appId
+    userId
+    tierId
+    status
+    grantedBy
+    subscriptionId
+    expiresAt
+    suspendedUntil
+    createdAt
+    updatedAt
+  }
+})gql";
+inline constexpr std::string_view kUnsuspendAppAccessIsolatedDocument = R"gql(mutation UnsuspendAppAccess($appId: BigInt!, $userId: BigInt!) {
+  unsuspendAppAccess(appId: $appId, userId: $userId) {
+    appUserAccessId
+    appId
+    userId
+    tierId
+    status
+    grantedBy
+    subscriptionId
+    expiresAt
+    suspendedUntil
+    createdAt
+    updatedAt
+  }
+})gql";
+inline constexpr std::string_view kUnsuspendAppAccessOperationName = "UnsuspendAppAccess";
 
 /// appAccess/UpdateAccessTier.graphql
 inline constexpr std::string_view kUpdateAccessTierDocument = R"gql(mutation UpdateAccessTier($tierId: BigInt!, $input: UpdateAccessTierInput!) {
@@ -822,10 +928,13 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "GrantMyAppAccess") return kGrantMyAppAccessIsolatedDocument;
   if (operationName == "GrantTierFeature") return kGrantTierFeatureIsolatedDocument;
   if (operationName == "MyAppAccess") return kMyAppAccessIsolatedDocument;
+  if (operationName == "ResyncTierGridPermissions") return kResyncTierGridPermissionsIsolatedDocument;
   if (operationName == "RevokeAppAccess") return kRevokeAppAccessIsolatedDocument;
   if (operationName == "RevokeTierFeature") return kRevokeTierFeatureIsolatedDocument;
   if (operationName == "RuntimePermissions") return kRuntimePermissionsIsolatedDocument;
+  if (operationName == "SuspendAppAccess") return kSuspendAppAccessIsolatedDocument;
   if (operationName == "TierFeatures") return kTierFeaturesIsolatedDocument;
+  if (operationName == "UnsuspendAppAccess") return kUnsuspendAppAccessIsolatedDocument;
   if (operationName == "UpdateAccessTier") return kUpdateAccessTierIsolatedDocument;
   return {};
 }
@@ -847,6 +956,7 @@ inline constexpr std::string_view kAppDocument = R"gql(query App($appId: BigInt!
     metadata
     wildernessWritesOpen
     replayLoggingEnabled
+    claimOwnerKeys
     splitMode
     deploymentTarget
     reservedUdpBytesPerSec
@@ -875,6 +985,7 @@ inline constexpr std::string_view kAppIsolatedDocument = R"gql(query App($appId:
     metadata
     wildernessWritesOpen
     replayLoggingEnabled
+    claimOwnerKeys
     splitMode
     deploymentTarget
     reservedUdpBytesPerSec
@@ -1350,6 +1461,7 @@ inline constexpr std::string_view kUpdateAppDocument = R"gql(mutation UpdateApp(
     metadata
     wildernessWritesOpen
     replayLoggingEnabled
+    claimOwnerKeys
     updatedAt
   }
 })gql";
@@ -1365,6 +1477,7 @@ inline constexpr std::string_view kUpdateAppIsolatedDocument = R"gql(mutation Up
     metadata
     wildernessWritesOpen
     replayLoggingEnabled
+    claimOwnerKeys
     updatedAt
   }
 })gql";
@@ -2429,6 +2542,7 @@ inline constexpr std::string_view kGetChunkDocument = R"gql(query GetChunk($inpu
       voxelType
       state
     }
+    voxelStatesTruncated
     owner
     createdAt
     updatedAt
@@ -2459,6 +2573,7 @@ inline constexpr std::string_view kGetChunkIsolatedDocument = R"gql(query GetChu
       voxelType
       state
     }
+    voxelStatesTruncated
     owner
     createdAt
     updatedAt
@@ -2530,6 +2645,7 @@ inline constexpr std::string_view kGetChunksByDistanceDocument = R"gql(query Get
         voxelType
         state
       }
+      voxelStatesTruncated
       owner
       createdAt
       updatedAt
@@ -2564,6 +2680,7 @@ inline constexpr std::string_view kGetChunksByDistanceIsolatedDocument = R"gql(q
         voxelType
         state
       }
+      voxelStatesTruncated
       owner
       createdAt
       updatedAt
@@ -4464,6 +4581,12 @@ fragment ExecAppStatusFields on ExecAppStatus {
   disabled
   disabledTypes
   budgetPaused
+  budgetPauseReason
+  maxInstances
+  maxReservedMb
+  instanceLimit
+  instances
+  reservedMb
 }
 
 query ExecAppStatus($appId: BigInt!) {
@@ -4481,6 +4604,13 @@ mutation ExecActivateVersion($appId: BigInt!, $version: Int!) {
 mutation ExecSetEnabled($appId: BigInt!, $enabled: Boolean!, $nodeType: String) {
   execSetEnabled(appId: $appId, enabled: $enabled, nodeType: $nodeType) {
     ...ExecAppStatusFields
+  }
+}
+
+mutation ExecRestartType($appId: BigInt!, $nodeType: String!) {
+  execRestartType(appId: $appId, nodeType: $nodeType) {
+    nodeType
+    stopped
   }
 }
 
@@ -4924,6 +5054,12 @@ fragment ExecAppStatusFields on ExecAppStatus {
   disabled
   disabledTypes
   budgetPaused
+  budgetPauseReason
+  maxInstances
+  maxReservedMb
+  instanceLimit
+  instances
+  reservedMb
 })gql";
 inline constexpr std::string_view kExecAppStatusOperationName = "ExecAppStatus";
 inline constexpr std::string_view kExecActivateVersionIsolatedDocument = R"gql(mutation ExecActivateVersion($appId: BigInt!, $version: Int!) {
@@ -4937,6 +5073,12 @@ fragment ExecAppStatusFields on ExecAppStatus {
   disabled
   disabledTypes
   budgetPaused
+  budgetPauseReason
+  maxInstances
+  maxReservedMb
+  instanceLimit
+  instances
+  reservedMb
 })gql";
 inline constexpr std::string_view kExecActivateVersionOperationName = "ExecActivateVersion";
 inline constexpr std::string_view kExecSetEnabledIsolatedDocument = R"gql(mutation ExecSetEnabled($appId: BigInt!, $enabled: Boolean!, $nodeType: String) {
@@ -4950,8 +5092,21 @@ fragment ExecAppStatusFields on ExecAppStatus {
   disabled
   disabledTypes
   budgetPaused
+  budgetPauseReason
+  maxInstances
+  maxReservedMb
+  instanceLimit
+  instances
+  reservedMb
 })gql";
 inline constexpr std::string_view kExecSetEnabledOperationName = "ExecSetEnabled";
+inline constexpr std::string_view kExecRestartTypeIsolatedDocument = R"gql(mutation ExecRestartType($appId: BigInt!, $nodeType: String!) {
+  execRestartType(appId: $appId, nodeType: $nodeType) {
+    nodeType
+    stopped
+  }
+})gql";
+inline constexpr std::string_view kExecRestartTypeOperationName = "ExecRestartType";
 inline constexpr std::string_view kExecStartersIsolatedDocument = R"gql(query ExecStarters($appId: BigInt!) {
   execStarters(appId: $appId) {
     manifestJson
@@ -5450,6 +5605,7 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "ExecAppStatus") return kExecAppStatusIsolatedDocument;
   if (operationName == "ExecActivateVersion") return kExecActivateVersionIsolatedDocument;
   if (operationName == "ExecSetEnabled") return kExecSetEnabledIsolatedDocument;
+  if (operationName == "ExecRestartType") return kExecRestartTypeIsolatedDocument;
   if (operationName == "ExecStarters") return kExecStartersIsolatedDocument;
   if (operationName == "ExecBuild") return kExecBuildIsolatedDocument;
   if (operationName == "ExecBuildStatus") return kExecBuildStatusIsolatedDocument;
@@ -8002,6 +8158,11 @@ inline constexpr std::string_view kGameClientBootstrapDocument = R"gql(query Gam
     maxReplicationDistance
     maxDecayRate
     sequenceNumberModulo
+    runtimeGate {
+      status
+      reason
+    }
+    wildernessWritesOpen
     udpProxyConnectionStatus {
       connected
       serverIp6
@@ -8050,6 +8211,11 @@ inline constexpr std::string_view kGameClientBootstrapIsolatedDocument = R"gql(q
     maxReplicationDistance
     maxDecayRate
     sequenceNumberModulo
+    runtimeGate {
+      status
+      reason
+    }
+    wildernessWritesOpen
     udpProxyConnectionStatus {
       connected
       serverIp6
@@ -9401,6 +9567,40 @@ inline constexpr std::string_view kMeIsolatedDocument = R"gql(query Me {
 })gql";
 inline constexpr std::string_view kMeOperationName = "Me";
 
+/// users/PlayerProfile.graphql
+inline constexpr std::string_view kPlayerProfileDocument = R"gql(query PlayerProfile($userId: BigInt!) {
+  playerProfile(userId: $userId) {
+    userId
+    gamertag
+    disambiguation
+  }
+})gql";
+inline constexpr std::string_view kPlayerProfileIsolatedDocument = R"gql(query PlayerProfile($userId: BigInt!) {
+  playerProfile(userId: $userId) {
+    userId
+    gamertag
+    disambiguation
+  }
+})gql";
+inline constexpr std::string_view kPlayerProfileOperationName = "PlayerProfile";
+
+/// users/PlayerProfiles.graphql
+inline constexpr std::string_view kPlayerProfilesDocument = R"gql(query PlayerProfiles($userIds: [BigInt!]!) {
+  playerProfiles(userIds: $userIds) {
+    userId
+    gamertag
+    disambiguation
+  }
+})gql";
+inline constexpr std::string_view kPlayerProfilesIsolatedDocument = R"gql(query PlayerProfiles($userIds: [BigInt!]!) {
+  playerProfiles(userIds: $userIds) {
+    userId
+    gamertag
+    disambiguation
+  }
+})gql";
+inline constexpr std::string_view kPlayerProfilesOperationName = "PlayerProfiles";
+
 /// users/UpdateGamertag.graphql
 inline constexpr std::string_view kUpdateGamertagDocument = R"gql(mutation UpdateGamertag($input: UpdateGamertagInput!) {
   updateGamertag(input: $input) {
@@ -9478,6 +9678,8 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "DeleteMyAccount") return kDeleteMyAccountIsolatedDocument;
   if (operationName == "FreePlayWindow") return kFreePlayWindowIsolatedDocument;
   if (operationName == "Me") return kMeIsolatedDocument;
+  if (operationName == "PlayerProfile") return kPlayerProfileIsolatedDocument;
+  if (operationName == "PlayerProfiles") return kPlayerProfilesIsolatedDocument;
   if (operationName == "UpdateGamertag") return kUpdateGamertagIsolatedDocument;
   if (operationName == "UpdateUserState") return kUpdateUserStateIsolatedDocument;
   if (operationName == "User") return kUserIsolatedDocument;

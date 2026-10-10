@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(CrowdyCPP VERSION 0.59.0 LANGUAGES C CXX)
+project(CrowdyCPP VERSION 0.60.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,8 @@ option(CROWDY_NO_EXCEPTIONS
        "Build CrowdyCPP with non-throwing GraphQL paths and compiler exceptions disabled" OFF)
 option(CROWDY_ENABLE_ASAN
        "Instrument CrowdyCPP and its tests with AddressSanitizer" OFF)
+option(CROWDY_WITH_OPUS
+       "Build the optional libopus wrapper (crowdy/media/opus.hpp, target crowdy_opus)" OFF)
 
 if(CROWDY_NO_EXCEPTIONS)
   include(CheckCXXCompilerFlag)
@@ -198,6 +200,27 @@ target_compile_features(crowdy_wire INTERFACE cxx_std_20)
 target_link_libraries(crowdy_wire INTERFACE crowdy_core)
 crowdy_configure_exception_mode(crowdy_wire)
 
+# ---- optional Opus wrapper. Off by default: the default configure, build and tests need no
+# Opus. On, libopus must be found (cmake/CrowdyFindOpus.cmake says where it looks).
+if(CROWDY_WITH_OPUS)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CrowdyFindOpus.cmake")
+  crowdy_find_opus()
+  if(NOT TARGET CrowdyOpus::opus)
+    message(FATAL_ERROR
+      "CROWDY_WITH_OPUS=ON but libopus was not found. Install it (libopus-dev, brew opus, "
+      "vcpkg opus) or add its prefix to CMAKE_PREFIX_PATH.")
+  endif()
+  add_library(crowdy_opus STATIC src/media/opus.cpp)
+  target_include_directories(crowdy_opus PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+  target_compile_features(crowdy_opus PUBLIC cxx_std_20)
+  target_compile_definitions(crowdy_opus PUBLIC CROWDY_HAS_OPUS=1)
+  target_link_libraries(crowdy_opus PUBLIC crowdy_core PRIVATE CrowdyOpus::opus)
+  crowdy_configure_exception_mode(crowdy_opus)
+  message(STATUS "CrowdyCPP: libopus wrapper enabled (crowdy_opus)")
+endif()
+
 # ---- default crypto provider (OpenSSL)
 if(CROWDY_WITH_OPENSSL)
   find_package(OpenSSL REQUIRED)
@@ -309,6 +332,9 @@ if(CROWDY_WITH_OPENSSL)
   target_link_libraries(crowdy PUBLIC crowdy_crypto_openssl)
   target_compile_definitions(crowdy PRIVATE CROWDY_HAS_OPENSSL=1)
 endif()
+if(CROWDY_WITH_OPUS)
+  target_link_libraries(crowdy PUBLIC crowdy_opus)
+endif()
 
 # ---- tests
 if(CROWDY_BUILD_TESTS)
@@ -337,6 +363,9 @@ if(CROWDY_HAS_CURL_WEBSOCKETS)
 endif()
 if(CROWDY_WITH_OPENSSL)
   list(APPEND CROWDY_INSTALL_TARGETS crowdy_crypto_openssl)
+endif()
+if(CROWDY_WITH_OPUS)
+  list(APPEND CROWDY_INSTALL_TARGETS crowdy_opus)
 endif()
 
 install(TARGETS ${CROWDY_INSTALL_TARGETS} crowdy_wire
@@ -373,6 +402,11 @@ if(CROWDY_WITH_CURL OR CROWDY_HAS_CURL_WEBSOCKETS)
   set(CROWDY_CONFIG_NEEDS_CURL ON)
 endif()
 set(CROWDY_CONFIG_NEEDS_OPENSSL ${CROWDY_WITH_OPENSSL})
+set(CROWDY_CONFIG_NEEDS_OPUS ${CROWDY_WITH_OPUS})
+if(CROWDY_WITH_OPUS)
+  install(FILES cmake/CrowdyFindOpus.cmake
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CrowdyCPP)
+endif()
 configure_package_config_file(
   cmake/CrowdyCPPConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/CrowdyCPPConfig.cmake
