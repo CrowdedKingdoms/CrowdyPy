@@ -82,9 +82,10 @@ std::string verify_command_reconnect(nb::handle token_obj, nb::handle datagram_o
   return crowdy::errcName(wire::verifyCommandReconnect(crypto(), datagram.bytes(), token).code);
 }
 
-nb::bytes encode_channel_message(nb::handle token_obj, std::int64_t channel_id,
-                                 nb::handle uuid_obj, nb::handle payload_obj,
-                                 std::int64_t game_token_id, std::uint8_t sequence) {
+nb::bytes encode_channel_request(wire::MessageType type, nb::handle token_obj,
+                                 std::int64_t channel_id, nb::handle uuid_obj,
+                                 nb::handle payload_obj, std::int64_t game_token_id,
+                                 std::uint8_t sequence) {
   const auto token = token_from(token_obj);
   BufferView payload(payload_obj);
   wire::ChannelMessageParams p;
@@ -94,9 +95,23 @@ nb::bytes encode_channel_message(nb::handle token_obj, std::int64_t channel_id,
   p.gameTokenId = game_token_id;
   p.sequence = sequence;
   std::uint8_t buf[wire::kMaxDatagramSize];
-  auto n = wire::encodeChannelMessage(crypto(), p, token, MutableBytes(buf, sizeof(buf)));
-  if (!n.ok()) raise(n.error(), "cannot encode this channel message");
+  auto n = wire::encodeChannelRequest(type, crypto(), p, token, MutableBytes(buf, sizeof(buf)));
+  if (!n.ok()) raise(n.error(), "cannot encode this channel request");
   return to_bytes(Bytes(buf, n.value()));
+}
+
+nb::bytes encode_channel_message(nb::handle token_obj, std::int64_t channel_id,
+                                 nb::handle uuid_obj, nb::handle payload_obj,
+                                 std::int64_t game_token_id, std::uint8_t sequence) {
+  return encode_channel_request(wire::MessageType::ChannelMessageRequest, token_obj, channel_id,
+                                uuid_obj, payload_obj, game_token_id, sequence);
+}
+
+nb::bytes encode_channel_audio(nb::handle token_obj, std::int64_t channel_id,
+                               nb::handle uuid_obj, nb::handle payload_obj,
+                               std::int64_t game_token_id, std::uint8_t sequence) {
+  return encode_channel_request(wire::MessageType::ChannelAudioRequest, token_obj, channel_id,
+                                uuid_obj, payload_obj, game_token_id, sequence);
 }
 
 nb::bytes encode_ranged_channel_message(nb::handle token_obj, std::int64_t channel_id,
@@ -197,6 +212,7 @@ void register_wire(nb::module_& m) {
   m.attr("MAX_BUNDLE_MEMBER_SIZE") = wire::kMaxBundleMemberSize;
   m.attr("MAX_CHANNEL_PAYLOAD") = wire::channel::kMaxPayload;
   m.attr("CHANNEL_RANGED_MAX_DISTANCE") = wire::channel_ranged::kMaxDistance;
+  m.attr("VOXEL_STATE_MAX_BYTES") = wire::voxel::kMaxStateSize;
   m.attr("MAX_DISTANCE") = wire::kMaxDistance;
   m.attr("CLIENT_CAPABILITIES_ALL") = wire::ClientCapability::kAll;
 
@@ -213,6 +229,8 @@ void register_wire(nb::module_& m) {
   m.def("encode_channel_message", &encode_channel_message, nb::arg("token"),
         nb::arg("channel_id"), nb::arg("uuid"), nb::arg("payload"), nb::arg("game_token_id"),
         nb::arg("sequence"));
+  m.def("encode_channel_audio", &encode_channel_audio, nb::arg("token"), nb::arg("channel_id"),
+        nb::arg("uuid"), nb::arg("payload"), nb::arg("game_token_id"), nb::arg("sequence"));
   m.def("encode_ranged_channel_message", &encode_ranged_channel_message, nb::arg("token"),
         nb::arg("channel_id"), nb::arg("uuid"), nb::arg("payload"), nb::arg("app_id"),
         nb::arg("chunk_x"), nb::arg("chunk_y"), nb::arg("chunk_z"), nb::arg("max_distance"),

@@ -31,7 +31,13 @@ from typing import Any, Final, NamedTuple, Protocol
 
 from crowdypy import _native
 from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
-from crowdypy.wire import CHANNEL_RANGED_MAX_DISTANCE, DecayRate, ErrorCode, MessageType
+from crowdypy.wire import (
+    CHANNEL_RANGED_MAX_DISTANCE,
+    VOXEL_STATE_MAX_BYTES,
+    DecayRate,
+    ErrorCode,
+    MessageType,
+)
 
 __all__ = [
     "STATUS",
@@ -150,6 +156,7 @@ _HANDLER_KEYS: dict[int, str] = {
     MessageType.GENERIC_SPATIAL_1: "generic_spatial",
     MessageType.SINGLE_ACTOR_MESSAGE: "single_actor_message",
     MessageType.CHANNEL_MESSAGE_NOTIFICATION: "channel_message",
+    MessageType.CHANNEL_AUDIO_NOTIFICATION: "channel_audio",
     MessageType.GENERIC_ERROR: "generic_error",
     STATUS: "status",
 }
@@ -199,7 +206,7 @@ class Notification:
 
     @property
     def channel_id(self) -> int:
-        """A channel message's channel (the sender is ``uuid``)."""
+        """A channel message's or channel audio's channel (the sender is ``uuid``)."""
         return self.extras[0]
 
     @property
@@ -595,6 +602,16 @@ class _ConnectionCore:
         distance: int = 8,
         decay: int = DecayRate.NONE,
     ) -> int:
+        """One voxel edit. The position's coordinates and the type are the app's signed 16-bit
+        values, and the state is at most :data:`crowdypy.wire.VOXEL_STATE_MAX_BYTES`; anything
+        else is refused (``InvalidArgument``) before it is sent. The server delivers an
+        accepted edit back to its sender as an ordinary ``voxel_update``."""
+        size = memoryview(voxel_state).nbytes
+        if size > VOXEL_STATE_MAX_BYTES:
+            raise CrowdyReplicationError(
+                f"the voxel state is {size} bytes; at most {VOXEL_STATE_MAX_BYTES}",
+                code="InvalidArgument",
+            )
         try:
             result: int = self._native.send_voxel_update(
                 chunk[0], chunk[1], chunk[2], uuid, voxel[0], voxel[1], voxel[2],
@@ -637,6 +654,18 @@ class _ConnectionCore:
     def send_channel_message(self, channel_id: int | str, uuid: str | bytes, payload: Any) -> int:
         try:
             result: int = self._native.send_channel_message(int(channel_id), uuid, payload)
+        except ValueError as exc:
+            raise _replication_error(exc) from None
+        return result
+
+    def send_channel_audio(self, channel_id: int | str, uuid: str | bytes, payload: Any) -> int:
+        """Channel audio (CHANNEL_AUDIO_REQUEST, 35): delivered to every active member of the
+        channel wherever they are, as ``channel_audio``. ``payload`` is opaque, at most 1,024
+        bytes (one :class:`crowdypy.media.VoicePacketizer` packet with the voice helpers).
+        Without the channel's ``send_voice`` and the player's ``use_voice_chat`` the server
+        answers ``UNAUTHORIZED`` for the returned sequence. The sender gets no echo."""
+        try:
+            result: int = self._native.send_channel_audio(int(channel_id), uuid, payload)
         except ValueError as exc:
             raise _replication_error(exc) from None
         return result
@@ -770,8 +799,9 @@ class _ConnectionCore:
         """Call ``handlers[name](notification)`` for each event: ``actor_update``,
         ``voxel_update``, ``audio``, ``video``, ``actor_left``, ``text``, ``client_event``,
         ``server_event``, ``generic_spatial``, ``single_actor_message``, ``channel_message``,
-        ``generic_error``, ``status``, and ``any`` (every event but status). Returns the
-        unsubscribe function. One object per event: prefer batches on a hot path."""
+        ``channel_audio``, ``generic_error``, ``status``, and ``any`` (every event but
+        status). Returns the unsubscribe function. One object per event: prefer batches on a
+        hot path."""
         unknown = set(handlers) - HANDLER_NAMES
         if unknown:
             raise ValueError(f"unknown handler name(s): {', '.join(sorted(unknown))}")

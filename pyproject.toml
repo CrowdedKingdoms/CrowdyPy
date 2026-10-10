@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "crowdypy"
-version = "0.7.0"
+version = "0.8.0"
 description = "Official Python SDK for Crowded Kingdoms: typed GraphQL clients and a native UDP replication core"
 readme = "README.md"
 license = "MIT AND Apache-2.0"
@@ -83,6 +83,8 @@ CROWDY_BUILD_EXAMPLES = "OFF"
 CROWDY_WITH_CURL = "OFF"
 CROWDY_WITH_CURL_WEBSOCKETS = "OFF"
 CROWDY_WITH_OPENSSL = "ON"
+# The voice helpers carry codec frames without reading them; the app picks its codec.
+CROWDY_WITH_OPUS = "OFF"
 
 [tool.cibuildwheel]
 build-frontend = "build[uv]"
@@ -117,20 +119,20 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 # --------------------------------------------------------------------------------------
 
 [tool.crowdypy.crowdyjs]
-version = "18.6.0"
-commit = "ca9fbb549ed5fa614e0084d962020410061b9c8c"
+version = "18.7.0"
+commit = "1ff76217bf396325f3c2774ca4d89644ab4ce352"
 
 [tool.crowdypy.crowdycpp]
-version = "0.59.0"
-tag = "dev/v0.59.0"
-commit = "3f2787d412c9eee9a5f2ce8fad06bdc8941cb8a1"
-tree-sha256 = "84c3f10e6747535b0483490a1cecf2ab9242a1f726ae265770cad86d1b1ebd64"
+version = "0.60.0"
+tag = "dev/v0.60.0"
+commit = "995e34ffaab9ecf0ca6c17a59707cc0ed4a88086"
+tree-sha256 = "cee4e9d4db822b6f6ae06d5fd257ba354ee94d3100a345dd5048d37c14ea7cc9"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
 [tool.crowdypy.graphql]
-schema-sha256 = "37865a07e4cde0703fa5c165b25ed309272f02ab96aed8d46439a2afc044f95b"
-operations-sha256 = "3ec8d65ebc668fa33baca555797a837b78de3e0a1eef1ff3b77b7a5db098d424"
+schema-sha256 = "d2e735887acea223a7ce95e009cb17a894a3954012b939ce05e5ccf5693dedcd"
+operations-sha256 = "15ab08f0f194e6355b3dcb28eb7d3a0a4ac9f064af457b054a60e4b403e6519e"
 
 # The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it
 # on a schedule; nothing on the per-commit path reads the network.

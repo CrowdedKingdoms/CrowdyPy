@@ -35,7 +35,8 @@ class GridsAPI(Domain):
 
         The grid's player modules may ``emit_channel`` into it, and their messages carry the
         sender uuid ``grid:<gridId>``. ``membershipPolicy`` defaults to ``open`` so visitors
-        can join.
+        can join. ``membersCanSpeak`` true gives the default member role ``send_voice``
+        (channel audio).
         """
         result: dict[str, Any] = await self._request(ops.CREATE_GRID_CHANNEL, {"input": input})
         return result

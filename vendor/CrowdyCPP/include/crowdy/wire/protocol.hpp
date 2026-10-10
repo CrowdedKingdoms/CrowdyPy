@@ -32,6 +32,13 @@ enum class MessageType : std::uint8_t {
   /// with a live actor within maxDistance chunks (Euclidean) of an origin chunk
   /// receive it, as an ordinary ChannelMessageNotification. Always HMAC-signed.
   ChannelMessageRangedRequest = 32,
+  /// Client -> server (Buddy v0.37.0): channel audio. Exactly ChannelMessageRequest's
+  /// layout and signing with this type byte; the payload is opaque (at most 1,024 bytes).
+  /// Needs the channel's send_voice and the session's use_voice_chat, else Unauthorized.
+  ChannelAudioRequest = 35,
+  /// Server -> client (Buddy v0.37.0): channel audio from another member, exactly
+  /// ChannelMessageNotification's layout with this type byte. No echo to the sender.
+  ChannelAudioNotification = 36,
   /// Server -> client: reconnect to a different server (load shedding).
   /// [type][32B HMAC over the type byte]. Always sent un-bundled.
   CommandReconnect = 22,
@@ -90,6 +97,10 @@ enum class ErrorCode : std::uint8_t {
   UserNotAuthenticated = 20,
   /// App-scoped token passed expiresAt — refresh or re-mint, then re-assign.
   TokenExpired = 32,
+  /// Buddy v0.37.0: the app's runtime gate is not active (no funds, a spend cap, a lapsed
+  /// subscription), so the send was refused. Sent at most once per session about every 5 s;
+  /// tell the player the world is paused rather than retrying.
+  AppPaused = 33,
 };
 
 /// Replication density across Chebyshev distance rings 1-8.
@@ -187,6 +198,7 @@ constexpr std::size_t kCommandReconnectSize = 1 + kHmacTagSize;
 // Notification (server -> client):
 //   [1B type=18][8B channelId][32B senderUuid][2B payloadLen][payload]
 //   [8B epochMillis][1B seq]
+// Channel audio (Buddy v0.37.0) is the same pair with type bytes 35 and 36.
 namespace channel {
 constexpr std::size_t kHeaderSize = 1 + 8 + kUuidSize + 2;  // 43 (through payloadLen)
 constexpr std::size_t kChannelIdOffset = 1;
@@ -234,6 +246,8 @@ constexpr std::size_t kZOffset = 4;
 constexpr std::size_t kTypeOffset = 6;
 constexpr std::size_t kStateLenOffset = 8;
 constexpr std::size_t kStateOffset = 10;
+/// Most bytes a voxel edit's state may carry; the server refuses longer with InvalidRequest.
+constexpr std::size_t kMaxStateSize = 1024;
 }  // namespace voxel
 
 }  // namespace crowdy::wire

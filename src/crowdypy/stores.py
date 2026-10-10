@@ -31,7 +31,7 @@ from crowdypy.codecs import StateCodec, json_codec, raw_codec
 from crowdypy.domains._base import sleep
 from crowdypy.errors import CrowdyError
 from crowdypy.utils import decode_base64, encode_base64
-from crowdypy.wire import DecayRate, ErrorCode
+from crowdypy.wire import DecayRate, ErrorCode, assert_voxel_edit
 
 if TYPE_CHECKING:
     from crowdypy.client import AsyncCrowdyClient
@@ -44,6 +44,7 @@ __all__ = [
     "AvatarStateStore",
     "CachedChunk",
     "ChannelInbox",
+    "ChunkOverlayVoxel",
     "ChunkStore",
     "ChunkWriteBackFailure",
     "ErrorStore",
@@ -58,10 +59,12 @@ __all__ = [
     "SaveStateStore",
     "WorldSessionCore",
     "create_world_session",
+    "voxel_key",
 ]
 
 _s: Any = _native.session
 CHUNK_VOLUME = 4096
+CHUNK_SIZE = 16
 Coord = tuple[int, int, int]
 
 
@@ -81,6 +84,20 @@ def _chunk_input(coord: Coord) -> dict[str, str]:
 
 def _distance(a: Coord, b: Coord) -> int:
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[2] - b[2]))
+
+
+def voxel_key(x: int, y: int, z: int) -> str:
+    """The key :meth:`ChunkStore.overlay` holds a voxel under: ``"x:y:z"``, its within-chunk
+    coordinates as the edit carried them (any signed 16-bit value)."""
+    return f"{x}:{y}:{z}"
+
+
+def _in_grid(x: int, y: int, z: int) -> bool:
+    return 0 <= x < CHUNK_SIZE and 0 <= y < CHUNK_SIZE and 0 <= z < CHUNK_SIZE
+
+
+def _fits_int16(value: int) -> bool:
+    return -32768 <= value <= 32767
 
 
 def _decode(codec: StateCodec[Any], data: bytes, counter: list[int]) -> Any:
@@ -189,8 +206,16 @@ class WorldSessionCore:
         return cancel
 
     def on(self, name: str, handler: Callable[[Notification], Any]) -> Callable[[], None]:
-        """Per-event handlers for what the stores do not keep (``audio``, ``video``,
-        ``text``, ``status``); the stores hold the rest. Returns the unsubscribe function."""
+        """Per-event handlers for what the stores do not keep: ``audio``, ``video``,
+        ``text``, ``generic_spatial`` (opcode 140, an app-defined spatial payload),
+        ``channel_audio`` (channel voice, which the channel inbox does not get) and
+        ``status``. ``voxel_update`` fires for every inbound voxel edit after
+        :attr:`chunks` merged it, with its sender, voxel and state, for a game that keeps its
+        own world; it includes the server's echo of your own edits (compare the uuid and
+        sequence with your send's). The stores hold the rest. Returns the unsubscribe
+        function."""
+        if name in ("voxel_update", "any"):
+            self._native.watch_voxels(True)
         return self.connection.subscribe({name: handler})
 
     def on_dispose(self, cleanup: Callable[[], Any]) -> None:
@@ -258,7 +283,9 @@ class _Listeners:
 class LocalActorStore:
     """Your actor: the first update joins, then a send loop at ``send_hz`` resends on change,
     sends a keyframe at least every ``keyframe_interval_ms`` and a cheap heartbeat while
-    idle. ``status`` is ``idle``, ``pending``, ``acked`` or ``error``."""
+    idle. Idle players on different servers meet at the first full update after joining
+    (replication server v0.37.0); before it, heartbeats ahead of the first update kept them
+    apart. ``status`` is ``idle``, ``pending``, ``acked`` or ``error``."""
 
     _STATUS = ("idle", "pending", "acked", "error")
 
@@ -574,7 +601,10 @@ def _write_back_retryable(error: BaseException) -> bool:
 class CachedChunk:
     """A chunk's place in the store. ``load_state``: ``loading``, ``loaded`` (the server's
     copy), ``missing`` (never stored), ``seeded`` (generated or edited first) or ``failed``.
-    Voxels live natively: read them with :meth:`ChunkStore.voxels`."""
+    Voxels live natively: read them with :meth:`ChunkStore.voxels`, :meth:`ChunkStore.overlay`
+    and :meth:`ChunkStore.voxel_type_at`. ``hydrated_states`` holds the decoded states the last
+    :meth:`ChunkStore.hydrate` delivered for voxels in the dense grid, by voxel index; the
+    store's reads go to the native cache, which holds them too."""
 
     coord: Coord
     load_state: str = "loading"
@@ -584,6 +614,20 @@ class CachedChunk:
     dirty: bool = False
     chunk_state: Any = None
     hydrated_states: dict[int, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkOverlayVoxel:
+    """A voxel the dense grid cannot hold, kept in its chunk's overlay: a type outside 0-255,
+    or a position outside 0-15 (the app's signed 16-bit values, as the edit carried them).
+    ``state`` is decoded with the store's voxel state codec (``None`` when it has none or it
+    did not decode)."""
+
+    x: int
+    y: int
+    z: int
+    voxel_type: int
+    state: Any = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -601,7 +645,17 @@ class ChunkWriteBackFailure:
 
 class ChunkStore:
     """A chunk and voxel cache: real-time voxel edits merge natively, local edits apply at
-    once and replicate over UDP, and chunks load from and persist to the Game API."""
+    once and replicate over UDP, and chunks load from and persist to the Game API.
+
+    It is a helper for 16x16x16 chunks with one byte per voxel. Voxel positions and types are
+    the app's signed 16-bit values, which the platform does not check: an edit the dense grid
+    cannot hold (a type outside 0-255, a position outside 0-15) goes to the chunk's
+    :meth:`overlay` instead, and reads of that voxel return it. The server delivers every
+    accepted edit back to its sender; that echo of a :meth:`set_voxel` is matched (sender,
+    sequence, voxel) and not applied again, so a local edit fires one change event, unless
+    another client's edit of that voxel arrived in between (the server ordered yours last).
+    An app with other addressing reads the raw edits (``session.on("voxel_update")``,
+    ``client.chunks.get``'s ``voxelStates``)."""
 
     def __init__(
         self,
@@ -651,24 +705,39 @@ class ChunkStore:
         return builtins.list(self._meta.values())
 
     def voxels(self, chunk: Sequence[int | str]) -> bytes | None:
-        """The 4096 voxel types of a cached chunk (index ``x + y*16 + z*256``)."""
+        """The 4096 voxel types of a cached chunk (index ``x + y*16 + z*256``). It holds 0
+        where an in-grid voxel's type is in the :meth:`overlay`."""
         raw = self._session._native.chunk(*_coord(chunk))
         return raw[0] if raw is not None else None
 
+    def overlay(self, chunk: Sequence[int | str]) -> dict[str, ChunkOverlayVoxel]:
+        """The voxels of a cached chunk the dense grid cannot hold (a type outside 0-255, a
+        position outside 0-15), keyed by :func:`voxel_key`. Empty when it has none or the
+        chunk is not cached."""
+        raw = self._session._native.chunk(*_coord(chunk))
+        if raw is None:
+            return {}
+        return {
+            voxel_key(x, y, z): ChunkOverlayVoxel(x, y, z, voxel_type, self._decode_voxel(state))
+            for x, y, z, voxel_type, state in raw[3]
+        }
+
     def voxel_type_at(self, chunk: Sequence[int | str], x: int, y: int, z: int) -> int:
+        """The voxel type at a within-chunk coordinate: the overlay's when it holds that voxel,
+        else the dense grid's (0 when the chunk is not cached, or for a position outside the
+        grid with no overlay entry). A signed 16-bit value."""
+        if not (_fits_int16(x) and _fits_int16(y) and _fits_int16(z)):
+            return 0
         result: int = self._session._native.voxel_type_at(*_coord(chunk), x, y, z)
         return result
 
     def voxel_state_at(self, chunk: Sequence[int | str], x: int, y: int, z: int) -> Any:
-        coord = _coord(chunk)
-        live = self._session._native.voxel_state_at(*coord, x, y, z)
-        if live is not None:
-            try:
-                return self._voxel_codec.decode(live[1])
-            except Exception:
-                return None
-        meta = self._meta.get(coord)
-        return meta.hydrated_states.get(x + y * 16 + z * 256) if meta else None
+        """The decoded state at a within-chunk coordinate, the overlay's first (``None`` when
+        it has none or it did not decode)."""
+        if not (_fits_int16(x) and _fits_int16(y) and _fits_int16(z)):
+            return None
+        live = self._session._native.voxel_state_at(*_coord(chunk), x, y, z)
+        return self._decode_voxel(live[1]) if live is not None else None
 
     def on_chunk_changed(self, listener: Callable[[CachedChunk], Any]) -> Callable[[], None]:
         self._session._native.watch_chunks(True)
@@ -730,11 +799,12 @@ class ChunkStore:
     async def hydrate(self, chunk: Sequence[int | str]) -> None:
         """Load one chunk in full: voxels, chunk state and per-voxel states.
 
-        Each ``voxelStates`` entry goes over the dense grid: its voxel type at its voxel,
-        and its state (an entry without one clears the hydrated state there). Since
-        ck-api v2.33.0 every voxel edit recorded for a chunk (a hub's or mod's
-        ``world.set_voxels``, ``updateVoxel``, realtime voxel updates) arrives only that
-        way, so without hydration none of them shows after a reload."""
+        Each ``voxelStates`` entry goes over the dense grid: its voxel type at its voxel, and
+        its state (an entry without one clears the state there); an entry the grid cannot
+        hold (a type outside 0-255, a position outside 0-15) goes to the :meth:`overlay`.
+        Since ck-api v2.33.0 every voxel edit recorded for a chunk (a hub's or mod's
+        ``world.set_voxels``, ``updateVoxel``, realtime voxel updates) arrives only that way,
+        so without hydration none of them shows after a reload."""
         coord = _coord(chunk)
         full = await self._session.client.chunks.get(
             {"appId": self._session.app_id, "coordinates": _chunk_input(coord)}
@@ -742,31 +812,34 @@ class ChunkStore:
         if not full:
             self._mark_missing(coord)
             return
-        entries = []
+        entries: builtins.list[tuple[int, int, int, int, bytes]] = []
         for entry in full.get("voxelStates") or []:
             voxel = entry["voxelCoord"]
-            if all(0 <= int(voxel[axis]) < 16 for axis in ("x", "y", "z")):
-                entries.append(
-                    (int(voxel["x"]) + int(voxel["y"]) * 16 + int(voxel["z"]) * 256, entry)
-                )
+            x, y, z = int(voxel["x"]), int(voxel["y"]), int(voxel["z"])
+            voxel_type = int(entry["voxelType"])
+            if not all(_fits_int16(v) for v in (x, y, z, voxel_type)):
+                continue
+            state = decode_base64(entry["state"]) if entry.get("state") else b""
+            entries.append((x, y, z, voxel_type, state))
         voxels = full.get("voxels")
-        if entries:
-            raw = decode_base64(voxels) if voxels else b""
+        raw = decode_base64(voxels) if voxels else b""
+        if len(raw) != CHUNK_VOLUME:
             # A chunk stored with `voxels: null` still carries its recorded edits.
-            grid = bytearray(raw) if len(raw) == CHUNK_VOLUME else bytearray(CHUNK_VOLUME)
-            for index, entry in entries:
-                grid[index] = int(entry["voxelType"]) & 0xFF
-            voxels = encode_base64(bytes(grid))
-        self._apply_server_chunk(coord, voxels, full.get("chunkState"))
-        meta = self._meta[coord]
-        for index, entry in entries:
-            if not entry.get("state"):
+            raw = bytes(CHUNK_VOLUME) if entries else b""
+        if raw:
+            self._session._native.hydrate(*coord, raw, entries)
+        meta = self._entry(coord)
+        meta.chunk_state = self._decode_chunk_state(full.get("chunkState"))
+        meta.load_state = "loaded"
+        for x, y, z, voxel_type, state in entries:
+            if not _in_grid(x, y, z):
+                continue
+            index = x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE
+            if not state or not 0 <= voxel_type <= 255:
                 meta.hydrated_states.pop(index, None)
                 continue
             with contextlib.suppress(Exception):
-                meta.hydrated_states[index] = self._voxel_codec.decode(
-                    decode_base64(entry["state"])
-                )
+                meta.hydrated_states[index] = self._voxel_codec.decode(state)
         meta.hydrated = True
         self._touch(meta)
 
@@ -780,9 +853,15 @@ class ChunkStore:
         state: Any = None,
     ) -> int:
         """Apply an edit locally, replicate it, and queue the chunk for write-back. Returns
-        the send's sequence number."""
+        the send's sequence number.
+
+        The position and type are the app's signed 16-bit values; one the dense grid cannot
+        hold is kept in the :meth:`overlay`. The encoded state is at most 1,024 bytes. Raises
+        ``ValueError`` for anything else, before anything changes or is sent. The server's
+        echo of the edit is not applied again."""
         coord = _coord(chunk)
         encoded = self._voxel_codec.encode(state) if state is not None else b""
+        assert_voxel_edit((x, y, z), voxel_type, encoded)
         sequence: int = self._session._native.set_voxel(*coord, x, y, z, voxel_type, encoded)
         self._session.track_send(
             {"kind": "voxelUpdate", "sequence": sequence, "sent_at": _now_ms(),
@@ -831,12 +910,20 @@ class ChunkStore:
         written back)."""
         middle = _coord(center)
         dirty_far = [c for c, m in self._meta.items() if m.dirty and _distance(c, middle) > radius]
-        # The native cache prunes by distance alone; keep the dirty chunks' voxels.
+        # The native cache prunes by distance alone; keep the dirty chunks' voxels, their
+        # states and their overlay.
         keep = {c: self._session._native.chunk(*c) for c in dirty_far}
         self._session._native.prune_beyond(*middle, radius)
         for coord, raw in keep.items():
-            if raw is not None:
-                self._session._native.seed(*coord, raw[0])
+            if raw is None:
+                continue
+            grid, states, _, overlay = raw
+            entries = [
+                (i % CHUNK_SIZE, i // CHUNK_SIZE % CHUNK_SIZE, i // (CHUNK_SIZE * CHUNK_SIZE),
+                 grid[i], state)
+                for i, (_, state) in states.items()
+            ]  # fmt: skip
+            self._session._native.hydrate(*coord, grid, [*entries, *overlay])
         for coord in [
             c for c, m in self._meta.items() if not m.dirty and _distance(c, middle) > radius
         ]:
@@ -926,6 +1013,14 @@ class ChunkStore:
             return None
         try:
             return self._chunk_codec.decode(decode_base64(encoded))
+        except Exception:
+            return None
+
+    def _decode_voxel(self, state: bytes) -> Any:
+        if not state:
+            return None
+        try:
+            return self._voxel_codec.decode(state)
         except Exception:
             return None
 

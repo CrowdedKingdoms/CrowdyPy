@@ -15,6 +15,7 @@ import inspect
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -76,6 +77,9 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
         "archiveTier",
         "grant",
         "revoke",
+        "suspend",
+        "unsuspend",
+        "resyncTierGridPermissions",
         "defineFeature",
         "features",
         "grantTierFeature",
@@ -369,6 +373,43 @@ CASES: list[Case] = [
         "RevokeAppAccess",
         {"appId": "42", "userId": "7"},
         {**ACCESS, "status": "revoked"},
+    ),
+    Case(
+        AppAccessAPI,
+        "suspend",
+        (42, 7, "2026-10-20T00:00:00Z"),
+        "SuspendAppAccess",
+        {"appId": "42", "userId": "7", "until": "2026-10-20T00:00:00Z"},
+        {**ACCESS, "suspendedUntil": "2026-10-20T00:00:00.000Z"},
+    ),
+    Case(
+        AppAccessAPI,
+        "suspend",
+        ("42", "7", datetime(2026, 10, 20, 2, 30, tzinfo=timezone(timedelta(hours=2))), "ban-7"),
+        "SuspendAppAccess",
+        {
+            "appId": "42",
+            "userId": "7",
+            "until": "2026-10-20T00:30:00.000Z",
+            "idempotencyKey": "ban-7",
+        },
+        {**ACCESS, "suspendedUntil": "2026-10-20T00:30:00.000Z"},
+    ),
+    Case(
+        AppAccessAPI,
+        "unsuspend",
+        (42, "7"),
+        "UnsuspendAppAccess",
+        {"appId": "42", "userId": "7"},
+        {**ACCESS, "suspendedUntil": None},
+    ),
+    Case(
+        AppAccessAPI,
+        "resync_tier_grid_permissions",
+        (42,),
+        "ResyncTierGridPermissions",
+        {"appId": "42"},
+        True,
     ),
     Case(
         AppAccessAPI,
@@ -1038,6 +1079,14 @@ async def test_quotas_set_refuses_a_platform_global_rule_before_any_request(
 ) -> None:
     with pytest.raises(CrowdyError, match="needs an appId or an orgId"):
         await QuotasAPI(graphql).set(rule)
+    assert api.sent == []
+
+
+async def test_suspend_refuses_a_naive_datetime_before_any_request(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await AppAccessAPI(graphql).suspend(42, 7, datetime(2026, 10, 20))
     assert api.sent == []
 
 

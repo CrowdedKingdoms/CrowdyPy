@@ -155,6 +155,86 @@ def test_a_ranged_channel_send_carries_the_connection_app(server: FakeServer) ->
             assert refused.value.code == "InvalidArgument"
 
 
+def channel_audio(channel_id: int, sender: str, payload: bytes, sequence: int = 0) -> bytes:
+    """A CHANNEL_AUDIO_NOTIFICATION: a channel notification's layout with type byte 36."""
+    return (
+        bytes([MessageType.CHANNEL_AUDIO_NOTIFICATION])
+        + channel_id.to_bytes(8, "little")
+        + sender.encode()
+        + len(payload).to_bytes(2, "little")
+        + payload
+        + (1_700_000_000_000).to_bytes(8, "little")
+        + bytes([sequence])
+    )
+
+
+def test_channel_audio_goes_out_as_35_and_arrives_on_its_own_handler(server: FakeServer) -> None:
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        heard: list[Any] = []
+        messages: list[Any] = []
+        connection.subscribe({"channel_audio": heard.append, "channel_message": messages.append})
+        packet = media.VoicePacketizer(media.VoiceCodec.OPUS, 20).packetize(b"\xaa\xbb")
+        sequence = connection.send_channel_audio(4242, ME, packet)
+        connection.flush_sends()
+        (datagram,) = server.messages()
+        assert datagram == wire.encode_channel_audio(
+            TOKEN, 4242, ME, packet, game_token_id=TOKEN_ID, sequence=sequence
+        )
+        with pytest.raises(CrowdyReplicationError) as refused:
+            connection.send_channel_audio(4242, ME, bytes(wire.MAX_CHANNEL_PAYLOAD + 1))
+        assert refused.value.code == "InvalidArgument"
+
+        server.send(
+            wire.bundle([channel_audio(9, OTHER, packet, 4), channel_audio(9, OTHER, b"x")])
+        )
+        events = [e for e in wait_for_rows(connection, 4) if e.type != STATUS]
+        assert [e.type for e in events] == [MessageType.CHANNEL_AUDIO_NOTIFICATION] * 2
+        assert (events[0].channel_id, events[0].uuid, events[0].sequence) == (9, OTHER, 4)
+        assert media.decode_voice_packet(events[0].payload) == media.decode_voice_packet(packet)
+        assert [n.payload for n in heard] == [packet, b"x"]
+        assert messages == []
+
+        # Audio never echoes, so a frame under your own uuid and sequence is no answer to a send.
+        server.send(channel_audio(9, ME, b"y", sequence))
+        assert connection.wait(3)
+        time.sleep(0.05)
+        batch = connection.poll()
+        assert any(e.type == MessageType.CHANNEL_AUDIO_NOTIFICATION for e in batch)
+        assert batch.match(sequence, ME) == -1
+
+
+def test_an_app_defined_spatial_message_arrives_as_generic_spatial(server: FakeServer) -> None:
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        seen: list[Any] = []
+        connection.subscribe({"generic_spatial": seen.append})
+        connection.send_generic_spatial((1, 2, 3), ME, b"ping")
+        connection.flush_sends()
+        sent = wire.parse_long_spatial(server.recv())
+        assert (sent.type, sent.payload) == (MessageType.GENERIC_SPATIAL_1, b"ping")
+        server.notify(MessageType.GENERIC_SPATIAL_1, OTHER, b"pong", sequence=3)
+        events = [e for e in wait_for_rows(connection, 3) if e.type != STATUS]
+        assert [(e.type, e.uuid, e.payload) for e in events] == [
+            (MessageType.GENERIC_SPATIAL_1, OTHER, b"pong")
+        ]
+        assert [n.payload for n in seen] == [b"pong"]
+
+
+def test_voxel_edits_take_the_apps_int16s_and_at_most_1024_state_bytes(
+    server: FakeServer,
+) -> None:
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        connection.send_voxel_update((0, 0, 0), ME, (-5, 40, 300), -2, bytes(1024))
+        connection.flush_sends()
+        sent = wire.parse_long_spatial(server.recv())
+        assert wire.parse_voxel_payload(sent.payload) == (-5, 40, 300, -2, bytes(1024))
+        with pytest.raises(CrowdyReplicationError, match="1025 bytes") as refused:
+            connection.send_voxel_update((0, 0, 0), ME, (0, 0, 0), 1, bytes(1025))
+        assert refused.value.code == "InvalidArgument"
+        with pytest.raises(CrowdyReplicationError) as wide:
+            connection.send_voxel_update((0, 0, 0), ME, (32768, 0, 0), 1)
+        assert wide.value.code == "InvalidArgument"
+
+
 def test_notifications_arrive_as_columns_and_rows(server: FakeServer) -> None:
     with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
         connection.send_heartbeat((0, 0, 0), ME)

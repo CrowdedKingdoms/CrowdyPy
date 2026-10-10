@@ -248,7 +248,10 @@ class AppsAPI(Domain):
 
         ``wildernessWritesOpen`` false closes the app's wilderness (chunks no grid but the
         world grid covers): every voxel and chunk write there is refused with ``FORBIDDEN``,
-        whoever makes it, within 15 seconds. Apps start open.
+        whoever makes it, within 15 seconds. Apps start open. ``claimOwnerKeys`` (at most 8
+        active grid keys, never a player-code key) are the grid permission keys a player's
+        claim grants its owner on the claimed grid, for claims made from then on; for
+        example ``update_voxel_data`` makes a claim buildable without a hub granting it.
         """
         result: dict[str, Any] = await self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}

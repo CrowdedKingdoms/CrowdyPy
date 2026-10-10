@@ -15,7 +15,7 @@ import pytest
 from crowdypy import wire
 from crowdypy.codecs import f32, reserved, struct_codec, u16
 from crowdypy.replication import Assignment, ReplicationConnection, TokenMaterial
-from crowdypy.stores import WorldSessionCore
+from crowdypy.stores import ChunkOverlayVoxel, WorldSessionCore, voxel_key
 from crowdypy.wire import MessageType
 
 TOKEN = "t" * 64
@@ -278,3 +278,174 @@ def test_engine_lanes_split_mobs_from_players_natively(world: Any) -> None:
     assert [a.uuid for a in lanes["mobs"].list()] == ["m" * 32]
     assert [a.uuid for a in lanes["players"].list()] == ["p" * 32]
     assert lanes["npcs"].count == 0
+
+
+# ---- what the session forwards, and voxel edits the dense grid cannot hold ----
+
+
+def pump_until(
+    session: WorldSessionCore, connection: ReplicationConnection, condition: Any
+) -> None:
+    """Tick, then drain the connection: forwarded rows reach subscribed handlers on a poll."""
+    deadline = time.monotonic() + 3.0
+    while not condition():
+        assert time.monotonic() < deadline, "condition not met in time"
+        session.tick()
+        connection.poll()
+        time.sleep(0.005)
+
+
+def voxel(
+    server: FakeServer, uuid: str, xyz: tuple[int, int, int], voxel_type: int, sequence: int = 0
+) -> None:
+    server.notify(
+        MessageType.VOXEL_UPDATE_NOTIFICATION,
+        uuid,
+        wire.encode_voxel_payload(*xyz, voxel_type),
+        chunk=(0, 0, 0),
+        sequence=sequence,
+    )
+
+
+@pytest.fixture
+def chunk(world: Any) -> Any:
+    """The world with chunk (0, 0, 0) cached and a voxel_update hook recording every edit."""
+    server, connection, session = world
+    session.self.join((0, 0, 0), b"x")
+    server.recv()
+    session.chunks.seed((0, 0, 0), bytes(4096), write_back=False)
+    seen: list[Any] = []
+    session.on("voxel_update", seen.append)
+    return server, connection, session, seen
+
+
+def test_generic_spatial_and_channel_audio_reach_the_game_while_a_session_is_attached(
+    world: Any,
+) -> None:
+    server, connection, session = world
+    session.self.join((0, 0, 0), b"x")
+    server.recv()
+    spatial: list[Any] = []
+    audio: list[Any] = []
+    inbox: list[Any] = []
+    session.on("generic_spatial", spatial.append)
+    session.on("channel_audio", audio.append)
+    session.channel_inbox.on_message(inbox.append)
+    server.notify(MessageType.GENERIC_SPATIAL_1, OTHER, b"app-defined", sequence=5)
+    server.sock.sendto(
+        bytes([MessageType.CHANNEL_AUDIO_NOTIFICATION])
+        + struct.pack("<q", 77)
+        + OTHER.encode()
+        + struct.pack("<H", 3)
+        + b"pcm"
+        + struct.pack("<qB", 1_700_000_000_000, 9),
+        server.client,
+    )
+    pump_until(session, connection, lambda: spatial and audio)
+    assert [(n.uuid, n.payload, n.sequence) for n in spatial] == [(OTHER, b"app-defined", 5)]
+    assert [(n.channel_id, n.uuid, n.payload, n.sequence) for n in audio] == [
+        (77, OTHER, b"pcm", 9)
+    ]
+    assert inbox == []
+    assert session.channel_inbox.channels() == []
+
+
+def test_voxel_updates_reach_the_hook_after_the_store_merged_them(chunk: Any) -> None:
+    server, connection, session, seen = chunk
+    voxel(server, OTHER, (1, 2, 3), 9, sequence=4)
+    pump_until(session, connection, lambda: seen)
+    [edit] = seen
+    assert (edit.uuid, edit.chunk, edit.voxel, edit.voxel_type, edit.sequence) == (
+        OTHER, (0, 0, 0), (1, 2, 3), 9, 4,
+    )  # fmt: skip
+    assert session.chunks.voxel_type_at((0, 0, 0), 1, 2, 3) == 9
+
+
+def test_edits_the_dense_grid_cannot_hold_go_to_the_overlay(chunk: Any) -> None:
+    server, connection, session, seen = chunk
+    at = (0, 0, 0)
+    voxel(server, OTHER, (1, 2, 3), 300)  # a wide type at an in-grid position
+    voxel(server, OTHER, (16, 0, 0), 9)  # a position the grid does not have
+    voxel(server, OTHER, (-1, 0, 0), -1)
+    pump_until(session, connection, lambda: len(seen) == 3)
+
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 300, "not stored truncated (300 & 0xFF)"
+    assert session.chunks.voxel_type_at(at, 16, 0, 0) == 9
+    assert session.chunks.voxel_type_at(at, 0, 1, 0) == 0, "(16, 0, 0) does not alias (0, 1, 0)"
+    assert session.chunks.voxel_type_at(at, -1, 0, 0) == -1
+    voxels = session.chunks.voxels(at)
+    assert voxels is not None
+    assert (voxels[1 + 2 * 16 + 3 * 256], voxels[16]) == (0, 0)
+    overlay = session.chunks.overlay(at)
+    assert set(overlay) == {"1:2:3", "16:0:0", "-1:0:0"}
+    assert overlay["16:0:0"] == ChunkOverlayVoxel(16, 0, 0, 9, None)
+    assert voxel_key(-1, 0, 0) == "-1:0:0"
+
+    voxel(server, OTHER, (1, 2, 3), 4)  # back within the grid: the overlay entry goes
+    pump_until(session, connection, lambda: len(seen) == 4)
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 4
+    assert "1:2:3" not in session.chunks.overlay(at)
+    assert session.chunks.overlay((5, 5, 5)) == {}
+
+
+def test_the_echo_of_your_own_edit_is_applied_once(chunk: Any) -> None:
+    server, connection, session, seen = chunk
+    at = (0, 0, 0)
+    changed: list[Any] = []
+    session.chunks.on_chunk_changed(changed.append)
+    sequence = session.chunks.set_voxel(at, 1, 2, 3, 7)
+    sent = server.recv()
+    assert wire.parse_voxel_payload(sent.payload) == (1, 2, 3, 7, b"")
+    tick_until(session, lambda: len(changed) == 1)
+
+    voxel(server, ME, (1, 2, 3), 7, sequence)
+    pump_until(session, connection, lambda: len(seen) == 1)
+    assert (seen[0].uuid, seen[0].sequence) == (ME, sequence), "the hook sees your echo too"
+    session.tick()
+    assert len(changed) == 1, "the echo fired no second change"
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 7
+
+    # Another client's edit lands between yours and its echo: the echo restores yours, since
+    # the server ordered it last.
+    sequence = session.chunks.set_voxel(at, 1, 2, 3, 8)
+    server.recv()
+    voxel(server, OTHER, (1, 2, 3), 5, sequence)
+    pump_until(session, connection, lambda: len(seen) == 2)
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 5
+    voxel(server, ME, (1, 2, 3), 8, sequence)
+    pump_until(session, connection, lambda: len(seen) == 3)
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 8
+
+
+def test_a_wide_local_edit_is_kept_in_the_overlay_and_sent_as_it_is(chunk: Any) -> None:
+    server, connection, session, seen = chunk
+    at = (0, 0, 0)
+    sequence = session.chunks.set_voxel(at, 300, -2, 16, 1200, b"st")
+    sent = server.recv()
+    assert wire.parse_voxel_payload(sent.payload) == (300, -2, 16, 1200, b"st")
+    assert session.chunks.voxel_type_at(at, 300, -2, 16) == 1200
+    assert session.chunks.voxel_state_at(at, 300, -2, 16) == b"st"
+    assert session.chunks.overlay(at)["300:-2:16"] == ChunkOverlayVoxel(300, -2, 16, 1200, b"st")
+    voxel(server, ME, (300, -2, 16), 1200, sequence)
+    pump_until(session, connection, lambda: seen)
+    assert session.chunks.voxel_type_at(at, 300, -2, 16) == 1200
+    assert session.chunks.voxel_type_at(at, 40000, 0, 0) == 0
+    assert session.chunks.voxel_state_at(at, 40000, 0, 0) is None
+
+
+def test_set_voxel_refuses_an_edit_that_does_not_fit_before_applying_it(chunk: Any) -> None:
+    _, connection, session, _ = chunk
+    at = (0, 0, 0)
+    before = connection.stats()["messages_sent_by_type"].get(MessageType.VOXEL_UPDATE_REQUEST, 0)
+    with pytest.raises(ValueError, match="voxel x"):
+        session.chunks.set_voxel(at, 40000, 0, 0, 1)
+    with pytest.raises(ValueError, match="voxel type"):
+        session.chunks.set_voxel(at, 0, 0, 0, -40000)
+    with pytest.raises(ValueError, match="at most 1024"):
+        session.chunks.set_voxel(at, 0, 0, 0, 1, bytes(1025))
+    after = connection.stats()["messages_sent_by_type"].get(MessageType.VOXEL_UPDATE_REQUEST, 0)
+    assert after == before
+    assert session.chunks.voxel_type_at(at, 0, 0, 0) == 0
+    meta = session.chunks.get(at)
+    assert meta is not None
+    assert not meta.dirty

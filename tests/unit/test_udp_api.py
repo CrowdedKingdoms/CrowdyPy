@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
-from crowdypy import wire
+from crowdypy import media, wire
 from crowdypy.client import AsyncCrowdyClient
 from crowdypy.datacenter_redirect import DatacenterMove
 from crowdypy.domains.portal import AppTokenResponse
@@ -46,6 +46,7 @@ class World:
         self.lock = threading.Lock()
         self.pending: list[wire.LongSpatialMessage] = []
         self.channel: list[bytes] = []
+        self.audio: list[bytes] = []
         self.client: Any = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -81,6 +82,9 @@ class World:
         for message in wire.split_datagram(data):
             if message[0] == MessageType.CHANNEL_MESSAGE_REQUEST:
                 self.channel.append(message)
+                continue
+            if message[0] == MessageType.CHANNEL_AUDIO_REQUEST:
+                self.audio.append(message)
                 continue
             parsed = wire.parse_long_spatial(message)
             if parsed.type != MessageType.CLIENT_ACTOR_HEARTBEAT:
@@ -226,6 +230,29 @@ def test_the_blocking_client_has_the_same_udp(world: World) -> None:
         8,
     )
     assert (int.from_bytes(event.payload[:2], "little"), event.payload[2:]) == (3, b"st")
+    sequence = client.udp.send_channel_audio(9, ME, b"voice")
+    client.udp.flush_sends()
+    while not world.audio:
+        world.pump_once()
+    assert (world.audio[0][0], world.audio[0][-1]) == (MessageType.CHANNEL_AUDIO_REQUEST, sequence)
+    client.close()
+
+
+def test_the_blocking_client_has_the_new_calls_as_plain_functions() -> None:
+    import inspect
+
+    client = CrowdyClient(http_url="https://ck.example.test")
+    for method in (
+        client.udp.send_channel_audio,
+        client.users.player_profile,
+        client.users.player_profiles,
+        client.app_access.suspend,
+        client.app_access.unsuspend,
+        client.app_access.resync_tier_grid_permissions,
+        client.exec.restart_type,
+    ):
+        assert callable(method)
+        assert not inspect.iscoroutinefunction(method), method
     client.close()
 
 
@@ -245,6 +272,28 @@ async def test_grid_sends_check_the_box_then_use_udp(world: World) -> None:
     while not world.channel:  # it may have left in a datagram of its own
         await asyncio.to_thread(world.pump_once)
     assert len(world.channel) == 1
+    await client.aclose()
+
+
+async def test_channel_audio_goes_out_on_udp_and_through_the_grid_scope(world: World) -> None:
+    client = async_client(world)
+    await client.udp.connect(app_token(), **OPTIONS)
+    packet = media.VoicePacketizer(media.VoiceCodec.OPUS, 20).packetize(b"\x01\x02")
+    first_sequence = await client.udp.send_channel_audio("9", ME, packet)
+    second_sequence = await client.grid("7", "5").channels.send_audio(10, ME, b"raw")
+    client.udp.flush_sends()
+    while len(world.audio) < 2:
+        await asyncio.to_thread(world.pump_once)
+    for frame, channel_id, payload, sequence in (
+        (world.audio[0], 9, packet, first_sequence),
+        (world.audio[1], 10, b"raw", second_sequence),
+    ):
+        assert frame[0] == MessageType.CHANNEL_AUDIO_REQUEST
+        assert int.from_bytes(frame[1:9], "little") == channel_id
+        assert frame[9:41] == ME.encode()
+        assert frame[43 : 43 + len(payload)] == payload
+        assert frame[-1] == sequence
+    assert world.channel == []
     await client.aclose()
 
 

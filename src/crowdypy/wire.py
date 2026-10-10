@@ -12,6 +12,7 @@ Buffers may be any object exporting the buffer protocol (``bytes``, ``bytearray`
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Iterator, Sequence
 from enum import IntEnum
 from typing import Any, NamedTuple
@@ -32,6 +33,8 @@ __all__ = [
     "MAX_LONG_SPATIAL_PAYLOAD",
     "TOKEN_OCTETS",
     "UUID_SIZE",
+    "VOXEL_STATE_MAX_BYTES",
+    "ChannelAudioNotification",
     "ChannelNotification",
     "DecayRate",
     "ErrorCode",
@@ -39,7 +42,9 @@ __all__ = [
     "LongSpatialMessage",
     "MessageType",
     "VoxelPayload",
+    "assert_voxel_edit",
     "bundle",
+    "encode_channel_audio",
     "encode_channel_message",
     "encode_event_payload",
     "encode_long_spatial",
@@ -68,6 +73,8 @@ MAX_CHANNEL_PAYLOAD: int = _wire.MAX_CHANNEL_PAYLOAD
 MAX_DISTANCE: int = _wire.MAX_DISTANCE
 #: The largest ``max_distance`` a distance-limited channel message takes, in chunks.
 CHANNEL_RANGED_MAX_DISTANCE: int = _wire.CHANNEL_RANGED_MAX_DISTANCE
+#: Most bytes a voxel edit's state may carry; the server refuses longer with INVALID_REQUEST.
+VOXEL_STATE_MAX_BYTES: int = _wire.VOXEL_STATE_MAX_BYTES
 
 
 class MessageType(IntEnum):
@@ -81,6 +88,8 @@ class MessageType(IntEnum):
     CLIENT_CAPABILITIES = 29
     MESSAGE_BUNDLE_SIGNED = 30
     CHANNEL_MESSAGE_RANGED_REQUEST = 32
+    CHANNEL_AUDIO_REQUEST = 35
+    CHANNEL_AUDIO_NOTIFICATION = 36
     ACTOR_UPDATE_REQUEST = 128
     ACTOR_UPDATE_NOTIFICATION = 130
     VOXEL_UPDATE_REQUEST = 131
@@ -109,6 +118,9 @@ class ErrorCode(IntEnum):
     INVALID_APP_ID = 18
     USER_NOT_AUTHENTICATED = 20
     TOKEN_EXPIRED = 32
+    #: The app's runtime gate is not active, so the server refused the send. Tell the
+    #: player the world is paused rather than retrying.
+    APP_PAUSED = 33
 
 
 class DecayRate(IntEnum):
@@ -137,6 +149,17 @@ class LongSpatialMessage(NamedTuple):
 
 
 class ChannelNotification(NamedTuple):
+    channel_id: int
+    sender_uuid: bytes
+    payload: bytes
+    epoch_millis: int
+    sequence: int
+
+
+class ChannelAudioNotification(NamedTuple):
+    """Channel audio from another member (CHANNEL_AUDIO_NOTIFICATION, 36): a channel
+    notification's layout with its own type byte. ``payload`` is opaque to the server."""
+
     channel_id: int
     sender_uuid: bytes
     payload: bytes
@@ -242,6 +265,24 @@ def encode_channel_message(
     return result
 
 
+def encode_channel_audio(
+    token: Any, channel_id: int, uuid: Any, payload: Any, *, game_token_id: int, sequence: int = 0
+) -> bytes:
+    """A CHANNEL_AUDIO_REQUEST (35): :func:`encode_channel_message`'s layout and signing with
+    its own type byte. ``payload`` is opaque, at most :data:`MAX_CHANNEL_PAYLOAD` bytes
+    (typically one :class:`crowdypy.media.VoicePacketizer` packet)."""
+    result: bytes = _call(
+        _wire.encode_channel_audio,
+        token,
+        int(channel_id),
+        uuid,
+        payload,
+        int(game_token_id),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
 def encode_ranged_channel_message(
     token: Any,
     channel_id: int,
@@ -279,11 +320,35 @@ def encode_ranged_channel_message(
 
 
 def parse_channel_notification(datagram: Any) -> ChannelNotification:
+    """A CHANNEL_MESSAGE_NOTIFICATION (18), or a CHANNEL_AUDIO_NOTIFICATION (36), which has the
+    same layout: read ``datagram[0]`` for which. :func:`parse_datagram` tells them apart."""
     return ChannelNotification(*_call(_wire.parse_channel_notification, datagram))
 
 
 def parse_generic_error(datagram: Any) -> GenericError:
     return GenericError(*_call(_wire.parse_generic_error, datagram))
+
+
+def assert_voxel_edit(voxel: Sequence[int], voxel_type: int, voxel_state: Any = None) -> None:
+    """Check a voxel edit before it is sent: the position's three coordinates and the type
+    are the app's signed 16-bit integers (the platform checks no narrower range), and the
+    state is at most :data:`VOXEL_STATE_MAX_BYTES`. Raises ``ValueError`` naming the field
+    that does not fit."""
+    for name, value in (
+        ("voxel x", voxel[0]),
+        ("voxel y", voxel[1]),
+        ("voxel z", voxel[2]),
+        ("voxel type", voxel_type),
+    ):
+        try:
+            number = operator.index(value)
+        except TypeError:
+            raise ValueError(f"{name} must be a signed 16-bit integer: {value!r}") from None
+        if not -32768 <= number <= 32767:
+            raise ValueError(f"{name} must be a signed 16-bit integer: {value!r}")
+    size = memoryview(voxel_state).nbytes if voxel_state is not None else 0
+    if size > VOXEL_STATE_MAX_BYTES:
+        raise ValueError(f"the voxel state is {size} bytes; at most {VOXEL_STATE_MAX_BYTES}")
 
 
 def encode_voxel_payload(x: int, y: int, z: int, voxel_type: int, state: Any = b"") -> bytes:
@@ -317,7 +382,9 @@ def split_datagram(datagram: Any) -> list[bytes]:
 
 def parse_datagram(
     datagram: Any,
-) -> Iterator[LongSpatialMessage | ChannelNotification | GenericError | bytes]:
+) -> Iterator[
+    LongSpatialMessage | ChannelNotification | ChannelAudioNotification | GenericError | bytes
+]:
     """Every message in a datagram, parsed. Control frames are yielded as raw bytes."""
     for member in split_datagram(datagram):
         kind = member[0] if member else 0
@@ -325,6 +392,8 @@ def parse_datagram(
             yield parse_generic_error(member)
         elif kind == MessageType.CHANNEL_MESSAGE_NOTIFICATION:
             yield parse_channel_notification(member)
+        elif kind == MessageType.CHANNEL_AUDIO_NOTIFICATION:
+            yield ChannelAudioNotification(*parse_channel_notification(member))
         elif kind & 0x80 or kind in (
             MessageType.CLIENT_ACTOR_HEARTBEAT,
             MessageType.CLIENT_CAPABILITIES,

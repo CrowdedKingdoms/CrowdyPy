@@ -60,7 +60,9 @@ python tools/parity/parity.py --crowdyjs ../CrowdyJS --write docs/parity-matrix.
 ```
 
 then port what changed, refresh `tests/fixtures/` from the same commit, and classify or
-cover every new difference. Build CrowdyJS at the new pin (`npm ci && npm run build`) and run
+cover every new difference. `tests/unit/test_fixture_provenance.py` holds each copied fixture
+to its CrowdyJS source, and `exec-client-frames.json` and `voice-frames.json` to the vendored
+CrowdyCPP copies too. Build CrowdyJS at the new pin (`npm ci && npm run build`) and run
 `node tools/fixtures/player_host.mjs ../CrowdyJS`: it rewrites the player-host schemas and
 their fixture, and `tests/unit/test_player_host.py` refuses either one from another commit. Moving the CrowdyCPP pin:
 
@@ -145,5 +147,24 @@ The replication system saturates the local network stack, so the binding
 - Sends are batched, and the GIL is released while a batch is encoded and sent.
 - An asyncio loop is woken through `Config::onEventsReady` and a socket pair, never by a
   sleep-poll.
+- While a World Stores session is attached it owns the connection's handlers. What its stores
+  do not keep (audio, video, text, opcode 140, channel audio) is forwarded into the batch
+  rows; voxel updates are forwarded only once Python watches them (`watch_voxels`, set by
+  `session.on("voxel_update")`), since the chunk store already merges every one.
 - Every change to the hot path reruns `benchmarks/bench_replication.py` and CrowdyCPP's
   `bench_send` on the same machine, and updates `benchmarks/README.md`.
+
+## The native session and its chunk store
+
+- The session is built without host election and with native write-back off. Both are
+  GraphQL work the Python facade does on its timers.
+- Its chunk source, `StagedChunks` in `native/session_binding.cpp`, only applies what the
+  facade loaded. `ChunkStore.hydrate()` and `prune_beyond()` hand a chunk to it through
+  `WorldSession.hydrate`, so stored edits follow CrowdyCPP's overlay rules: an edit the
+  16x16x16 one-byte grid cannot hold goes to `ChunkData::overlay`.
+- Do not write voxel types or states into the dense grid from Python. That bypasses the
+  overlay, and the echo matching of local edits.
+- The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
+  `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
+  options CrowdyJS refuses.
+- `CROWDY_WITH_OPUS` stays `OFF` in `pyproject.toml`: the wheels link no audio codec.

@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 37865a07e4cde0703fa5c165b25ed309272f02ab96aed8d46439a2afc044f95b
+schema.gql sha256: d2e735887acea223a7ce95e009cb17a894a3954012b939ce05e5ccf5693dedcd
 """
 
 from __future__ import annotations
@@ -227,13 +227,14 @@ class CreateAvatarInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     name: str | None | UnsetType = UNSET
 
 
-class CreateChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend'}):
+class CreateChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'members_can_speak': 'membersCanSpeak'}):
     'Create a channel in an app.'
     app_id: str
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
     members_can_send: bool | None | UnsetType = UNSET
+    members_can_speak: bool | None | UnsetType = UNSET
 
 
 class CreateCheckoutInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'app_id': 'appId', 'tier_id': 'tierId', 'plan_id': 'planId', 'amount_cents': 'amountCents', 'success_url': 'successUrl', 'cancel_url': 'cancelUrl', 'idempotency_key': 'idempotencyKey'}):
@@ -265,13 +266,14 @@ class CreateCrowdyStudioProjectInput(msgspec.Struct, kw_only=True, omit_defaults
     idempotency_key: str | None | UnsetType = UNSET
 
 
-class CreateGridChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'grid_id': 'gridId'}):
+class CreateGridChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'members_can_speak': 'membersCanSpeak', 'grid_id': 'gridId'}):
     "Create a grid channel (DN-10): a channel that belongs to one grid, so that grid's player modules may emit_channel into it. Only the grid's current owner may create one."
     app_id: str
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
     members_can_send: bool | None | UnsetType = UNSET
+    members_can_speak: bool | None | UnsetType = UNSET
     grid_id: str
 
 
@@ -1048,7 +1050,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'claim_owner_keys': 'claimOwnerKeys'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1057,6 +1059,7 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     metadata: str | None | UnsetType = UNSET
     wilderness_writes_open: bool | None | UnsetType = UNSET
     replay_logging_enabled: bool | None | UnsetType = UNSET
+    claim_owner_keys: list[str] | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -1143,7 +1146,7 @@ class UpdateVoxelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
 
 
 class VoxelCoordinatesInput(msgspec.Struct, kw_only=True, omit_defaults=True):
-    "Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). Each coordinate is 0-15 on a 16x16x16 chunk, and the voxel writes (updateVoxel, sendVoxelUpdate, updateChunk's voxelStates) refuse any other value. Teleport's voxelAddress, which is not a write, takes any signed 16-bit value."
+    "Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). App-defined: each coordinate is any signed 16-bit integer, on every voxel write (updateVoxel, sendVoxelUpdate, updateChunk's voxelStates) and in teleport's voxelAddress; the platform checks no narrower range. Apps that use the 16x16x16 dense grid use 0-15."
     x: int
     y: int
     z: int

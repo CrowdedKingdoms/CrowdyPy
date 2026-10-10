@@ -149,6 +149,7 @@ PORTED: dict[type, set[str]] = {
         "status",
         "activate_version",
         "set_enabled",
+        "restart_type",
         "starters",
         "build",
         "build_status",
@@ -1180,7 +1181,13 @@ APP_STATUS = {
     "activeVersion": 2,
     "disabled": False,
     "disabledTypes": ["bare"],
-    "budgetPaused": False,
+    "budgetPaused": True,
+    "budgetPauseReason": "spend_cap",
+    "maxInstances": 16,
+    "maxReservedMb": 1024,
+    "instanceLimit": 16,
+    "instances": 3,
+    "reservedMb": 384,
 }
 BUILD = {
     "buildId": "b1",
@@ -1364,6 +1371,7 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
             "ExecAppStatus": APP_STATUS,
             "ExecActivateVersion": APP_STATUS,
             "ExecSetEnabled": APP_STATUS,
+            "ExecRestartType": {"nodeType": "arena", "stopped": 2},
         },
     )
     exec_api = ExecAPI(graphql)
@@ -1384,6 +1392,8 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
     assert await exec_api.activate_version("77", 1) == status
     assert await exec_api.set_enabled("77", False, "bare") == status
     await exec_api.set_enabled("77", True)
+    restarted = await exec_api.restart_type(77, "arena")
+    assert (restarted.node_type, restarted.stopped) == ("arena", 2)
 
     assert sent(api) == [
         (
@@ -1398,7 +1408,16 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
         ("ExecActivateVersion", {"appId": "77", "version": 1}),
         ("ExecSetEnabled", {"appId": "77", "enabled": False, "nodeType": "bare"}),
         ("ExecSetEnabled", {"appId": "77", "enabled": True}),
+        ("ExecRestartType", {"appId": "77", "nodeType": "arena"}),
     ]
+
+
+def test_a_status_from_an_older_manager_has_no_limits() -> None:
+    older = {key: APP_STATUS[key] for key in ("disabled", "disabledTypes", "budgetPaused")}
+    status = msgspec.convert(older, exec_module.ExecAppStatus)
+    assert status.budget_pause_reason is None
+    assert (status.max_instances, status.instance_limit, status.instances) == (None, None, None)
+    assert (status.max_reserved_mb, status.reserved_mb) == (None, None)
 
 
 # ---- ck-exec: starters, builds and the build poll ----

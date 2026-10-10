@@ -109,6 +109,7 @@ inline nb::bytes uuid_bytes(const char* uuid) {
 
 void register_wire(nb::module_& m);
 void register_replication(nb::module_& m);
+void register_voice(nb::module_& m);
 void register_session(nb::module_& m);
 
 }  // namespace crowdypy

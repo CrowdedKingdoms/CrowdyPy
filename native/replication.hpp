@@ -248,8 +248,9 @@ class QueueLogger final : public core::ILogger {
 /// Events in columns. One row per event; what `extra` holds depends on the type:
 /// a voxel update (x, y, z, voxelType) with the voxel state as the payload, a
 /// client or server event (eventType) with the event state as the payload, an
-/// actor-left (reason), a channel message (channelId) with the sender in the uuid
-/// column, an error (code) with the failed send's sequence, a status row (state).
+/// actor-left (reason), a channel message or channel audio (channelId) with the sender
+/// in the uuid column, an error (code) with the failed send's sequence, a status row
+/// (state).
 struct Rows {
   std::vector<std::uint8_t> type;
   std::vector<std::int64_t> appId;
@@ -298,6 +299,11 @@ struct Rows {
     push(static_cast<std::uint8_t>(n.type), n.appId, n.chunk, n.uuid, n.epochMillis, n.sequence,
          extras, body);
   }
+
+  void channel(wire::MessageType type, const replication::ChannelNotification& c) {
+    push(static_cast<std::uint8_t>(type), 0, {}, c.senderUuid, c.epochMillis, c.sequence,
+         {c.channelId, 0, 0, 0}, c.payload);
+  }
 };
 
 template <typename T>
@@ -345,7 +351,8 @@ class NotificationBatch {
       if (rows_.sequence[i] != sequence) continue;
       const auto type = static_cast<wire::MessageType>(rows_.type[i]);
       if (type == wire::MessageType::GenericError) return static_cast<std::int64_t>(i);
-      if (rows_.type[i] == kStatusRow || type == wire::MessageType::ChannelMessageNotification)
+      if (rows_.type[i] == kStatusRow || type == wire::MessageType::ChannelMessageNotification ||
+          type == wire::MessageType::ChannelAudioNotification)
         continue;
       if (std::memcmp(uuidOf(i), uuid.data(), wire::kUuidSize) == 0)
         return static_cast<std::int64_t>(i);
@@ -550,6 +557,17 @@ class PyConnection {
       result = connection_->sendChannelMessage(channelId, id, body.bytes());
     }
     return sent(result, "sendChannelMessage");
+  }
+
+  int sendChannelAudio(std::int64_t channelId, nb::handle uuid, nb::handle payload) {
+    const core::ActorUuid id = uuid_from(uuid);
+    BufferView body(payload);
+    Result<std::uint8_t> result = Errc::InvalidArgument;
+    {
+      nb::gil_scoped_release release;
+      result = connection_->sendChannelAudio(channelId, id, body.bytes());
+    }
+    return sent(result, "sendChannelAudio");
   }
 
   int sendRangedChannel(std::int64_t channelId, nb::handle uuid, nb::handle payload, std::int64_t x,
@@ -782,8 +800,10 @@ class PyConnection {
     h.clientEvent = event;
     h.serverEvent = event;
     h.channelMessage = [this](const replication::ChannelNotification& c) {
-      rows_.push(static_cast<std::uint8_t>(wire::MessageType::ChannelMessageNotification), 0, {},
-                 c.senderUuid, c.epochMillis, c.sequence, {c.channelId, 0, 0, 0}, c.payload);
+      rows_.channel(wire::MessageType::ChannelMessageNotification, c);
+    };
+    h.channelAudio = [this](const replication::ChannelNotification& c) {
+      rows_.channel(wire::MessageType::ChannelAudioNotification, c);
     };
     h.genericError = [this](const replication::GenericError& e) {
       rows_.push(static_cast<std::uint8_t>(wire::MessageType::GenericError), 0, {}, nullptr, 0,

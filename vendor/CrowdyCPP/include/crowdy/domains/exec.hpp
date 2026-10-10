@@ -554,8 +554,9 @@ class ExecAPI : public DomainBase {
   graphql::Json endpointStats(std::string appId, std::string nodeType = {}, int sinceMinutes = -1) const;
   void endpointStatsAsync(std::string appId, std::string nodeType, int sinceMinutes,
                           graphql::GraphQLCallback done) const;
-  /// `{ activeVersion, disabled, disabledTypes, budgetPaused }` (`execAppStatus`).
-  /// Requires `view_compute_diagnostics`.
+  /// `{ activeVersion, disabled, disabledTypes, budgetPaused, budgetPauseReason,
+  /// maxInstances, maxReservedMb, instanceLimit, instances, reservedMb }`
+  /// (`execAppStatus`). Requires `view_compute_diagnostics`.
   graphql::Json status(std::string appId) const;
   void statusAsync(std::string appId, graphql::GraphQLCallback done) const;
   /// Make an earlier version active again, a rollback (`execActivateVersion`);
@@ -567,6 +568,13 @@ class ExecAPI : public DomainBase {
   /// with `Denied`. Requires `manage_compute`.
   graphql::Json setEnabled(std::string appId, bool enabled, std::string nodeType = {}) const;
   void setEnabledAsync(std::string appId, bool enabled, std::string nodeType, graphql::GraphQLCallback done) const;
+  /// Move one node type's running instances to the app's active version
+  /// (`execRestartType`): each is persisted and stopped, and starts again on the
+  /// active version at its next call. A deploy changes what NEW instances run; this
+  /// moves the running ones without switching the type off. `{ nodeType, stopped }`,
+  /// the instances it stopped. Requires `manage_compute`.
+  graphql::Json restartType(std::string appId, std::string nodeType) const;
+  void restartTypeAsync(std::string appId, std::string nodeType, graphql::GraphQLCallback done) const;
 
  private:
   ExecDial dialer(std::string appId, std::string nodeType, std::string key, bool developer = false) const;
