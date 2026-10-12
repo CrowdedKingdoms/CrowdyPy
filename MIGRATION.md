@@ -3,6 +3,17 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.9.1
+
+A patch release with the same API as 0.9.0, the same CrowdyJS (18.8.0) and CrowdyCPP (0.61.0) pins.
+
+- **`client.input_log` sends a session filter's `userId` as a string**, the decimal string every
+  id is on the wire. An `int` used to go out as a JSON number.
+- **Its docstrings say when a read is retryable.** From the Game API release after v2.40.2,
+  `InputLogAPI.messages` answers `INPUT_LOG_TEMPORARILY_UNAVAILABLE` when the log cannot be read
+  right now and `INPUT_LOG_RATE_LIMITED` while another read of yours is running; both carry
+  `extensions.retryable`, so retry with the same cursor after a short back-off.
+
 ## 0.9.0
 
 CrowdyJS 18.8.0 and CrowdyCPP 0.61.0. Additive, with one floor: the build documents select
