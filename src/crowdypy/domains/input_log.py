@@ -4,10 +4,13 @@ An app with replay logging on (``App.replayLoggingEnabled``, set with ``client.a
 has every client input the realtime servers accept recorded. These calls read them back on
 the app-scoped client for the app; an identity session token is refused. A player reads only
 the sessions and inputs they sent; a holder of ``manage_apps`` on the app reads every session.
-Inputs are kept for the input log's published retention, so an old session can still be listed
-after its inputs are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without input
-logging, and :meth:`InputLogAPI.messages` also answers it, retryable with the same cursor, when the
-log cannot be read right now.
+Inputs are kept for the input log's published retention (up to about an hour longer), so an old
+session can still be listed after its inputs are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a
+deployment without input logging. From the Game API release after v2.40.2,
+:meth:`InputLogAPI.messages` answers ``INPUT_LOG_TEMPORARILY_UNAVAILABLE`` when the log cannot be
+read right now and ``INPUT_LOG_RATE_LIMITED`` while another read of yours is running (one per user,
+two per app): both carry ``extensions.retryable``, so retry with the same cursor after a short
+back-off. Earlier Game APIs answer ``INPUT_LOG_UNAVAILABLE``, or an empty page, instead.
 """
 
 from __future__ import annotations
@@ -15,12 +18,30 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import msgspec
+
 from crowdypy._generated import inputs
 from crowdypy._generated import operations as ops
 from crowdypy.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
 __all__ = ["InputLogAPI"]
+
+
+def _session_filter(
+    filter: inputs.InputLogSessionFilter | Mapping[str, Any] | None,
+) -> inputs.InputLogSessionFilter | Mapping[str, Any] | None:
+    """``userId`` as the decimal string every id is on the wire: an int went out as a JSON
+    number, safe at today's ids and unlike every other id the SDK sends."""
+    if isinstance(filter, inputs.InputLogSessionFilter):
+        # Typed str, so an int here is a caller past the type hints: exactly the case to mend.
+        user_id: Any = filter.user_id
+        if isinstance(user_id, int) and not isinstance(user_id, bool):
+            return msgspec.structs.replace(filter, user_id=bigint(user_id))
+        return filter
+    if isinstance(filter, Mapping) and isinstance(filter.get("userId"), int):
+        return {**filter, "userId": bigint(filter["userId"])}
+    return filter
 
 
 class InputLogAPI(Domain):
@@ -35,13 +56,23 @@ class InputLogAPI(Domain):
         """An app's recorded sessions, newest first: ``edges { cursor node }``, ``pageInfo``,
         ``totalCount``. A session is one game token's inputs.
 
-        ``filter`` takes ``userId`` (another user's needs ``manage_apps``, else ``FORBIDDEN``),
-        ``from`` / ``to`` and ``messageType``. Page with ``first`` (default 50, max 200) and the
-        previous page's ``pageInfo.endCursor`` as ``after``.
+        ``filter`` takes ``userId`` (another user's needs ``manage_apps``, else ``FORBIDDEN``;
+        an int is sent as its decimal string), ``from`` / ``to`` and ``messageType``. Page with
+        ``first`` (default 50, max 200) and the previous page's ``pageInfo.endCursor`` as
+        ``after``. A node's ``endReason`` is ``expired``, ``revoked``, ``reconnect`` or
+        ``released`` as the client saw it, ``logging_off`` or ``shutdown`` from the Game API
+        release after v2.40.2, ``unrecorded``, or null while the session may still run.
         """
         result: dict[str, Any] = await self._request(
             ops.INPUT_LOG_SESSIONS,
-            omit_none({"appId": bigint(app_id), "first": first, "after": after, "filter": filter}),
+            omit_none(
+                {
+                    "appId": bigint(app_id),
+                    "first": first,
+                    "after": after,
+                    "filter": _session_filter(filter),
+                }
+            ),
         )
         return result
 
@@ -59,10 +90,12 @@ class InputLogAPI(Domain):
         ``body`` is the client message in base64 (``decode_base64`` gives the bytes), from its
         type byte up to its authentication tail, which is not recorded; ``sizeBytes`` is what
         stored input logs are billed on. Spatial inputs carry their chunk and actor, channel
-        inputs their channel. **Keep paging while ``pageInfo.hasNextPage`` is true**: a page can
-        be short, or empty, when it reached the server's time or scan limit. ``filter`` takes
-        ``from`` / ``to`` and ``messageTypes`` (at most 64). Another user's session answers
-        ``NOT_FOUND`` without ``manage_apps``.
+        inputs their channel. **Keep paging while ``pageInfo.hasNextPage`` is true**, not while
+        ``endCursor`` is set: a page can be short, or empty, when it reached the server's time or
+        scan limit; keep the previous cursor if one comes back null. ``filter`` takes ``from`` /
+        ``to`` and ``messageTypes`` (at most 64). Another user's session answers ``NOT_FOUND``
+        without ``manage_apps``; a malformed cursor, or (from the Game API release after v2.40.2)
+        one from another session, ``BAD_USER_INPUT``.
         """
         result: dict[str, Any] = await self._request(
             ops.INPUT_LOG_MESSAGES,

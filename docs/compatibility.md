@@ -41,6 +41,10 @@ requirement names one exactly, the same way a caret never matches an npm prerele
 - `auth.record_player_consents` and `auth.player_legal_acceptance` need ck-api v2.35.0; an
   older API answers them with a GraphQL validation error. From v2.35.0 a gameplay token
   waits for both consents (`LEGAL_ACCEPTANCE_REQUIRED`).
+- The input log (`client.input_log`, 0.7.0) needs ck-api v2.39.0 or later: every app read selects
+  `replayLoggingEnabled`, which an older API refuses with a GraphQL validation error. The retryable
+  `INPUT_LOG_TEMPORARILY_UNAVAILABLE` / `INPUT_LOG_RATE_LIMITED` and the `logging_off` / `shutdown`
+  end reasons come with the ck-api release after v2.40.2.
 - `udp.send_ranged_channel_message` needs a replication server that serves message type 32
   (CHANNEL_MESSAGE_RANGED_REQUEST); one that does not delivers nothing.
 - 0.8.0 selects `runtimeGate` on every token mutation (`portal.mint_app_token`,
