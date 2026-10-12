@@ -11,8 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.9.0: builds report the SDK they compiled against (CrowdyJS 18.8.0, CrowdyCPP 0.61.0).** See the 0.9.0
-bullet below.
+**v0.9.1: the input log's session filter sends `userId` as a string, and its reads document when
+to retry.** See the 0.9.1 bullet below; 0.9.0 added the SDK a build compiled against.
 
 **v0.8.0: voice, channel audio, wide voxels, and pause and access refusals (CrowdyJS 18.7.0, CrowdyCPP 0.60.0).**
 - Voice: `crowdypy.media`'s voice helpers (an optional 10-byte header per codec frame,
