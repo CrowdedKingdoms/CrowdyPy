@@ -39,6 +39,7 @@ def _show(repo: Path, commit: str, path: str) -> bytes | None:
             "test/unit/fixtures/binary-wire-fixtures.json",
         ),
         ("tests/fixtures/exec-client-frames.json", "test/unit/fixtures/exec-client-frames.json"),
+        ("tests/fixtures/voice-frames.json", "test/unit/fixtures/voice-frames.json"),
     ],
 )
 def test_crowdyjs_fixture_unchanged(ours: str, theirs: str) -> None:
@@ -53,9 +54,8 @@ def test_crowdyjs_fixture_unchanged(ours: str, theirs: str) -> None:
     assert (ROOT / ours).read_bytes() == source
 
 
-def test_exec_frames_match_the_vendored_crowdycpp_copy() -> None:
-    ours = (ROOT / "tests/fixtures/exec-client-frames.json").read_bytes()
-    vendored = (
-        ROOT / "vendor/CrowdyCPP/tools/parity/fixtures/exec-client-frames.json"
-    ).read_bytes()
+@pytest.mark.parametrize("name", ["exec-client-frames.json", "voice-frames.json"])
+def test_fixture_matches_the_vendored_crowdycpp_copy(name: str) -> None:
+    ours = (ROOT / "tests/fixtures" / name).read_bytes()
+    vendored = (ROOT / "vendor/CrowdyCPP/tools/parity/fixtures" / name).read_bytes()
     assert ours == vendored
