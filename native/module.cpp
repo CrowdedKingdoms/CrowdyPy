@@ -21,9 +21,10 @@ NB_MODULE(_native, m) {
   nb::module_ wire = m.def_submodule("wire", "The public Replication API wire codec.");
   crowdypy::register_wire(wire);
 
-  nb::module_ replication =
-      m.def_submodule("replication", "CrowdyCPP's replication Connection and video frames.");
+  nb::module_ replication = m.def_submodule(
+      "replication", "CrowdyCPP's replication Connection, video frames and voice payloads.");
   crowdypy::register_replication(replication);
+  crowdypy::register_voice(replication);
 
   nb::module_ session = m.def_submodule("session", "CrowdyCPP's WorldSession and its stores.");
   crowdypy::register_session(session);

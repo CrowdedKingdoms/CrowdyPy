@@ -34,7 +34,7 @@ from crowdypy._generated.enums import ExecModScope
 from crowdypy._sync.domains._base import Domain, omit_none, sleep
 from crowdypy.errors import CrowdyError, CrowdyProtocolError
 from crowdypy.utils import bigint, decode_base64, encode_base64
-from crowdypy.domains.exec import CrowdyExecError, ExecAppStatus, ExecBuild, ExecBuildArtifact, ExecCrate, ExecDeployResult, ExecEndpoint, ExecEndpointStat, ExecGridClientMod, ExecInstance, ExecLogLine, ExecMod, ExecModClient, ExecModClientArtifact, ExecModClientArtifactBytes, ExecModListing, ExecModSwitch, ExecSourceFile, ExecStarter, ExecStarterPack, ExecVersion, _Url  # one class in both clients
+from crowdypy.domains.exec import CrowdyExecError, ExecAppStatus, ExecBuild, ExecBuildArtifact, ExecCrate, ExecDeployResult, ExecEndpoint, ExecEndpointStat, ExecGridClientMod, ExecInstance, ExecLogLine, ExecMod, ExecModClient, ExecModClientArtifact, ExecModClientArtifactBytes, ExecModListing, ExecModSwitch, ExecRestartResult, ExecSourceFile, ExecStarter, ExecStarterPack, ExecVersion, _Url  # one class in both clients
 
 if TYPE_CHECKING:
     from crowdypy.exec_gateway import ExecConnection
@@ -62,6 +62,7 @@ __all__ = [
     "ExecModListing",
     "ExecModScope",
     "ExecModSwitch",
+    "ExecRestartResult",
     "ExecSourceFile",
     "ExecStarter",
     "ExecStarterPack",
@@ -135,6 +136,8 @@ def exec_mod_type(name: str) -> str:
 def is_name_list(value: object) -> TypeGuard[list[str]]:
     """A list of strings, as a capability summary's ``hostFunctions`` must be."""
     return isinstance(value, list) and all(isinstance(name, str) for name in value)
+
+
 
 
 
@@ -454,6 +457,18 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "enabled": enabled, "nodeType": node_type}),
         )
         return msgspec.convert(payload, ExecAppStatus)
+
+    def restart_type(self, app_id: str | int, node_type: str) -> ExecRestartResult:
+        """Move one node type's running instances to the app's active version: each is
+        persisted and stopped, and starts again on the active version at its next call.
+
+        A deploy changes what new instances run and leaves running ones on their version;
+        this moves them without switching the type off. Requires ``manage_compute``.
+        """
+        payload = self._request(
+            ops.EXEC_RESTART_TYPE, {"appId": bigint(app_id), "nodeType": node_type}
+        )
+        return msgspec.convert(payload, ExecRestartResult)
 
     def starters(self, app_id: str | int) -> ExecStarterPack:
         """The starter packs: a world tick (the root hub), a matchmaker, game sessions and an

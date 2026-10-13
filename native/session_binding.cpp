@@ -2,13 +2,16 @@
 //
 // The session owns the connection's handlers while it is attached, so every
 // notification is applied to the stores natively, on the thread that calls
-// tick(). What the stores do not keep (audio, video, text) is forwarded into the
-// connection's batch rows. Store callbacks are queued here and handed to Python
-// by drain_events() after tick(), so native code never calls into Python.
+// tick(). What the stores do not keep (audio, video, text, app-defined spatial
+// messages, channel audio) is forwarded into the connection's batch rows, and so
+// is every voxel update once Python watches them. Store callbacks are queued here
+// and handed to Python by drain_events() after tick(), so native code never calls
+// into Python.
 //
 // Nothing tick() does blocks: host election and durable chunk persistence are
 // GraphQL work the Python facade does itself (asynchronously in an event loop),
-// so the session is built with no durable services and no host heartbeat.
+// so the session is built with no host heartbeat, and its chunk source only
+// applies the chunks the facade loaded.
 #include "replication.hpp"
 
 #include <map>
@@ -100,6 +103,37 @@ struct ActorColumns {
   }
 };
 
+// ------------------------------------------------------------------ hydration
+
+/// The session's chunk source. The facade loads a stored chunk over GraphQL and
+/// stages it here, then ChunkStore::hydrate() applies it, so a stored edit the
+/// dense grid cannot hold lands in the chunk's overlay as a realtime one does.
+/// Nothing is written through it: durable write-back is the facade's, and the
+/// native store's is off.
+class StagedChunks final : public session::IChunkSource {
+ public:
+  void stage(session::StoredChunk chunk) { staged_.push_back(std::move(chunk)); }
+
+  std::vector<session::StoredChunk> chunksAround(const std::string&, const ChunkCoord&,
+                                                 int) override {
+    return std::exchange(staged_, {});
+  }
+
+  graphql::GraphQLOutcome writeChunk(const std::string&, const ChunkCoord&, Bytes) override {
+    graphql::GraphQLOutcome refused;
+    refused.status = Errc::Rejected;
+    refused.kind = graphql::GraphQLErrorKind::Http;
+    refused.httpStatus = 403;
+    refused.errorMessage = "the Python facade persists chunks";
+    return refused;
+  }
+
+ private:
+  std::vector<session::StoredChunk> staged_;
+};
+
+using StoredEntry = std::tuple<int, int, int, int, nb::bytes>;
+
 // ------------------------------------------------------------------ the session
 
 class PySession {
@@ -129,6 +163,14 @@ class PySession {
     config.onAudio = forward;
     config.onVideo = forward;
     config.onText = forward;
+    config.onGenericSpatial = forward;
+    config.onChannelAudio = [this](const replication::ChannelNotification& c) {
+      conn_.rowsLocked().channel(wire::MessageType::ChannelAudioNotification, c);
+    };
+    config.onVoxel = [this](const replication::SpatialNotification& n,
+                            const wire::VoxelPayloadView& v) {
+      if (watchVoxels_) conn_.rowsLocked().spatial(n, {v.x, v.y, v.z, v.voxelType}, v.state);
+    };
     config.onActorLeft = [this](const core::ActorUuid& uuid, std::uint8_t reason) {
       SessionEvent e;
       e.kind = SessionEvent::kActorLeft;
@@ -138,8 +180,10 @@ class PySession {
     };
     {
       std::lock_guard lock(conn_.consumerMutex());
-      session_ = std::make_unique<session::WorldSession>(
-          conn_.shared(), session::WorldSessionServices{}, std::move(config));
+      session::WorldSessionServices services;
+      services.chunks = &staged_;
+      session_ = std::make_unique<session::WorldSession>(conn_.shared(), services,
+                                                         std::move(config));
     }
     conn_.attachSession(true);
     watchLane("");
@@ -211,6 +255,7 @@ class PySession {
 
   void setWatchUpdates(bool on) { watchUpdates_ = on; }
   void setWatchChunks(bool on) { watchChunks_ = on; }
+  void setWatchVoxels(bool on) { watchVoxels_ = on; }
 
   // ----- the local actor
 
@@ -414,9 +459,42 @@ class PySession {
     nb::dict states;
     for (const auto& [index, state] : c->voxelStates)
       states[nb::int_(index)] = nb::make_tuple(state.voxelType, blob(state.state));
+    nb::list overlay;
+    for (const auto& [key, wide] : c->overlay)
+      overlay.append(
+          nb::make_tuple(wide.x, wide.y, wide.z, wide.voxel.voxelType, blob(wide.voxel.state)));
     return nb::make_tuple(
         nb::bytes(reinterpret_cast<const char*>(c->voxels.data()), c->voxels.size()), states,
-        c->hydratedAtMs);
+        c->hydratedAtMs, overlay);
+  }
+
+  /// Apply a chunk the facade loaded from the durable store: its dense grid (4096
+  /// octets) and its voxelStates entries, each (x, y, z, voxel type, state). An entry
+  /// the grid cannot hold goes to the chunk's overlay; one without a state clears the
+  /// voxel's.
+  void hydrate(std::int64_t x, std::int64_t y, std::int64_t z, nb::handle voxels,
+               const std::vector<StoredEntry>& entries) {
+    BufferView grid(voxels);
+    if (grid.size() != session::kChunkVolume)
+      raise(Errc::InvalidArgument, "a chunk is 4096 voxel octets");
+    session::StoredChunk stored;
+    stored.coord = coord_of(x, y, z);
+    stored.voxels.assign(grid.bytes().begin(), grid.bytes().end());
+    stored.voxelStates.reserve(entries.size());
+    for (const auto& [vx, vy, vz, type, state] : entries) {
+      session::StoredVoxelState entry;
+      entry.x = vx;
+      entry.y = vy;
+      entry.z = vz;
+      entry.voxelType = i16_arg(type, "voxel type");
+      const auto* data = reinterpret_cast<const std::uint8_t*>(state.c_str());
+      entry.state.assign(data, data + state.size());
+      stored.voxelStates.push_back(std::move(entry));
+    }
+    std::lock_guard lock(conn_.consumerMutex());
+    auto& s = live();
+    staged_.stage(std::move(stored));
+    s.chunks().hydrate(coord_of(x, y, z));
   }
 
   nb::list chunkCoords() {
@@ -629,11 +707,13 @@ class PySession {
   }
 
   PyConnection& conn_;
+  StagedChunks staged_;  // outlives session_, whose chunk store reads it
   std::unique_ptr<session::WorldSession> session_;
   std::map<std::string, session::RemoteActorLane*> lanes_;
   std::vector<SessionEvent> events_;  // under conn_.consumerMutex()
   std::atomic<bool> watchUpdates_{false};
   std::atomic<bool> watchChunks_{false};
+  std::atomic<bool> watchVoxels_{false};
 };
 
 }  // namespace
@@ -686,6 +766,7 @@ void register_session(nb::module_& m) {
       .def("drain_events", &PySession::drainEvents)
       .def("watch_updates", &PySession::setWatchUpdates, nb::arg("on"))
       .def("watch_chunks", &PySession::setWatchChunks, nb::arg("on"))
+      .def("watch_voxels", &PySession::setWatchVoxels, nb::arg("on"))
       .def_prop_ro("actor_uuid", &PySession::actorUuid)
       .def("self_chunk", &PySession::selfChunk)
       .def("self_joined", &PySession::selfJoined)
@@ -719,6 +800,8 @@ void register_session(nb::module_& m) {
       .def("set_voxel", &PySession::setVoxel, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("vx"), nb::arg("vy"), nb::arg("vz"), nb::arg("voxel_type"), nb::arg("state"))
       .def("seed", &PySession::seed, nb::arg("x"), nb::arg("y"), nb::arg("z"), nb::arg("voxels"))
+      .def("hydrate", &PySession::hydrate, nb::arg("x"), nb::arg("y"), nb::arg("z"),
+           nb::arg("voxels"), nb::arg("entries"))
       .def("prune_beyond", &PySession::pruneBeyond, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("distance"))
       .def("chunk_revision", &PySession::chunkRevision)

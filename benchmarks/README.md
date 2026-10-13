@@ -93,3 +93,23 @@ A 60 Hz asyncio loop sends 200 entities a frame (one batch) while about 60,000
 notifications a second arrive and are dispatched to a handler. Lateness of each frame
 against its schedule, ten seconds: p50 0.1 ms, p99 0.1 ms, max 0.2 ms. Receiving never
 holds the loop: it is woken once per batch, not per datagram.
+
+## Re-check, 0.8.0
+
+0.8.0 added handlers to the binding (channel audio, and the session's forwarding of
+app-defined spatial messages, channel audio and watched voxel updates) and re-vendored
+CrowdyCPP 0.60.0. Both builds below ran back to back on the CKS builder (the machine above),
+under CPython 3.12.3 and the system's shared OpenSSL 3.0.13 rather than the wheels' static
+3.5.9, so compare them with each other, not with the 0.2.0 tables.
+
+| | 0.7.0 (CrowdyCPP 0.59.0) | 0.8.0 (CrowdyCPP 0.60.0) |
+|---|---|---|
+| 1a. `send_actor_updates`, one batch of 200 | 647.1 ns/entity | 647.2 ns/entity |
+| 1a. `native.send_spatial` x200 | 838.1 ns/entity | 840.1 ns/entity |
+| 2. notifications delivered to Python, three interleaved runs | 1.774, 1.763, 1.765 million/s | 1.774, 1.762, 1.772 million/s |
+| 4. echo round trip, p50 | 74.8 µs | 74.8 µs |
+| 5. game-loop lateness, p99 | 0.3 ms | 0.2 ms |
+
+CrowdyCPP 0.60.0's own `bench_send` section 5 (`sendActorUpdate` x200, Release, same machine
+and OpenSSL) measured 623.9 ns/entity, so one batch costs 1.04x CrowdyCPP's send path per
+entity (1.06x at 0.2.0).

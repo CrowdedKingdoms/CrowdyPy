@@ -3,6 +3,217 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.10.0
+
+CrowdyJS 18.9.0 and CrowdyCPP 0.62.0. Additive, with one floor: every sessions read selects
+`InputLogSession.missingRecords`, so `client.input_log.sessions` needs the Game API release after
+v2.40.2 (an older one refuses the selection).
+
+- **`missingRecords`** on every recorded session: inputs the replication server accepted that
+  never reached the log (an overloaded server or a broker outage). 0 when the recording is
+  complete as far as it is known; `None` on one recorded before the count existed. A lost end of
+  the recording cannot be counted: that session closes as `unrecorded`.
+- **End reasons.** `endReason` may also be `logging_off`, `shutdown`, `paused` (recording paused
+  while the app's logging setting could not be confirmed; a later record reopens the session) or
+  `unrecorded`; the `sessions` docstring says what each means.
+- **Retrying a read.** `INPUT_LOG_TEMPORARILY_UNAVAILABLE` and `INPUT_LOG_RATE_LIMITED` carry
+  `extensions["retryable"]`: retry with the same cursor after a short back-off, a bounded number
+  of times. A malformed cursor, or one from another session, is `BAD_USER_INPUT`.
+- **Stopping a read** (CrowdyJS's `signal`): cancel its task, or wrap it in `asyncio.timeout`. The
+  request is closed, which frees its share of the server's reads (one per user, two per app and
+  per org at a time); the client's own timeout applies either way. CrowdyCPP 0.62.0's
+  `CancelToken` is the C++ form; CrowdyPy's GraphQL client is Python's, so it needs none.
+- **`INPUT_LOG_FUNDS_NEEDED`** on `client.apps.update(app_id, {"replayLoggingEnabled": True})` carries
+  `extensions["requiredMicrousd"]` and `["spendableMicrousd"]`: the balance turning logging on
+  needs and what the org wallet can spend.
+- The vendored CrowdyCPP adds `Errc.Cancelled` beside the codes the replication layer reports;
+  nothing in the native client returns it.
+
+## 0.9.1
+
+A patch release with the same API as 0.9.0, the same CrowdyJS (18.8.0) and CrowdyCPP (0.61.0) pins.
+
+- **`client.input_log` sends a session filter's `userId` as a string**, the decimal string every
+  id is on the wire. An `int` used to go out as a JSON number.
+- **Its docstrings say when a read is retryable.** From the Game API release after v2.40.2,
+  `InputLogAPI.messages` answers `INPUT_LOG_TEMPORARILY_UNAVAILABLE` when the log cannot be read
+  right now and `INPUT_LOG_RATE_LIMITED` while another read of yours is running; both carry
+  `extensions.retryable`, so retry with the same cursor after a short back-off.
+
+## 0.9.0
+
+CrowdyJS 18.8.0 and CrowdyCPP 0.61.0. Additive, with one floor: the build documents select
+`ExecBuild.sdkVersion`, so `exec.build`, `build_status`, `wait_for_build`, `mod_build`,
+`mod_client_build`, `mod_build_status` and `wait_for_mod_build` need ck-api v2.40.2 (an older
+one refuses the selection).
+
+- **`ExecBuild.sdk_version`**: the version of `ckx-sdk` the platform compiled the build against
+  (`crowdy-client-sdk` for a CLIENT half), from the toolchain of the API instance that ran it. The
+  platform points a crate at its own copy of the SDK whatever version the crate names, so this,
+  not your manifest, says what your code was checked against. `None` until the build starts.
+
+## 0.8.0
+
+CrowdyJS 18.7.0 and CrowdyCPP 0.60.0. Additive, with reads that change for values they used to
+get wrong (wide voxels) and one new floor: every token mutation (`portal.mint_app_token`,
+`exchange_code`, `refresh`) selects `runtimeGate`, so 0.8.0 needs the ck-api release after
+v2.39.0 that serves it; an older one refuses the selection. Channel audio and the echo of your
+own voxel edits need replication server v0.37.0.
+
+- **Voice helpers** (`crowdypy.media`), an optional convention for what an audio payload
+  carries: a 10-byte little-endian header in front of each codec frame (version 1, codec 0 raw,
+  1 Opus 48 kHz mono or 2 G.711 µ-law 8 kHz, `u16` seq, `u32` timestamp in codec samples,
+  the frame's duration in ms, and the talk-spurt flags `VoiceFlag.SPURT_START` and
+  `SPURT_END`).
+  - `encode_voice_header(VoiceHeader(...))` and `encode_voice_packet(header, frame)` write it;
+    `decode_voice_packet(packet)` returns `None` for a packet shorter than 10 bytes or of
+    another version, and never raises on bytes from the network.
+  - `VoicePacketizer(codec, frame_ms, *, seq=0, timestamp=0)` numbers one sender's frames
+    across the seq and timestamp wraps (`packetize(frame, last=)`, `skip(frames)` for
+    silence).
+  - `VoiceJitterBuffer(target_delay_ms=60, max_frames=64, reset_after_ms=200)`:
+    `push(key, packet, now_ms)` answers `"buffered"`, `"late"`, `"duplicate"` or
+    `"malformed"`, and `pull(key, now_ms)` / `poll(now_ms)` return the due `VoicePlayout`s in
+    seq order, a gap (`frame` `None`) for each frame that never came.
+  - CrowdyCPP's implementation runs natively. Arguments are checked as CrowdyJS checks them, so
+    an option or field out of range raises `ValueError` where CrowdyCPP would clamp it.
+  - The helpers replay CrowdyJS's `voice-frames.json` byte for byte.
+  - No codec ships, and the wheel links none: which codec an app uses, and the library that
+    encodes it, is the app's choice.
+- **Channel audio** (party and guild voice).
+  - `client.udp.send_channel_audio(channel_id, uuid, payload)` sends message type 35, the
+    channel message's layout and signing with its own type byte, at most 1,024 bytes. It needs
+    the channel's `send_voice` and the player's `use_voice_chat`; without them the server
+    answers `UNAUTHORIZED` for the returned sequence. The sender gets no echo.
+  - Members receive message type 36, standalone or bundled, on the new `channel_audio` handler
+    of `udp.subscribe` (`notification.channel_id`, the sender's `uuid`, `payload`).
+  - In the World Stores it is `session.on("channel_audio", ...)`; the channel inbox does not
+    get it. Key a jitter buffer by channel and sender, so one player in two channels is two
+    streams.
+  - `channels.create`, `grids.create_channel` and `GridScope.channels.create` take
+    `members_can_speak` (default false), which gives the member role `send_voice`.
+    `GridScope.channels.send_audio(channel_id, uuid, payload)` sends on the grid's channels.
+  - Underneath are `ReplicationConnection.send_channel_audio`, and
+    `crowdypy.wire.encode_channel_audio` and `ChannelAudioNotification` (from `parse_datagram`)
+    for a custom transport.
+- **App-defined spatial messages** (`GENERIC_SPATIAL_1`, 140) reach
+  `session.on("generic_spatial", ...)` while a World Stores session is attached
+  (CrowdyCPP's `onGenericSpatial`). Without a session, `udp.subscribe`'s `generic_spatial`
+  already received them.
+- **`session.on("voxel_update", ...)`** fires for every inbound voxel edit after
+  `session.chunks` merged it, with its sender, voxel and state: CrowdyCPP's `onVoxel`, for a
+  game that keeps its own world. It includes the echo of your own edits; compare the uuid and
+  sequence with your send's.
+- **`ChunkStore` keeps wide voxel types and other addresses.** Positions and types are the app's
+  signed 16-bit values, which the platform does not check.
+  - An edit the 16x16x16 one-byte grid cannot hold (a type outside 0-255, a position outside
+    0-15) is kept whole in the chunk's overlay. That covers a realtime update, a hydrated
+    `voxelStates` entry and a local `set_voxel`.
+  - `ChunkStore.overlay(chunk)` returns the overlay as `ChunkOverlayVoxel(x, y, z,
+    voxel_type, state)` values keyed by `voxel_key(x, y, z)` (`"x:y:z"`), and `voxel_type_at`
+    and `voxel_state_at` read it first.
+  - What changes: hydration no longer stores a type outside 0-255 truncated (300 used to read
+    as 44), and keeps an entry outside 0-15 instead of skipping it. `voxels()` holds 0 under
+    an in-grid voxel whose type is in the overlay.
+  - `set_voxel` keeps a position outside 0-15 in the overlay and sends it, where it used to be
+    refused. It raises `ValueError`, before anything changes or is sent, for a position or type
+    outside 16 bits or a state over 1,024 bytes (`crowdypy.wire.assert_voxel_edit`,
+    `VOXEL_STATE_MAX_BYTES`).
+  - `udp.send_voxel_update` and `ReplicationConnection.send_voxel_update` refuse a state over
+    1,024 bytes (`CrowdyReplicationError`, `InvalidArgument`); the server refuses one with
+    `INVALID_REQUEST`.
+- **The echo of your own voxel edit.** Replication server v0.37.0 delivers every accepted edit
+  back to its sender. `ChunkStore` matches the echo to the `set_voxel` that sent it (sender,
+  sequence, voxel) and does not apply it again, so a local edit fires `on_chunk_changed` once.
+  The echo is applied only when another client's edit of the voxel arrived in between (the
+  server ordered yours last).
+- **Hydration goes through the native store.** `ChunkStore.hydrate()` hands each loaded chunk
+  to CrowdyCPP's `ChunkStore`, which puts the entries the grid cannot hold in the overlay. An
+  entry without a state now clears the voxel's state, also one a local `set_voxel` gave it (0.5.1
+  kept that until the next realtime update). `voxel_state_at` reads the native cache only, and
+  `prune_beyond` keeps a dirty chunk's states and overlay as well as its grid.
+- **UDP error 33, `APP_PAUSED`** (`crowdypy.wire.ErrorCode.APP_PAUSED`): the replication
+  server refuses a paused app's sends.
+- **Pause and access refusals.**
+  - `crowdypy.is_app_paused(gate)` reads `AppTokenResponse.runtime_gate` (`AppRuntimeGate`,
+    `status` and `reason`) and the `runtimeGate` of `server_status.game_client_bootstrap`.
+    Anything but `ACTIVE` is paused. A paused app still mints, so check before entering the
+    world.
+  - `crowdypy.app_paused_of(error)` reads `APP_PAUSED` (`reason`).
+  - `crowdypy.access_refusal_of(error)` reads `ACCESS_REVOKED`, `ACCESS_SUSPENDED`
+    (`suspended_until`) or `ACCESS_NOT_GRANTED`.
+  - `crowdypy.actor_exists_of(error)` reads `ACTOR_EXISTS` (`owned_by_caller`).
+  - Each reader takes a raised `CrowdyGraphQLError` or one raw error entry. The `*_CODE`
+    constants name the codes.
+- **New API wraps.**
+  - `users.player_profile(user_id)` and `users.player_profiles(user_ids)` return the public
+    `userId`, `gamertag` and `disambiguation`. `player_profiles` takes at most
+    `PLAYER_PROFILES_MAX` (100) ids, raises `ValueError` above that, and sends nothing for
+    none. `users.get` documents that another user's private fields come back `None`.
+  - `app_access.suspend(app_id, user_id, until, idempotency_key=None)` takes a timezone-aware
+    `datetime` or an ISO-8601 string. With it come `unsuspend` and
+    `resync_tier_grid_permissions` (`manage_access_tiers`), and `suspendedUntil` on every
+    access record.
+  - `exec.restart_type(app_id, node_type)` returns `ExecRestartResult(node_type, stopped)`
+    (`manage_compute`). `ExecAppStatus` gains `budget_pause_reason`, `max_instances`,
+    `max_reserved_mb`, `instance_limit`, `instances` and `reserved_mb`.
+  - `apps.get` and `apps.update` carry `claimOwnerKeys`, chunk reads `voxelStatesTruncated`,
+    and `game_client_bootstrap` `runtimeGate` and `wildernessWritesOpen`.
+- The keyframe and heartbeat defaults stay. Idle players on different servers meet at the first
+  full update after joining (replication server v0.37.0).
+
+## 0.7.0
+
+CrowdyJS 18.6.0 and CrowdyCPP 0.59.0. Additive.
+
+- **The input log.** An app with replay logging on has every client input the realtime
+  servers accept recorded. `client.input_log.sessions(app_id, *, first=, after=, filter=)`
+  lists the app's recorded sessions, newest first (`edges`, `pageInfo`, `totalCount`; a
+  session is one game token's inputs), and `client.input_log.messages(app_id, game_token_id,
+  *, first=, after=, filter=)` reads one session's inputs, oldest first. `body` is the client
+  message in base64 without its authentication tail (`decode_base64` gives the bytes), and
+  `sizeBytes` is what stored input logs are billed on. Keep paging while
+  `pageInfo.hasNextPage` is true: a page can be short, or empty, when it reached the server's
+  time or scan limit. Both are game plane (the app-scoped client). A player reads their own
+  sessions, and a holder of `manage_apps` reads every one; without it, listing another
+  user's sessions is `FORBIDDEN` and reading another user's session is `NOT_FOUND`. Both
+  answer `INPUT_LOG_UNAVAILABLE` on a deployment without input logging, and `messages` also
+  answers it, retryable with the same cursor, when the log cannot be read right now.
+- **`replayLoggingEnabled`** is selected on every app read. Turning it on with
+  `client.apps.update` is refused with `INPUT_LOG_FUNDS_NEEDED` unless the org's wallet has a
+  spendable balance or the org is exempt from billing.
+
+## 0.6.0
+
+CrowdyJS 18.5.0 and CrowdyCPP 0.58.0. Additive.
+
+- **Distance-limited channel messages.**
+  `client.udp.send_ranged_channel_message(channel_id, uuid, payload, *, chunk, max_distance)`
+  publishes to a channel but reaches only the members whose own actor is within
+  `max_distance` chunks of `chunk`. Distance is the straight line between chunk coordinates,
+  inclusive: 0 reaches only the origin chunk, and 5 reaches a member 3 chunks east and 4
+  north but not one 4 east and 4 north (about 5.66). It takes the same right as
+  `send_channel_message`, and members receive the ordinary `channel_message`, so receivers
+  change nothing. A member with no actor of its own is not reached, nor is the sender.
+  `max_distance` is 0 to `crowdypy.wire.CHANNEL_RANGED_MAX_DISTANCE` (2^31 - 1); the origin's
+  app is the connection's. Underneath it is
+  `ReplicationConnection.send_ranged_channel_message(channel_id, uuid, payload, chunk,
+  max_distance)`, and `crowdypy.wire.encode_ranged_channel_message` encodes the
+  CHANNEL_MESSAGE_RANGED_REQUEST (32) for a custom transport. It needs a replication server
+  that serves message type 32; one that does not delivers nothing.
+- **The terms and age gate** (CrowdyJS 18.4.0). Since ck-api v2.35.0 no gameplay token
+  (`portal.mint_app_token`, `portal.create_authorization_code`, `portal.refresh`) is issued
+  until the player has agreed to the current required legal documents and attested that they
+  are at least 18, or the age of majority where they live if higher; the refusal is
+  `LEGAL_ACCEPTANCE_REQUIRED`, which `crowdypy.is_legal_acceptance_required_error` reads.
+  Show your own two checkboxes, linking each document, then call
+  `client.auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)` before
+  minting; `client.auth.player_legal_acceptance()` says whether that is still needed.
+  `client.auth.register` takes `accept_legal` and `attest_age_of_majority`, and an account
+  registered with both `True` starts accepted. Record them only for a player who ticked both
+  boxes: they are the player's agreement. Against an older API the two new calls fail as
+  GraphQL validation errors.
+
 ## 0.5.1
 
 CrowdyJS 18.2.0 and CrowdyCPP 0.56.0. No API change; one behaviour fix.

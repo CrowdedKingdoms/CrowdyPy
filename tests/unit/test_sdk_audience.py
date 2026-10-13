@@ -45,6 +45,12 @@ PLATFORM_ONLY = {
     "billingExemptOrgs", "billingRateCard", "cpBillingInvariantRuns", "cpBillingReconciliations",
     "cpBillingWriteOffs", "cpCrowdyStudioAgentCatalog", "cpCrowdyStudioAgentPlatformPolicy",
     "emailDeliverability", "emailDeliveryConfig", "retiredOrganizations",
+    # dev/test staff-only gate (cks-game-api #482); tierAccessPolicy and myTierAccess are
+    # ordinary fields and are not on this list.
+    "tierAccessSettings", "tierAccessRules", "addTierAccessRule", "revokeTierAccessRule",
+    "userTierAccess", "setUserTierAccess", "grantTierAccessByPattern", "endTierAccessSessions",
+    "tierAccessProvisioningTokens", "createTierAccessProvisioningToken",
+    "revokeTierAccessProvisioningToken", "tierAccessInventory", "setTierAccessMode",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",

@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "crowdypy"
-version = "0.5.1"
+version = "0.10.0"
 description = "Official Python SDK for Crowded Kingdoms: typed GraphQL clients and a native UDP replication core"
 readme = "README.md"
 license = "MIT AND Apache-2.0"
@@ -83,6 +83,8 @@ CROWDY_BUILD_EXAMPLES = "OFF"
 CROWDY_WITH_CURL = "OFF"
 CROWDY_WITH_CURL_WEBSOCKETS = "OFF"
 CROWDY_WITH_OPENSSL = "ON"
+# The voice helpers carry codec frames without reading them; the app picks its codec.
+CROWDY_WITH_OPUS = "OFF"
 
 [tool.cibuildwheel]
 build-frontend = "build[uv]"
@@ -117,20 +119,20 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 # --------------------------------------------------------------------------------------
 
 [tool.crowdypy.crowdyjs]
-version = "18.2.0"
-commit = "45238ee43ab1e78a8ebfe71331a0f55e17896001"
+version = "18.9.0"
+commit = "d3d795a2be29d7f9d6ed6bbdab68297888d6890f"
 
 [tool.crowdypy.crowdycpp]
-version = "0.56.0"
-tag = "prod/v0.56.0"
-commit = "001918975245e77480ad13294d5fefa0c11901b9"
-tree-sha256 = "0d04f37f3b4e9ad670f7ff02ebdc18baacb6735a3a0e031cb782650a586a66a9"
+version = "0.62.0"
+tag = "test/v0.62.0"
+commit = "60bf6c66c8fbc66729e55077d2cc055ba4697da2"
+tree-sha256 = "325198f3060e66b7d7d57190a8067ec9e219a096b0def7ea1e9df16a29aaba92"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
 [tool.crowdypy.graphql]
-schema-sha256 = "f00952f685420f6c0f4bf58d56debda29aea8cce9b877754393611393ff63db1"
-operations-sha256 = "d5e0c505589ea26ecc3398b12f02ad7bd786457f7010ad87dcb8af2ea9366c77"
+schema-sha256 = "4b19bc84aa340365f6a256dc10544ce9141d18437048867607c8a2d0e74a66de"
+operations-sha256 = "013595fe2109633245b5c39446e884fad0ecb7d2fda3c2849c6087a5e6336f6c"
 
 # The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it
 # on a schedule; nothing on the per-commit path reads the network.
