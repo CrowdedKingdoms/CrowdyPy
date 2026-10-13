@@ -41,7 +41,6 @@ DENYLIST = (
     "dev-run-buddy",
 )
 SKIP_DIRS = {
-    ".git": "object store; holds every historical revision by construction",
     ".venv": "the developer's virtualenv; third-party code",
     "build": "CMake build trees, regenerated per build",
     "node_modules": "third-party dependencies",
@@ -76,6 +75,11 @@ def tree() -> Iterator[tuple[str, bytes]]:
         current = stack.pop()
         for entry in sorted(current.iterdir()):
             rel = entry.relative_to(ROOT).as_posix()
+            if entry.name == ".git":
+                # A clone's object store, which holds every historical revision by
+                # construction, or a worktree's pointer file, which names the checkout's own
+                # path. Neither is ever packaged.
+                continue
             if entry.is_dir():
                 if entry.name not in SKIP_DIRS:
                     stack.append(entry)

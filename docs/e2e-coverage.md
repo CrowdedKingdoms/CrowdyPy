@@ -18,6 +18,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_STUDIO_GRID_ID` | no | a grid in the app that the owner controls (Studio suite) |
 | `CROWDY_E2E_SLOW=1` | no | long-running suites |
 | `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards) |
+| `CROWDY_E2E_PROVISIONING_TOKEN` | dev and test | dev and test are staff-only, so a new derived player is refused (`TIER_ACCESS_REQUIRED`) unless `register` carries a provisioning token covering its address. Use the `harness` token (Secrets Manager `infra-cp/<tier>/loadtest/provisioning-token-harness`, `token` key), which covers `crowdy-e2e*@test.invalid`, with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` (the `*` needs at least one character, so the bare `crowdy-e2e@test.invalid` is refused for a suite that registers the base address). Sent on `register` only; other tiers ignore it |
 
 ```bash
 pytest tests/e2e -q
@@ -36,12 +37,14 @@ player once and signs it in for the later suites.
 
 | Suite | Scenarios | CrowdyCPP counterpart |
 |---|---|---|
-| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
+| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a player registered without the legal consents is refused a gameplay token (`LEGAL_ACCEPTANCE_REQUIRED`) until `record_player_consents`, and `player_legal_acceptance` follows; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
 | `test_e2e_replication.py` | two players over native UDP: an actor update reaches the other player and echoes back to the sender; a 16-entity batched frame (`send_actor_updates`) reaches the other player; voxel updates and client events reach the other player | `e2e_two_client_actor`, `e2e_self_echo`, `e2e_spatial_distance` |
 | `test_e2e_world.py` | two World Stores sessions: each sees the other's actor natively; a voxel edit lands in the other session's chunk store | `e2e_stores_live`, `e2e_world_session` |
 | `test_e2e_world_data.py` | a GraphQL voxel write by an entitled player is recorded and listed back | `e2e_chunks` |
+| `test_e2e_ranged_channel.py` | the owner's invite channel with four members, each keeping an actor at its own chunk: a distance-limited channel message from A reaches B at 5 chunks with `max_distance` 5 but not C (about 5.66) or D (7); 6 adds C, 7 adds D; A never receives its own; no send is refused | `e2e_ranged_channel` |
 | `test_e2e_open_grid_exec_gateway.py` | as a throwaway org admin (`CROWDY_E2E_THROWAWAY_OWNER=1`): open a nested grid, read it back, a player holds its keys, a player-code key is refused `BAD_REQUEST`, close it; the tier's ck-exec gateway passes `exec_gateway_refusal`, a connection pings, and a tampered connect token is `Denied` with the gateway's HTTP 401 reason | `e2e_open_grid_exec_gateway` |
 | `test_e2e_studio.py` | the headless Studio controller creates a project from the mod starter, edits it with autosave, and archives it (optional: needs `CROWDY_E2E_STUDIO_GRID_ID`) | `e2e_crowdy_studio` |
+| `test_e2e_input_log.py` | read-only, as the owner: the app's sessions list with `missingRecords` on every node (the Game API release after v2.40.2 accepts the selection), one session's inputs page when there is one, and a cancelled read stops with the client still usable | `e2e_input_log` |
 
 ## Live runs
 
@@ -52,6 +55,9 @@ player once and signs it in for the later suites.
 | 2026-10-01 | dev tier, app `96701660793088` | the published `dev/v0.4.0` wheel (`0.4.0.dev1`, manylinux x86_64, installed into a clean Python 3.12) | 8 passed |
 | 2026-10-01 | dev tier, app `96701660793088` | `crowdypy 0.4.1.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12; the first version published by trusted publishing) | 8 passed; Studio skipped |
 | 2026-10-01 | dev tier, app `96701660793088`; the open-grid suite in its own throwaway org and app (`CROWDY_E2E_THROWAWAY_OWNER=1`) | `crowdypy 0.5.0.dev1` from PyPI (`pip install crowdypy` in a clean Python 3.12) | 10 passed; Studio skipped |
+| 2026-10-08 | local stack: ck-api at the distance-limited channel branch (off `dev`), two replication servers serving message type 32, the 3-node Citus lab | 0.6.0 (branch) | identity, ranged channel, replication, world and world data suites: 10 passed |
+| 2026-10-09 | dev tier, app `96701660793088`, after replication server v0.35.0 and ck-api v2.38.0 reached dev | `crowdypy 0.6.0.dev1` from PyPI (installed into a clean Python 3.12 with uv) | identity (incl. the terms gate), ranged channel, replication, world and world data suites: 10 passed |
+| 2026-10-13 | dev tier (ck-api v2.42.0), app `96701660793088`, the `harness` provisioning token with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` | 0.10.0 (branch, vendoring CrowdyCPP `dev/v0.62.0`) | identity (the terms-gate case now registers with the token and no consents), input log, ranged channel, replication, world and world data suites: 12 passed; open grid (needs `CROWDY_E2E_THROWAWAY_OWNER=1`) and Studio skipped |
 
 ## Not covered here
 
@@ -67,3 +73,10 @@ These CrowdyCPP suites have no CrowdyPy counterpart yet; the reason is in each r
 | `e2e_soak_two_clients`, `e2e_permission_refresh` | long-running; slated for `CROWDY_E2E_SLOW=1` suites |
 | `e2e_host_election`, `e2e_durable_stores`, `e2e_chunk_store_live` | the World Stores' host, save and chunk persistence run over GraphQL timers covered by unit suites against fakes; live coverage needs a dedicated app (chunk write-back closes the wilderness) |
 | `e2e_cross_app`, `e2e_cross_tenant`, `e2e_malicious_input` | platform isolation properties the CrowdyCPP suites already exercise against the same API |
+
+0.8.0's additions (channel audio, the echo of your own voxel edit, `APP_PAUSED`, access
+suspension, player profiles, `exec.restart_type`) have no live suite yet, in CrowdyPy or in
+CrowdyCPP. The unit suites cover them against a fake replication server and a mocked API. From
+0.8.0 every suite mints with `runtimeGate` selected, so run them only against a tier whose
+ck-api is the release after v2.39.0 or later; an older one refuses the mint as a GraphQL
+validation error. Channel audio and the voxel echo need replication server v0.37.0 as well.

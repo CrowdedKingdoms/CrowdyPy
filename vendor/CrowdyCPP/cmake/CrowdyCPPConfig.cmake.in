@@ -8,6 +8,17 @@ endif()
 if(@CROWDY_CONFIG_NEEDS_OPENSSL@ AND NOT TARGET OpenSSL::Crypto)
   find_dependency(OpenSSL)
 endif()
+# Built with CROWDY_WITH_OPUS=ON: crowdy_opus links libopus, found the way the build found it.
+if(@CROWDY_CONFIG_NEEDS_OPUS@ AND NOT TARGET CrowdyOpus::opus)
+  include("${CMAKE_CURRENT_LIST_DIR}/CrowdyFindOpus.cmake")
+  crowdy_find_opus()
+  if(NOT TARGET CrowdyOpus::opus)
+    set(CrowdyCPP_FOUND FALSE)
+    set(CrowdyCPP_NOT_FOUND_MESSAGE
+        "CrowdyCPP was built with CROWDY_WITH_OPUS=ON and needs libopus, which was not found")
+    return()
+  endif()
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/CrowdyCPPTargets.cmake")
 

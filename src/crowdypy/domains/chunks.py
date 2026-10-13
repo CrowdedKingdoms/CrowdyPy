@@ -31,7 +31,9 @@ class ChunksAPI(Domain):
         """One chunk (voxel grid, per-voxel states, chunk state, LODs), or ``None`` if absent.
 
         Read-only. ``requestedLodLevels`` / ``includeAllLods`` on the input limit which LODs
-        come back.
+        come back. ``voxelStates`` positions and types are the app's signed 16-bit values;
+        ``voxelStatesTruncated`` is true when the chunk holds more recorded edits than one
+        read applies (65,536), so read the whole log with :meth:`voxel_list`.
         """
         result: dict[str, Any] | None = await self._request(ops.GET_CHUNK, {"input": input})
         return result
@@ -52,7 +54,9 @@ class ChunksAPI(Domain):
         """Every chunk within ``maxDistance`` chunks (1-8) of ``centerCoordinate`` on each axis.
 
         Paginated with ``limit`` (default 1000) and ``skip``, which the answer echoes.
-        ``BAD_USER_INPUT`` for a ``maxDistance`` outside 1-8. Read-only.
+        ``BAD_USER_INPUT`` for a ``maxDistance`` outside 1-8. Read-only. A chunk's
+        ``voxelStatesTruncated`` is true when one call holds more recorded edits than it
+        applies (262,144 across the call).
         """
         result: dict[str, Any] = await self._request(ops.GET_CHUNKS_BY_DISTANCE, {"input": input})
         return result

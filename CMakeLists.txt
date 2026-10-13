@@ -59,6 +59,7 @@ nanobind_add_module(_native
   native/module.cpp
   native/replication_binding.cpp
   native/session_binding.cpp
+  native/voice_binding.cpp
   native/wire_binding.cpp
 )
 target_include_directories(_native PRIVATE native)
