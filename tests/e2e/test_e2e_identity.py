@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import crowdypy
@@ -12,6 +14,7 @@ from e2e.conftest import (
     ensure_tier,
     owner_client,
     provision_player,
+    register_with_provisioning_token,
 )
 
 
@@ -34,13 +37,20 @@ async def test_a_player_signs_in_mints_and_refreshes() -> None:
 async def test_a_gameplay_token_waits_for_the_players_consents() -> None:
     email = derive_email("py-consent")
     async with crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url) as client:
-        auth = await client.auth.register(email, derive_password(email))
+        provisioning = os.environ.get("CROWDY_E2E_PROVISIONING_TOKEN")
+        if provisioning:
+            token, user_id = await register_with_provisioning_token(
+                email, provisioning, consent=False
+            )
+            client.set_token(token)
+        else:
+            user_id = (await client.auth.register(email, derive_password(email))).user.user_id
         assert await client.auth.player_legal_acceptance() is False
         owner = await owner_client()
         try:
             tier = await ensure_tier(owner, CONFIG.app_id)
             await owner.admin.app_access.grant(
-                {"appId": CONFIG.app_id, "userId": auth.user.user_id, "tierId": tier}
+                {"appId": CONFIG.app_id, "userId": user_id, "tierId": tier}
             )
         finally:
             await owner.aclose()

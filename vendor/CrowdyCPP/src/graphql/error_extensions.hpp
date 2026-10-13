@@ -46,6 +46,8 @@ inline GraphQLErrorDetail readGraphQLError(Json entry, std::string_view fallback
   if (ownedByCaller.isBool()) detail.ownedByCaller = ownedByCaller.asBool();
   detail.suspendedUntil = extensions["suspendedUntil"].asString();
   detail.reason = extensions["reason"].asString();
+  detail.requiredMicrousd = extensions["requiredMicrousd"].asString();
+  detail.spendableMicrousd = extensions["spendableMicrousd"].asString();
 
   const Json path = entry["path"];
   if (path.isArray()) {

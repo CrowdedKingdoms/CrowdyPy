@@ -11,6 +11,13 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.10.0: the input log says what it lost (CrowdyJS 18.9.0, CrowdyCPP 0.62.0).** Every session
+from `client.input_log.sessions` carries `missingRecords`, the inputs the replication server
+accepted that never reached the log, which needs the Game API release after v2.40.2. Its
+docstrings name the new end reasons (`paused` among them), the two read refusals worth retrying
+with the same cursor, and how to stop a read nobody will see: cancel its task, which closes the
+request and frees its server read share. See [MIGRATION.md](MIGRATION.md).
+
 **v0.9.1: the input log's session filter sends `userId` as a string, and its reads document when
 to retry.** See the 0.9.1 bullet below; 0.9.0 added the SDK a build compiled against.
 
