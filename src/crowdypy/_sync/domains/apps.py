@@ -243,6 +243,9 @@ class AppsAPI(Domain):
         active grid keys, never a player-code key) are the grid permission keys a player's
         claim grants its owner on the claimed grid, for claims made from then on; for
         example ``update_voxel_data`` makes a claim buildable without a hub granting it.
+        ``replayLoggingEnabled`` true raises ``INPUT_LOG_FUNDS_NEEDED`` unless the org wallet
+        can spend the projected cost of keeping one retention period of the app's recent
+        traffic; ``extensions["requiredMicrousd"]`` and ``["spendableMicrousd"]`` say how much.
         """
         result: dict[str, Any] = self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}

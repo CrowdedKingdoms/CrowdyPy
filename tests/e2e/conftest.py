@@ -15,7 +15,9 @@ Configuration (the variables CrowdyCPP's suites read):
 - ``CROWDY_E2E_PROVISIONING_TOKEN``: sent as ``X-CK-Provisioning-Token`` when a player
   registers. Dev and test are staff-only, so without it a new derived account is refused
   there (``TIER_ACCESS_REQUIRED``); it must cover ``<local>+*@<domain>`` of
-  ``CROWDY_E2E_EMAIL`` (Secrets Manager ``infra-cp/<tier>/loadtest/provisioning-token-sdk-e2e``).
+  ``CROWDY_E2E_EMAIL``: the ``harness`` token (Secrets Manager
+  ``infra-cp/<tier>/loadtest/provisioning-token-harness``, its ``token`` key) covers
+  ``crowdy-e2e*@test.invalid``, so use ``CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid``.
 - ``CROWDY_E2E_SLOW=1``: the long-running suites.
 """
 
@@ -114,18 +116,18 @@ _REGISTER = (
 )
 
 
-async def register_with_provisioning_token(email: str, token: str) -> tuple[str, str]:
+async def register_with_provisioning_token(
+    email: str, token: str, *, consent: bool = True
+) -> tuple[str, str]:
     """Dev and test are staff-only: a new account there needs the provisioning token, which
     only ``register`` reads. The SDK sends no test-only header, so this one request goes
-    direct; the session it returns is handed to an ordinary client."""
-    variables = {
-        "i": {
-            "email": email,
-            "password": derive_password(email),
-            "acceptLegal": True,
-            "attestAgeOfMajority": True,
-        }
-    }
+    direct; the session it returns is handed to an ordinary client. ``consent=False`` leaves
+    out both terms flags, as a request with no Origin may, so the account starts without the
+    stored documents a gameplay token waits for."""
+    registration: dict[str, Any] = {"email": email, "password": derive_password(email)}
+    if consent:
+        registration.update({"acceptLegal": True, "attestAgeOfMajority": True})
+    variables = {"i": registration}
     async with httpx.AsyncClient(timeout=60.0) as http:
         res = await http.post(
             graphql_endpoint(CONFIG.api_url) or CONFIG.api_url,

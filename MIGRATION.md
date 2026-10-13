@@ -3,6 +3,32 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.10.0
+
+CrowdyJS 18.9.0 and CrowdyCPP 0.62.0. Additive, with one floor: every sessions read selects
+`InputLogSession.missingRecords`, so `client.input_log.sessions` needs the Game API release after
+v2.40.2 (an older one refuses the selection).
+
+- **`missingRecords`** on every recorded session: inputs the replication server accepted that
+  never reached the log (an overloaded server or a broker outage). 0 when the recording is
+  complete as far as it is known; `None` on one recorded before the count existed. A lost end of
+  the recording cannot be counted: that session closes as `unrecorded`.
+- **End reasons.** `endReason` may also be `logging_off`, `shutdown`, `paused` (recording paused
+  while the app's logging setting could not be confirmed; a later record reopens the session) or
+  `unrecorded`; the `sessions` docstring says what each means.
+- **Retrying a read.** `INPUT_LOG_TEMPORARILY_UNAVAILABLE` and `INPUT_LOG_RATE_LIMITED` carry
+  `extensions["retryable"]`: retry with the same cursor after a short back-off, a bounded number
+  of times. A malformed cursor, or one from another session, is `BAD_USER_INPUT`.
+- **Stopping a read** (CrowdyJS's `signal`): cancel its task, or wrap it in `asyncio.timeout`. The
+  request is closed, which frees its share of the server's reads (one per user, two per app and
+  per org at a time); the client's own timeout applies either way. CrowdyCPP 0.62.0's
+  `CancelToken` is the C++ form; CrowdyPy's GraphQL client is Python's, so it needs none.
+- **`INPUT_LOG_FUNDS_NEEDED`** on `client.apps.update(app_id, {"replayLoggingEnabled": True})` carries
+  `extensions["requiredMicrousd"]` and `["spendableMicrousd"]`: the balance turning logging on
+  needs and what the org wallet can spend.
+- The vendored CrowdyCPP adds `Errc.Cancelled` beside the codes the replication layer reports;
+  nothing in the native client returns it.
+
 ## 0.9.1
 
 A patch release with the same API as 0.9.0, the same CrowdyJS (18.8.0) and CrowdyCPP (0.61.0) pins.
