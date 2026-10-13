@@ -78,6 +78,10 @@ async def test_channels_fill_in_the_app_and_grid(api: MockApi) -> None:
     assert api.last.variables == {
         "input": {"appId": "42", "gridId": "5", "name": "lobby", "membersCanSend": False}
     }
+    await grid.channels.create("party", members_can_speak=True)
+    assert api.last.variables == {
+        "input": {"appId": "42", "gridId": "5", "name": "party", "membersCanSpeak": True}
+    }
     await grid.channels.join("8")
     assert api.last.operation_name == ops.JOIN_CHANNEL.name
     await grid.channels.leave(8)

@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.5.1`
+- CrowdyPy `0.10.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -38,3 +38,21 @@ requirement names one exactly, the same way a caret never matches an npm prerele
   `exec*` roots answers those calls with a GraphQL validation error.
 - Direct sign-in (`auth.login`, `auth.register`) is served to non-browser callers. CrowdyPy
   sends no `Origin` header, so it is exempt from `HOSTED_SIGN_IN_REQUIRED`.
+- `auth.record_player_consents` and `auth.player_legal_acceptance` need ck-api v2.35.0; an
+  older API answers them with a GraphQL validation error. From v2.35.0 a gameplay token
+  waits for both consents (`LEGAL_ACCEPTANCE_REQUIRED`).
+- The input log (`client.input_log`, 0.7.0) needs ck-api v2.39.0 or later: every app read selects
+  `replayLoggingEnabled`, which an older API refuses with a GraphQL validation error. The retryable
+  `INPUT_LOG_TEMPORARILY_UNAVAILABLE` / `INPUT_LOG_RATE_LIMITED` and the `logging_off` / `shutdown`
+  end reasons come with the ck-api release after v2.40.2.
+- `udp.send_ranged_channel_message` needs a replication server that serves message type 32
+  (CHANNEL_MESSAGE_RANGED_REQUEST); one that does not delivers nothing.
+- 0.8.0 selects `runtimeGate` on every token mutation (`portal.mint_app_token`,
+  `exchange_code`, `refresh`) and on `game_client_bootstrap`, so it needs the ck-api release
+  after v2.39.0 that serves it; an older API refuses those calls with a GraphQL validation
+  error. The same release serves `playerProfile(s)`, the access suspension and
+  `execRestartType`.
+- Channel audio (message types 35 and 36) and the echo of your own voxel edits need replication
+  server v0.37.0; an older one drops message type 35 and echoes nothing.
+- The wheels link no audio codec (CrowdyCPP's optional libopus wrapper is built OFF): the
+  voice helpers carry an app's codec frames without reading them.

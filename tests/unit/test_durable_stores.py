@@ -274,3 +274,67 @@ async def test_hydration_puts_recorded_edits_on_a_chunk_stored_without_voxels(se
     assert session.chunks.voxel_type_at(at, 1, 1, 1) == 0
     assert session.chunks.voxel_state_at(at, 1, 1, 1) is None, "the state goes too"
     session.dispose()
+
+
+async def test_hydration_keeps_entries_the_dense_grid_cannot_hold_in_the_overlay(
+    setup: Any,
+) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [chunk_row(bytes(4096))]}
+    api.roots["getChunk"] = chunk_row(
+        bytes(4096),
+        [
+            recorded(1, 1, 1, 300, {"glow": 1}),  # a wide type at an in-grid voxel
+            recorded(16, 0, 0, 9),  # a position the grid does not have
+            recorded(0, 1, 0, 2, {"plain": True}),
+            recorded(-3, 40, 7, -1),
+        ],
+    )
+    session = WorldSessionCore(
+        client,
+        7,
+        connection,
+        chunk_options={
+            "voxel_state_codec": json_codec(),
+            "hydrate_voxel_states": True,
+            "write_back_interval_ms": None,
+        },
+    )
+    at = (0, 0, 0)
+    await session.chunks.ensure_around(at, 1)
+
+    assert session.chunks.voxel_type_at(at, 1, 1, 1) == 300, "not stored truncated as 44"
+    assert session.chunks.voxel_state_at(at, 1, 1, 1) == {"glow": 1}
+    assert session.chunks.voxel_type_at(at, 16, 0, 0) == 9
+    assert session.chunks.voxel_type_at(at, 0, 1, 0) == 2, "(16, 0, 0) does not land on (0, 1, 0)"
+    assert session.chunks.voxel_state_at(at, 0, 1, 0) == {"plain": True}
+    assert session.chunks.voxel_type_at(at, -3, 40, 7) == -1
+    assert set(session.chunks.overlay(at)) == {"1:1:1", "16:0:0", "-3:40:7"}
+    assert session.chunks.overlay(at)["1:1:1"].state == {"glow": 1}
+    voxels = session.chunks.voxels(at)
+    assert voxels is not None
+    assert voxels[1 + 16 + 256] == 0, "the grid holds 0 under an overlay voxel"
+    meta = session.chunks.get(at)
+    assert meta is not None
+    assert meta.hydrated_states == {16: {"plain": True}}
+    session.dispose()
+
+
+async def test_pruning_keeps_a_dirty_chunks_states_and_overlay(setup: Any) -> None:
+    _, client, connection = setup
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    far = (5, 5, 5)
+    session.chunks.seed(far, bytes([1]) * 4096)
+    session.chunks.set_voxel(far, 20, 0, 0, 3)
+    session.chunks.set_voxel(far, 2, 2, 2, 4, b"meta")
+    session.chunks.seed((0, 0, 0), bytes(4096), write_back=False)
+
+    session.chunks.prune_beyond((0, 0, 0), 1)
+    assert session.chunks.get(far) is not None, "a dirty chunk waits for its write-back"
+    assert session.chunks.voxel_type_at(far, 20, 0, 0) == 3
+    assert session.chunks.voxel_type_at(far, 2, 2, 2) == 4
+    assert session.chunks.voxel_state_at(far, 2, 2, 2) == b"meta"
+    assert session.chunks.voxel_type_at(far, 3, 3, 3) == 1
+    session.dispose()

@@ -60,6 +60,7 @@ __all__ = [
     "ExecModListing",
     "ExecModScope",
     "ExecModSwitch",
+    "ExecRestartResult",
     "ExecSourceFile",
     "ExecStarter",
     "ExecStarterPack",
@@ -252,12 +253,35 @@ class ExecEndpointStat(msgspec.Struct, rename="camel", frozen=True, kw_only=True
 
 
 class ExecAppStatus(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """An app's active version, kill switches and budget pause."""
+    """An app's active version, kill switches, pause and placement limits in this datacenter.
+
+    ``budget_paused`` is true while the app's runtime gate is not active or it is over its
+    compute budget, and ``budget_pause_reason`` says which (``insufficient_funds``,
+    ``spend_cap``, ``subscription_lapsed`` or ``compute_budget``). ``max_instances`` and
+    ``max_reserved_mb`` are the app's limits (``None``: the manager's default, no memory
+    limit); ``instance_limit`` is the instance limit in force, and ``instances`` /
+    ``reserved_mb`` what is placed now, mods included (``None`` from a manager older than
+    ck-exec 0.15).
+    """
 
     active_version: int | None = None
     disabled: bool
     disabled_types: list[str]
     budget_paused: bool
+    budget_pause_reason: str | None = None
+    max_instances: int | None = None
+    max_reserved_mb: int | None = None
+    instance_limit: int | None = None
+    instances: int | None = None
+    reserved_mb: int | None = None
+
+
+class ExecRestartResult(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """What :meth:`ExecAPI.restart_type` did: the node type, and how many running instances
+    it persisted and stopped (0 when none ran)."""
+
+    node_type: str
+    stopped: int
 
 
 class ExecSourceFile(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -313,13 +337,16 @@ class ExecBuild(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     """A build, its log and one module per crate.
 
     ``status`` is ``queued``, ``building``, ``succeeded`` or ``failed``; ``kind`` is ``exec``
-    for ck-exec modules and ``client`` for the CLIENT half of a mod.
+    for ck-exec modules and ``client`` for the CLIENT half of a mod. ``sdk_version`` is the
+    ``ckx-sdk`` version the platform compiled against (``crowdy-client-sdk``'s for a CLIENT
+    half), whatever version the crate names; ``None`` until the build starts (ck-api v2.40.2).
     """
 
     build_id: str
     status: str
     kind: str
     log: str | None = None
+    sdk_version: str | None = None
     created_at: str
     started_at: str | None = None
     finished_at: str | None = None
@@ -779,6 +806,18 @@ class ExecAPI(Domain):
             omit_none({"appId": bigint(app_id), "enabled": enabled, "nodeType": node_type}),
         )
         return msgspec.convert(payload, ExecAppStatus)
+
+    async def restart_type(self, app_id: str | int, node_type: str) -> ExecRestartResult:
+        """Move one node type's running instances to the app's active version: each is
+        persisted and stopped, and starts again on the active version at its next call.
+
+        A deploy changes what new instances run and leaves running ones on their version;
+        this moves them without switching the type off. Requires ``manage_compute``.
+        """
+        payload = await self._request(
+            ops.EXEC_RESTART_TYPE, {"appId": bigint(app_id), "nodeType": node_type}
+        )
+        return msgspec.convert(payload, ExecRestartResult)
 
     async def starters(self, app_id: str | int) -> ExecStarterPack:
         """The starter packs: a world tick (the root hub), a matchmaker, game sessions and an

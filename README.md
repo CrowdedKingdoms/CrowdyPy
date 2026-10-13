@@ -11,10 +11,38 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.5.1: chunk loads keep recorded voxel edits (CrowdyJS 18.2.0, CrowdyCPP 0.56.0).**
-- `ChunkStore.hydrate()` puts every recorded voxel edit (`voxelStates`: a hub's or mod's
-  `world.set_voxels`, `updateVoxel`, realtime updates) on the grid, and a later
-  `ensure_around()` keeps a chunk it already loaded instead of reloading its bare voxels.
+**v0.10.0: the input log says what it lost (CrowdyJS 18.9.0, CrowdyCPP 0.62.0).** Every session
+from `client.input_log.sessions` carries `missingRecords`, the inputs the replication server
+accepted that never reached the log, which needs the Game API release after v2.40.2. Its
+docstrings name the new end reasons (`paused` among them), the two read refusals worth retrying
+with the same cursor, and how to stop a read nobody will see: cancel its task, which closes the
+request and frees its server read share. See [MIGRATION.md](MIGRATION.md).
+
+**v0.9.1: the input log's session filter sends `userId` as a string, and its reads document when
+to retry.** See the 0.9.1 bullet below; 0.9.0 added the SDK a build compiled against.
+
+**v0.8.0: voice, channel audio, wide voxels, and pause and access refusals (CrowdyJS 18.7.0, CrowdyCPP 0.60.0).**
+- Voice: `crowdypy.media`'s voice helpers (an optional 10-byte header per codec frame,
+  `VoicePacketizer`, `VoiceJitterBuffer`), and `client.udp.send_channel_audio()` with the
+  `channel_audio` handler, which reaches every member of a channel wherever they are (party
+  and guild voice).
+- World Stores: `ChunkStore` keeps voxel edits the 16x16x16 one-byte grid cannot hold in an
+  overlay, and applies the echo of your own edit once. `session.on("voxel_update")` and
+  `session.on("generic_spatial")` reach a game that keeps its own world.
+- Refusals: `crowdypy.is_app_paused()` reads the runtime gate that tokens and the bootstrap
+  carry, and `app_paused_of`, `access_refusal_of` and `actor_exists_of` read the new refusals.
+- New calls: `users.player_profile(s)`, `app_access.suspend` and `unsuspend`, and
+  `exec.restart_type`.
+- 0.9.0: every build (`exec.build`, `build_status`, `wait_for_build` and the mod builds) carries
+  `sdk_version`, the `ckx-sdk` (CLIENT half: `crowdy-client-sdk`) version the platform compiled it
+  against, whatever the crate names. It needs ck-api v2.40.2, since the build documents select it.
+- 0.8.0 needs the ck-api release after v2.39.0, since the token mutations select
+  `runtimeGate`. Channel audio and the voxel echo need replication server v0.37.0.
+- 0.7.0 brought the input log (`client.input_log.sessions()` and `messages()`, and
+  `replayLoggingEnabled`). 0.6.0 brought distance-limited channel messages
+  (`udp.send_ranged_channel_message()`) and the terms gate (`auth.record_player_consents()`).
+- 0.5.1 made `ChunkStore.hydrate()` keep every recorded voxel edit (`voxelStates`) and
+  `ensure_around()` keep a chunk it already loaded.
 - 0.5.0 brought the ck-exec gateway check (`client.exec.connect()` sends the connect token
   only to a gateway on the game API's estate, and reports a refusal as `Denied`) and open
   grids (`game_apps.open_permissions()` and `set_open_permissions()`).
@@ -96,7 +124,10 @@ There is one API origin but two tokens, as in every Crowded Kingdoms SDK:
    token**: account, studio administration and minting. It is not accepted for gameplay.
 2. Gameplay needs a short-lived **app-scoped token** per app
    (`portal.mint_app_token(app_id)`), which is also the HMAC key for native UDP. Refresh it
-   with `client.refresh_gameplay_token()` (concurrent callers share one refresh).
+   with `client.refresh_gameplay_token()` (concurrent callers share one refresh). It is
+   refused with `LEGAL_ACCEPTANCE_REQUIRED` until the player's agreement to the legal
+   documents and age attestation are stored: show both checkboxes, then call
+   `auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)`.
 3. Build one identity client and one client per game. The game client points at the app's
    datacenter (`game_api_url`) with `discovery_url` set, so it can find the app again if
    that instance stops answering.
@@ -125,6 +156,13 @@ is not serving) and `CrowdyUserCodeFaultError` (a player module faulted;
 `player_fault_of(error)` reads the fault) mirror CrowdyJS. A `WRONG_DATACENTER` refusal
 moves the client to the app's datacenter and retries once, by itself.
 
+A paused app (its organization ran out of funds, hit a spend cap, or let a subscription
+lapse) still mints a token, so check `crowdypy.is_app_paused(minted.runtime_gate)` before
+entering the world, and tell the player it is paused. Replication then refuses sends with UDP
+error 33 (`APP_PAUSED`). `crowdypy.app_paused_of(error)`, `access_refusal_of(error)`
+(`ACCESS_REVOKED`, `ACCESS_SUSPENDED` with `suspended_until`, `ACCESS_NOT_GRANTED`) and
+`actor_exists_of(error)` read those refusals. None of them clears by retrying.
+
 ## Replication
 
 ```python
@@ -152,6 +190,47 @@ async for batch in conn.batches():
 `crowdypy.replication.ReplicationConnection` is the same for code without an event loop:
 `wait()` and then `poll()` from your own loop.
 
+Voxel positions and types are the app's signed 16-bit values, and a voxel state is at most
+1,024 bytes (`InvalidArgument` otherwise, nothing sent). Replication server v0.37.0 echoes
+every accepted voxel edit back to its sender as a `voxel_update`.
+
+## Voice
+
+`send_audio_packet` reaches players near a chunk and carries whatever bytes it is given; a game
+with a voice format of its own keeps it. The voice helpers in `crowdypy.media` are an optional
+format that every Crowded Kingdoms SDK shares, byte for byte. Each packet is a 10-byte header
+(version 1, the codec, a `u16` seq, a `u32` timestamp in codec samples, the frame's duration
+and two talk-spurt flags) followed by one codec frame. `VoicePacketizer` numbers one sender's
+frames. `VoiceJitterBuffer` puts each sender's packets back in order and plays them out 60 ms
+after the first packet of a talk spurt arrived. It reports a frame that never came as a gap,
+drops one that arrives after its playout time, and holds at most 64 frames a sender.
+
+`send_channel_audio` reaches every member of a channel wherever they are (party or guild
+voice), at most 1,024 bytes a packet. The sender needs the channel's `send_voice`
+(`members_can_speak=True` on creation gives it to the member role) and the player's
+`use_voice_chat`. There is no echo, and members receive `channel_audio`:
+
+```python
+from crowdypy.media import VoiceCodec, VoiceJitterBuffer, VoicePacketizer
+
+party = VoicePacketizer(VoiceCodec.OPUS, 20)
+# Every 20 ms while the player talks (`opus_frame` from your own encoder):
+await game.udp.send_channel_audio(channel_id, my_uuid, party.packetize(opus_frame, last=released))
+# ...and party.skip() for every 20 ms of silence that is not sent.
+
+voices = VoiceJitterBuffer()
+game.udp.subscribe({"channel_audio": lambda n: voices.push(f"{n.channel_id}:{n.uuid}", n.payload)})
+for slot in voices.poll():  # at least once a frame, from your audio clock
+    if slot.gap:
+        conceal(slot.key, slot.frame_ms)  # the frame never came
+    else:
+        play(slot.key, slot.codec, slot.frame)
+```
+
+No codec ships with CrowdyPy, and the wheel links none: which codec an app uses (Opus, or
+G.711 µ-law where it has no Opus), and the library that encodes and decodes it, is the app's
+choice. Where a voice sits in the world (panning, distance attenuation) is the game's too.
+
 ## World Stores
 
 ```python
@@ -167,6 +246,12 @@ asyncio.create_task(session.run())  # tick 60 times a second
 snapshot = session.actors.snapshot()  # once a frame: every actor at once
 states = pose.decode_many(snapshot.state_offsets, snapshot.state_data)  # numpy, no loop
 ```
+
+`session.chunks` is a helper for 16x16x16 chunks with one byte per voxel. An edit that grid
+cannot hold (a type outside 0-255, a position outside 0-15) is kept in the chunk's
+`overlay()`, and `voxel_type_at` reads it first. The echo of your own `set_voxel` is not
+applied a second time. A game with other addressing reads every edit from
+`session.on("voxel_update", ...)`, which includes those echoes.
 
 ## Crowdy Studio
 

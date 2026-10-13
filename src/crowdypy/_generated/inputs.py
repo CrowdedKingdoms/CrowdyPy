@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: f00952f685420f6c0f4bf58d56debda29aea8cce9b877754393611393ff63db1
+schema.gql sha256: 4b19bc84aa340365f6a256dc10544ce9141d18437048867607c8a2d0e74a66de
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, ServerState, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class ActorFilterInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -33,6 +33,13 @@ class ActorUpdateRequestInput(msgspec.Struct, kw_only=True, omit_defaults=True, 
     distance: int | None | UnsetType = UNSET
     decay_rate: int | None | UnsetType = UNSET
     sequence_number: int | None | UnsetType = UNSET
+
+
+class AddTierAccessRuleInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'expires_at': 'expiresAt'}):
+    kind: TierAccessRuleKind
+    value: str
+    note: str | None | UnsetType = UNSET
+    expires_at: str | None | UnsetType = UNSET
 
 
 class AdmitAppCodeInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'subject_kind': 'subjectKind', 'subject_ref': 'subjectRef', 'version_range': 'versionRange'}):
@@ -220,13 +227,14 @@ class CreateAvatarInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     name: str | None | UnsetType = UNSET
 
 
-class CreateChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend'}):
+class CreateChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'members_can_speak': 'membersCanSpeak'}):
     'Create a channel in an app.'
     app_id: str
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
     members_can_send: bool | None | UnsetType = UNSET
+    members_can_speak: bool | None | UnsetType = UNSET
 
 
 class CreateCheckoutInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'app_id': 'appId', 'tier_id': 'tierId', 'plan_id': 'planId', 'amount_cents': 'amountCents', 'success_url': 'successUrl', 'cancel_url': 'cancelUrl', 'idempotency_key': 'idempotencyKey'}):
@@ -258,13 +266,14 @@ class CreateCrowdyStudioProjectInput(msgspec.Struct, kw_only=True, omit_defaults
     idempotency_key: str | None | UnsetType = UNSET
 
 
-class CreateGridChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'grid_id': 'gridId'}):
+class CreateGridChannelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'membership_policy': 'membershipPolicy', 'members_can_send': 'membersCanSend', 'members_can_speak': 'membersCanSpeak', 'grid_id': 'gridId'}):
     "Create a grid channel (DN-10): a channel that belongs to one grid, so that grid's player modules may emit_channel into it. Only the grid's current owner may create one."
     app_id: str
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
     members_can_send: bool | None | UnsetType = UNSET
+    members_can_speak: bool | None | UnsetType = UNSET
     grid_id: str
 
 
@@ -315,6 +324,13 @@ class CreateTeamInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     name: str
     description: str | None | UnsetType = UNSET
     membership_policy: str | None | UnsetType = UNSET
+
+
+class CreateTierAccessProvisioningTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'email_patterns': 'emailPatterns', 'max_accounts': 'maxAccounts', 'expires_in_days': 'expiresInDays'}):
+    label: str
+    email_patterns: list[str]
+    max_accounts: int
+    expires_in_days: int
 
 
 class CreateUserAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
@@ -558,6 +574,21 @@ class ImportCrowdyStudioProjectFileInput(msgspec.Struct, kw_only=True, omit_defa
     idempotency_key: str | None | UnsetType = UNSET
 
 
+class InputLogMessageFilter(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'from_': 'from', 'message_types': 'messageTypes'}):
+    'Narrows inputLogMessages. All fields are optional and AND-combined.'
+    from_: str | None | UnsetType = UNSET
+    to: str | None | UnsetType = UNSET
+    message_types: list[int] | None | UnsetType = UNSET
+
+
+class InputLogSessionFilter(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'user_id': 'userId', 'from_': 'from', 'message_type': 'messageType'}):
+    'Narrows inputLogSessions. All fields are optional and AND-combined.'
+    user_id: str | None | UnsetType = UNSET
+    from_: str | None | UnsetType = UNSET
+    to: str | None | UnsetType = UNSET
+    message_type: int | None | UnsetType = UNSET
+
+
 class InviteOrgMemberInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'user_id': 'userId'}):
     org_id: str
     user_id: str
@@ -646,10 +677,28 @@ class PublishFileInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     sha256: str
 
 
-class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True):
+class RangedChannelMessageInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'channel_id': 'channelId', 'app_id': 'appId', 'max_distance': 'maxDistance', 'sequence_number': 'sequenceNumber'}):
+    'Input for publishing a channel message that only reaches members near an origin chunk. A member receives it when one of its live actors is in the same app within maxDistance chunks of the origin, measured as the straight-line (Euclidean) distance between chunk coordinates, boundary included; a member with no live actor does not receive it. Members receive an ordinary ChannelMessageNotification. The sender must have the channel send_messages permission, exactly as for sendChannelMessage.'
+    channel_id: str
+    uuid: str
+    payload: str
+    app_id: str
+    chunk: ChunkCoordinatesInput
+    max_distance: int
+    sequence_number: int | None | UnsetType = UNSET
+
+
+class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'up_to_units': 'upToUnits', 'price_cents': 'priceCents'}):
+    up_to_units: str | None | UnsetType = UNSET
+    price_cents: float
+
+
+class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'accept_legal': 'acceptLegal', 'attest_age_of_majority': 'attestAgeOfMajority'}):
     email: str
     password: str
     gamertag: str | None | UnsetType = UNSET
+    accept_legal: bool | None | UnsetType = UNSET
+    attest_age_of_majority: bool | None | UnsetType = UNSET
 
 
 class ReinstateOrganizationInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
@@ -904,7 +953,7 @@ class SetQuotaInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'o
     idempotency_key: str | None | UnsetType = UNSET
 
 
-class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth'}):
+class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth', 'price_bands': 'priceBands', 'clear_price_bands': 'clearPriceBands'}):
     scope: RateScope
     metric: str
     price_cents: float | None | UnsetType = UNSET
@@ -915,6 +964,8 @@ class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
     free_units: str | None | UnsetType = UNSET
     free_period: AllowancePeriod | None | UnsetType = UNSET
     free_per_month: str | None | UnsetType = UNSET
+    price_bands: list[RateCardBandInput] | None | UnsetType = UNSET
+    clear_price_bands: bool | None | UnsetType = UNSET
     reason: str
 
 
@@ -999,7 +1050,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'claim_owner_keys': 'claimOwnerKeys'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1007,6 +1058,8 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     status: AppStatus | None | UnsetType = UNSET
     metadata: str | None | UnsetType = UNSET
     wilderness_writes_open: bool | None | UnsetType = UNSET
+    replay_logging_enabled: bool | None | UnsetType = UNSET
+    claim_owner_keys: list[str] | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -1093,7 +1146,7 @@ class UpdateVoxelInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
 
 
 class VoxelCoordinatesInput(msgspec.Struct, kw_only=True, omit_defaults=True):
-    "Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). Each coordinate is 0-15 on a 16x16x16 chunk, and the voxel writes (updateVoxel, sendVoxelUpdate, updateChunk's voxelStates) refuse any other value. Teleport's voxelAddress, which is not a write, takes any signed 16-bit value."
+    "Input form of a voxel position LOCAL to its chunk (see VoxelCoordinates). App-defined: each coordinate is any signed 16-bit integer, on every voxel write (updateVoxel, sendVoxelUpdate, updateChunk's voxelStates) and in teleport's voxelAddress; the platform checks no narrower range. Apps that use the 16x16x16 dense grid use 0-15."
     x: int
     y: int
     z: int
@@ -1122,6 +1175,7 @@ class VoxelUpdateRequestInput(msgspec.Struct, kw_only=True, omit_defaults=True, 
 __all__ = [
     'ActorFilterInput',
     'ActorUpdateRequestInput',
+    'AddTierAccessRuleInput',
     'AdmitAppCodeInput',
     'AppMarketplaceFilterInput',
     'AssignGridOwnershipInput',
@@ -1156,6 +1210,7 @@ __all__ = [
     'CreateOrganizationInput',
     'CreatePortalAuthorizationCodeInput',
     'CreateTeamInput',
+    'CreateTierAccessProvisioningTokenInput',
     'CreateUserAppStateInput',
     'CrowdyStudioAgentFundingPolicyInput',
     'CrowdyStudioAgentPlayerDayLimitsInput',
@@ -1187,6 +1242,8 @@ __all__ = [
     'GrantGridPermissionsInput',
     'GrantTierFeatureInput',
     'ImportCrowdyStudioProjectFileInput',
+    'InputLogMessageFilter',
+    'InputLogSessionFilter',
     'InviteOrgMemberInput',
     'LinkIdentityInput',
     'ListVoxelUpdatesByDistanceInput',
@@ -1199,6 +1256,8 @@ __all__ = [
     'NearbyGridsInput',
     'PublishCrowdyStudioCommonFileInput',
     'PublishFileInput',
+    'RangedChannelMessageInput',
+    'RateCardBandInput',
     'RegisterUserInput',
     'ReinstateOrganizationInput',
     'RequestLoginLinkInput',

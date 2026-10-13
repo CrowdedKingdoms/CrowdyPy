@@ -15,6 +15,12 @@ std::size_t writeCallback(char* data, std::size_t size, std::size_t nmemb, void*
   return size * nmemb;
 }
 
+/// libcurl calls this about once a second even while the transfer is idle, so a
+/// cancelled request ends within a second, waiting on the server or not.
+int cancelCallback(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+  return static_cast<const CancelToken*>(userdata)->cancelled() ? 1 : 0;
+}
+
 /// libcurl transport with a shared in-memory cookie jar (sticky
 /// load-balancer cookies persist across requests within one transport).
 class CurlTransport final : public IHttpTransport {
@@ -39,6 +45,9 @@ class CurlTransport final : public IHttpTransport {
     if (outcome.status.code == Errc::Timeout) {
       throw CrowdyTimeoutError(outcome.errorMessage);
     }
+    if (outcome.status.code == Errc::Cancelled) {
+      throw CrowdyCancelledError(outcome.errorMessage);
+    }
     if (!outcome.status.ok()) {
       throw CrowdyNetworkError(outcome.errorMessage);
     }
@@ -53,6 +62,11 @@ class CurlTransport final : public IHttpTransport {
  private:
   HttpOutcome perform(const HttpRequest& request) noexcept {
     HttpOutcome outcome;
+    if (request.cancel && request.cancel->cancelled()) {
+      outcome.status = Errc::Cancelled;
+      outcome.errorMessage = "HTTP request cancelled: " + request.url;
+      return outcome;
+    }
     CURL* curl = curl_easy_init();
     if (!curl) {
       outcome.status = Errc::SocketError;
@@ -85,6 +99,11 @@ class CurlTransport final : public IHttpTransport {
     curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "");  // enable the cookie engine
     curl_easy_setopt(curl, CURLOPT_SHARE, share_);
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    if (request.cancel) {
+      curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+      curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancelCallback);
+      curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &*request.cancel);
+    }
 
     const CURLcode rc = curl_easy_perform(curl);
     long status = 0;
@@ -95,6 +114,11 @@ class CurlTransport final : public IHttpTransport {
     if (rc == CURLE_OPERATION_TIMEDOUT) {
       outcome.status = Errc::Timeout;
       outcome.errorMessage = "HTTP request timed out: " + request.url;
+      return outcome;
+    }
+    if (rc == CURLE_ABORTED_BY_CALLBACK) {
+      outcome.status = Errc::Cancelled;
+      outcome.errorMessage = "HTTP request cancelled: " + request.url;
       return outcome;
     }
     if (rc != CURLE_OK) {
