@@ -48,6 +48,8 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
         "leave",
         "addMember",
         "removeMember",
+        "ban",
+        "unban",
         "setMemberRoles",
         "createRole",
         "updateRole",
@@ -69,6 +71,8 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
         "leave",
         "addMember",
         "removeMember",
+        "ban",
+        "unban",
         "setMemberRoles",
         "createRole",
         "updateRole",
@@ -170,6 +174,25 @@ def _group_cases(domain: type[Domain], noun: str, plural: str) -> list[Case]:
             f"Remove{noun}Member",
             {"groupId": "5", "userId": "7"},
             True,
+        ),
+        Case(
+            domain,
+            "ban",
+            (5, "7", "spam"),
+            f"Ban{noun}Member",
+            {"groupId": "5", "userId": "7", "reason": "spam"},
+            MEMBER,
+        ),
+        Case(
+            domain,
+            "ban",
+            ("5", 7),
+            f"Ban{noun}Member",
+            {"groupId": "5", "userId": "7", "reason": None},
+            MEMBER,
+        ),
+        Case(
+            domain, "unban", ("5", 7), f"Unban{noun}Member", {"groupId": "5", "userId": "7"}, True
         ),
         Case(
             domain,
