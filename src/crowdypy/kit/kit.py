@@ -9,9 +9,21 @@ from crowdypy.kit.modules.arenas import ArenasKit
 from crowdypy.kit.modules.encounters import EncountersKit
 from crowdypy.kit.modules.instances import InstancesKit
 from crowdypy.kit.modules.leaderboards import LeaderboardsKit
+from crowdypy.kit.modules.market import MarketCore, MarketsKit, ShopsKit, TradesKit
 from crowdypy.kit.modules.matchmaking import MatchmakingKit
 from crowdypy.kit.modules.minigames import MinigamesKit
 from crowdypy.kit.modules.npcs import NpcsKit
+from crowdypy.kit.modules.player import (
+    AchievementsKit,
+    CraftingKit,
+    InventoryKit,
+    LootKit,
+    PlayerKit,
+    ProductionKit,
+    ProgressionKit,
+    QuestsKit,
+    WalletKit,
+)
 from crowdypy.kit.modules.presence import EmotesKit, SpectateKit
 from crowdypy.kit.modules.racing import RacingKit
 from crowdypy.kit.modules.sessions import SessionsKit
@@ -64,7 +76,9 @@ class GameKitClient:
     ``player_id`` are :class:`~crowdypy.kit.runtime.KitRuntime`'s; ``nodes`` renames the starter
     types a game deployed under other names (``world``, ``matchmaker``, ``session``, ``npcs``,
     ``leaderboard``, ``deck``, ``tactics``, ``director``, ``minigame``, ``instance``, ``arena``,
-    ``race``, ``ball``, ``territory``, ``zone``).
+    ``race``, ``ball``, ``territory``, ``zone``, ``player``, ``market``). The economy
+    (:attr:`player` and its views, :attr:`market`, :attr:`shops`, :attr:`trades`) lives in hub
+    state and is not a ledger.
     """
 
     def __init__(
@@ -122,6 +136,9 @@ class GameKitClient:
         self._arenas: ArenasKit | None = None
         self._racing: RacingKit | None = None
         self._territory: TerritoryKit | None = None
+        self._player: PlayerKit | None = None
+        self._views: dict[str, Any] = {}
+        self._markets: dict[str, MarketCore] = {}
         self._topology: KitTopology | None = None
         self._spectate: SpectateKit | None = None
         self._emotes: EmotesKit | None = None
@@ -232,6 +249,88 @@ class GameKitClient:
                 self.runtime, territory_type=self._node("territory"), zone_type=self._node("zone")
             )
         return self._territory
+
+    @property
+    def player(self) -> PlayerKit:
+        """The caller's own ``player`` hub: what they own and what they did."""
+        if self._player is None:
+            self._player = PlayerKit(self.runtime, node_type=self._node("player"))
+        return self._player
+
+    def _view(self, name: str, make: Callable[[], Any]) -> Any:
+        if name not in self._views:
+            self._views[name] = make()
+        return self._views[name]
+
+    @property
+    def inventory(self) -> InventoryKit:
+        """The player's items: stacks in slots, and mail for what did not fit."""
+        view: InventoryKit = self._view("inventory", lambda: InventoryKit(self.player))
+        return view
+
+    @property
+    def wallet(self) -> WalletKit:
+        """The player's soft currencies."""
+        view: WalletKit = self._view("wallet", lambda: WalletKit(self.player))
+        return view
+
+    @property
+    def progression(self) -> ProgressionKit:
+        """Experience, levels and public profiles."""
+        view: ProgressionKit = self._view("progression", lambda: ProgressionKit(self.player))
+        return view
+
+    @property
+    def achievements(self) -> AchievementsKit:
+        view: AchievementsKit = self._view("achievements", lambda: AchievementsKit(self.player))
+        return view
+
+    @property
+    def quests(self) -> QuestsKit:
+        """Quests, first-session tutorials among them."""
+        view: QuestsKit = self._view("quests", lambda: QuestsKit(self.player))
+        return view
+
+    @property
+    def crafting(self) -> CraftingKit:
+        view: CraftingKit = self._view("crafting", lambda: CraftingKit(self.player))
+        return view
+
+    @property
+    def loot(self) -> LootKit:
+        """Loot tables with pity."""
+        view: LootKit = self._view("loot", lambda: LootKit(self.player))
+        return view
+
+    @property
+    def production(self) -> ProductionKit:
+        """Idle production that catches up on the time away."""
+        view: ProductionKit = self._view("production", lambda: ProductionKit(self.player))
+        return view
+
+    def _market(self, key: str) -> MarketCore:
+        core = self._markets.get(key)
+        if core is None:
+            core = self._markets[key] = MarketCore(self.runtime, self._node("market"), key)
+        return core
+
+    @property
+    def market(self) -> MarketsKit:
+        """Markets' order books."""
+        view: MarketsKit = self._view("market", lambda: MarketsKit(self._market))
+        return view
+
+    @property
+    def shops(self) -> ShopsKit:
+        """Markets' vendors."""
+        view: ShopsKit = self._view("shops", lambda: ShopsKit(self._market))
+        return view
+
+    @property
+    def trades(self) -> TradesKit:
+        """Trades between two players at a market."""
+        view: TradesKit = self._view("trades", lambda: TradesKit(self._market))
+        return view
 
     @property
     def topology(self) -> KitTopology:

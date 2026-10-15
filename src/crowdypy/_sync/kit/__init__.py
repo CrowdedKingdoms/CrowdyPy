@@ -10,9 +10,29 @@ from crowdypy._sync.kit.modules.arenas import ArenaMatch, ArenasKit
 from crowdypy._sync.kit.modules.encounters import Encounter, EncountersKit
 from crowdypy._sync.kit.modules.instances import InstanceRun, InstancesKit
 from crowdypy._sync.kit.modules.leaderboards import LeaderboardHandle, LeaderboardsKit
+from crowdypy._sync.kit.modules.market import (
+    MarketCore,
+    MarketHandle,
+    MarketsKit,
+    ShopHandle,
+    ShopsKit,
+    TradeDesk,
+    TradesKit,
+)
 from crowdypy._sync.kit.modules.matchmaking import MatchmakingKit, MatchQueue
 from crowdypy._sync.kit.modules.minigames import Duel, MinigamesKit
 from crowdypy._sync.kit.modules.npcs import NpcArea, NpcsKit
+from crowdypy._sync.kit.modules.player import (
+    AchievementsKit,
+    CraftingKit,
+    InventoryKit,
+    LootKit,
+    PlayerKit,
+    ProductionKit,
+    ProgressionKit,
+    QuestsKit,
+    WalletKit,
+)
 from crowdypy._sync.kit.modules.presence import EmotesKit, SpectateKit, SpectatorHeartbeat
 from crowdypy._sync.kit.modules.racing import BallMatch, Race, RacingKit
 from crowdypy._sync.kit.modules.sessions import GameSessionHandle, SessionsKit, session_turn
@@ -141,6 +161,7 @@ __all__ = [
     "KIT_SUBSCRIPTIONS_MAX",
     "POSE_BYTES",
     "AbilityEvent",
+    "AchievementsKit",
     "ArenaMatch",
     "ArenasKit",
     "BallMatch",
@@ -148,6 +169,7 @@ __all__ = [
     "CollectionMirror",
     "ContactDamageEvent",
     "ControlPointEvent",
+    "CraftingKit",
     "Duel",
     "EmoteEvent",
     "EmotesKit",
@@ -160,6 +182,7 @@ __all__ = [
     "HubState",
     "InstanceRun",
     "InstancesKit",
+    "InventoryKit",
     "KitActorState",
     "KitChatMessage",
     "KitContainer",
@@ -173,6 +196,10 @@ __all__ = [
     "KitTopologyPlan",
     "LeaderboardHandle",
     "LeaderboardsKit",
+    "LootKit",
+    "MarketCore",
+    "MarketHandle",
+    "MarketsKit",
     "MatchQueue",
     "MatchmakingKit",
     "MinigamesKit",
@@ -180,15 +207,21 @@ __all__ = [
     "NpcArea",
     "NpcsKit",
     "OptimisticActionOutcome",
+    "PlayerKit",
     "PossessionEvent",
     "PrivateState",
+    "ProductionKit",
+    "ProgressionKit",
     "ProposalEvent",
+    "QuestsKit",
     "Race",
     "RaceTimingEvent",
     "RacingKit",
     "ScoreEvent",
     "SessionsKit",
     "ShardKit",
+    "ShopHandle",
+    "ShopsKit",
     "SocialKit",
     "SpectateKit",
     "SpectatorHeartbeat",
@@ -198,7 +231,10 @@ __all__ = [
     "TerritoryKit",
     "TerritoryMap",
     "TopicMirror",
+    "TradeDesk",
+    "TradesKit",
     "TurnEvent",
+    "WalletKit",
     "WeatherEvent",
     "WorldKit",
     "WritableKitStore",

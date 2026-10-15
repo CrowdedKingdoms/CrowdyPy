@@ -3,6 +3,25 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.14.0
+
+CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive: the economy, which lives in hub state and is
+not a ledger (HS-52); the `player` and `market` starters need ckx-sdk 0.12.0.
+
+- **`kit.player`** (`PlayerKit`), the caller's own hub, keyed by `player_id` (pass it to
+  `client.kit()` or let the kit ask who the player is): `watch(*parts)`, `me`, `rules`,
+  `profile_of`, `on_event`, and the stores `profile`, `inventory`, `wallet`, `progress`, filled
+  as they are read. Its views: `kit.inventory` (`items`, `count`, `discard`, `take_mail`),
+  `kit.wallet` (`balances`, `balance`), `kit.progression` (`on_level`, `profile_of`),
+  `kit.achievements` (`list`, `on_unlock`), `kit.quests` (`list`, `accept`, `claim`, `step`),
+  `kit.crafting` (`recipes`, `craft(recipe, times)`), `kit.loot` (`tables`, `open`),
+  `kit.production` (`view`, `collect`).
+- **Markets**: `kit.shops.at(key)` (`vendors`, `buy`, `sell`), `kit.market.at(key)` (`book`,
+  `order(item=, side=, price=, count=)`, `cancel`, `orders` mirrored) and `kit.trades.at(key)`
+  (`open`, `offer`, `accept`, `decline`, `mine` mirrored).
+- **`KIT_CODES["UNAVAILABLE"]`**: a hub refuses a change it could not finish because another hub
+  did not answer and keeps no receipt; the kit sends a call with an action id again.
+
 ## 0.13.0
 
 CrowdyJS 18.12.0 and CrowdyCPP 0.65.0. Additive: a kit module per ck-exec genre starter
