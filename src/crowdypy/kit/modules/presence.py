@@ -1,0 +1,132 @@
+"""Spectating and emotes: the kit's client-side conventions over ``client.udp``. CrowdyJS
+``src/kit/modules/presence.ts``."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+from crowdypy.kit.wire import EVENT_EMOTE, EmoteEvent, parse_emote_event
+
+if TYPE_CHECKING:
+    from crowdypy.domains.udp import UdpAPI
+
+__all__ = ["EmotesKit", "SpectateKit", "SpectatorHeartbeat"]
+
+
+class SpectateKit:
+    """Spectating: the realtime tier delivers what happens near an actor only while that actor is
+    live, so a viewer with no avatar of its own (a spectator, a kill-cam, a second screen) sends
+    a small actor update every couple of seconds from a chunk inside the app's world grid.
+    Outside the grid the update is refused and delivery stops."""
+
+    def __init__(self, app_id: str, udp: UdpAPI | None) -> None:
+        self._app_id = app_id
+        self._udp = udp
+
+    def observe(
+        self,
+        uuid: str,
+        chunk: Sequence[int],
+        *,
+        interval_ms: float = 2000,
+        state: bytes = b"",
+        distance: int = 8,
+    ) -> SpectatorHeartbeat:
+        """A heartbeat for actor ``uuid`` (32 characters) watching from ``chunk`` (x, y, z): run
+        it (``await heartbeat.run()``, a task beside the game, or a thread in the blocking
+        client) until :meth:`SpectatorHeartbeat.stop`."""
+        if self._udp is None:
+            raise RuntimeError("the kit has no udp client to spectate with")
+        return SpectatorHeartbeat(
+            self._udp, uuid, chunk, interval_ms=interval_ms, state=state, distance=distance
+        )
+
+
+class SpectatorHeartbeat:
+    """A spectator's actor updates, every ``interval_ms`` while it runs."""
+
+    def __init__(
+        self,
+        udp: UdpAPI,
+        uuid: str,
+        chunk: Sequence[int],
+        *,
+        interval_ms: float = 2000,
+        state: bytes = b"",
+        distance: int = 8,
+    ) -> None:
+        self._udp = udp
+        self._uuid = uuid
+        self._chunk = tuple(int(c) for c in chunk)
+        self._interval = max(250.0, interval_ms) / 1000
+        self._state = state
+        self._distance = distance
+        self._running = False
+        self._error: BaseException | None = None
+
+    async def beat(self) -> None:
+        """Sends one update now."""
+        try:
+            await self._udp.send_actor_update(
+                self._chunk, self._uuid, self._state, distance=self._distance
+            )
+            self._error = None
+        except Exception as exc:
+            self._error = exc
+
+    async def run(self) -> None:
+        """Beats every interval until :meth:`stop`."""
+        self._running = True
+        while self._running:
+            await self.beat()
+            await asyncio.sleep(self._interval)
+
+    async def move_to(self, chunk: Sequence[int]) -> None:
+        """Watches from another chunk from now on (sent at once)."""
+        self._chunk = tuple(int(c) for c in chunk)
+        await self.beat()
+
+    @property
+    def error(self) -> BaseException | None:
+        """The last send's error, or ``None`` when it went out."""
+        return self._error
+
+    def stop(self) -> None:
+        self._running = False
+
+
+class EmotesKit:
+    """Emotes: a client event (type :data:`~crowdypy.kit.wire.EVENT_EMOTE`) with a JSON body
+    ``{"emote", "targetUuid"}``, replicated to the players near the sender. A kit convention, so
+    players on CrowdyJS, CrowdyCPP and CrowdyPy see each other's; no hub is involved."""
+
+    def __init__(self, app_id: str, udp: UdpAPI | None) -> None:
+        self._app_id = app_id
+        self._udp = udp
+
+    async def send(
+        self,
+        uuid: str,
+        chunk: Sequence[int],
+        emote: str,
+        *,
+        target_uuid: str | None = None,
+        distance: int = 2,
+    ) -> bool:
+        """Sends an emote as actor ``uuid`` from ``chunk``; ``True`` when it went out."""
+        if self._udp is None:
+            raise RuntimeError("the kit has no udp client to send emotes with")
+        body = json.dumps({"emote": emote, "targetUuid": target_uuid}, separators=(",", ":"))
+        await self._udp.send_client_event(
+            chunk, uuid, EVENT_EMOTE, body.encode("utf-8"), distance=distance
+        )
+        return True
+
+    def parse(self, event_type: int, state: bytes) -> EmoteEvent | None:
+        """An emote from a client event's type and state, or ``None`` when it is another event."""
+        if event_type != EVENT_EMOTE:
+            return None
+        return parse_emote_event(EVENT_EMOTE.to_bytes(2, "little") + state)

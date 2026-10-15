@@ -54,6 +54,7 @@ NAMES = {
     "AsyncReplicationConnection": "ReplicationConnection",
     "AsyncExecConnection": "ExecConnection",
     "run_soon": "run_now",
+    "run_detached": "run_in_thread",
     "AsyncClient": "Client",
     "aclose": "close",
     "__aenter__": "__enter__",

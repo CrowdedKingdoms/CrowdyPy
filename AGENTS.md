@@ -134,6 +134,22 @@ re-run takes the next N (`scripts/ci/resolve_pypi_version.py` reads what PyPI al
 Merging a PR from the command line: `gh pr merge` fails its preflight on this org, so use
 `gh api -X PUT repos/CrowdedKingdoms/CrowdyPy/pulls/<n>/merge -f merge_method=merge`.
 
+## The Game Kit
+
+`src/crowdypy/kit/` is the client half of `ckx_sdk::kit`, ported from CrowdyJS `src/kit/` (the
+parity gate reads `src/kit/modules/` too since 0.12.0): one `KitRuntime` per kit, mirrors
+(`mirror.py`), the typed modules (`modules/`), `topology.py` and `realtime.py`. It is async source
+like the rest of the client, so `scripts/unasync.py` generates the blocking kit, and it may use no
+asyncio beyond `asyncio.sleep`. **A push or reconnect handler never waits on a call.** The
+blocking `ExecConnection` runs them on its reader thread, so a call made there would wait on a
+reply only that thread can read: a mirror starts its resync with `run_detached`, which unasync
+maps to `run_in_thread` (`run_soon` would become `run_now`, inline). Periodic work (a queue's
+`watch`, a spectator's `run`) is a loop the game starts beside itself. The protocol is held to
+ck-exec's golden record, `tests/fixtures/kit-protocol.json`, copied from CrowdyJS at the pin
+(`test_fixture_provenance.py` and the vendored CrowdyCPP copy hold it):
+`tests/unit/test_kit_protocol.py` replays each starter's script through a gateway that answers
+only the next recorded step, with both clients.
+
 ## Performance rules for the native binding
 
 The replication system saturates the local network stack, so the binding

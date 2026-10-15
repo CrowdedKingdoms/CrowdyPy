@@ -1,0 +1,218 @@
+"""The game kit protocol: what kit hubs (ck-exec's starter packs, built on ``ckx_sdk::kit``)
+send the kit's clients, read without I/O. CrowdyJS ``src/kit/protocol.ts``.
+
+A kit hub's topics carry **kit messages**: msgpack maps with the hub's data and four reserved
+fields beside it: ``v`` (:data:`KIT_PROTOCOL`), ``epoch`` (the publishing instance's epoch,
+which changes whenever it is placed again), ``seq`` (one more than the topic's last message)
+and ``kind``:
+
+- ``snapshot``: the topic's whole public state; it replaces what the client holds.
+- ``delta``: one change to a collection (``id``, then ``type_name`` and ``props``, or
+  ``removed``), applied in ``seq`` order. A gap in ``seq``, or another ``epoch``, means a resync.
+- ``changed``: something private changed for the players in ``who`` (``what`` names it); they
+  read it back with a call the hub answers for its caller alone. Topics have no access control,
+  so kit hubs never publish anything private.
+- ``event``: something that happened, with nothing to keep.
+
+Every kit hub answers ``snapshot {topic}`` with a ``snapshot`` message whose ``seq`` is the
+topic's last. A call that changes something may carry an ``action_id``; the hub answers a call
+sent again with the first answer. A refusal's message is ``kit:<code>: <text>``.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from crowdypy.domains.exec import CrowdyExecError
+
+__all__ = [
+    "KIT_ACTION_ID_MAX",
+    "KIT_CODES",
+    "KIT_PROTOCOL",
+    "KIT_SNAPSHOT_METHOD",
+    "KitError",
+    "KitHeader",
+    "is_kit_message",
+    "kit_error_code",
+    "new_action_id",
+    "parse_kit_refusal",
+    "parse_shard_key",
+    "shard_centre",
+    "shard_key",
+    "shard_keys_around",
+    "split_kit_message",
+    "with_action_id",
+]
+
+#: The protocol version kit messages carry in ``v``.
+KIT_PROTOCOL = 1
+#: The method every kit hub answers with a topic's snapshot.
+KIT_SNAPSHOT_METHOD = "snapshot"
+#: The longest ``action_id`` a hub takes, in bytes.
+KIT_ACTION_ID_MAX = 64
+
+_KINDS = frozenset({"snapshot", "delta", "changed", "event"})
+_RESERVED = ("v", "epoch", "seq", "kind")
+
+
+@dataclass(frozen=True, slots=True)
+class KitHeader:
+    """The reserved fields of a kit message."""
+
+    v: int
+    epoch: int
+    seq: int
+    kind: str
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def is_kit_message(value: Any) -> bool:
+    """Whether ``value`` is a kit message: a map with the four reserved fields."""
+    return (
+        isinstance(value, dict)
+        and _number(value.get("v"))
+        and _number(value.get("epoch"))
+        and _number(value.get("seq"))
+        and value.get("kind") in _KINDS
+    )
+
+
+def split_kit_message(value: Any) -> tuple[KitHeader, dict[str, Any]] | None:
+    """A kit message split into its header and its body (every other field), or ``None`` when
+    ``value`` is not one."""
+    if not is_kit_message(value):
+        return None
+    body = {k: v for k, v in value.items() if k not in _RESERVED}
+    header = KitHeader(int(value["v"]), int(value["epoch"]), int(value["seq"]), value["kind"])
+    return header, body
+
+
+# ---- refusals ----
+
+_CODED = re.compile(r"^kit:([a-z0-9_]{1,64}): (.*)$", re.DOTALL)
+
+
+def parse_kit_refusal(message: str) -> tuple[str, str] | None:
+    """The code and text of a kit refusal's message, or ``None`` for any other message."""
+    m = _CODED.match(message)
+    return (m.group(1), m.group(2)) if m else None
+
+
+#: The refusal codes kit hubs share; a hub may add its own (lowercase, digits, ``_``).
+KIT_CODES = {
+    "BAD_REQUEST": "bad_request",
+    "NOT_FOUND": "not_found",
+    "FORBIDDEN": "forbidden",
+    "CONFLICT": "conflict",
+    "FULL": "full",
+    "LIMIT": "limit",
+    "COOLDOWN": "cooldown",
+    "NOT_YOUR_TURN": "not_your_turn",
+    "NOT_MEMBER": "not_member",
+    "STARTED": "started",
+    "FINISHED": "finished",
+    "NOT_READY": "not_ready",
+    "RESERVED": "reserved",
+    "EMPTY": "empty",
+    "OUT_OF_REACH": "out_of_reach",
+    "EXPIRED": "expired",
+    "INSUFFICIENT": "insufficient",
+    "ALREADY_DONE": "already_done",
+}
+
+
+class KitError(CrowdyExecError):
+    """A kit hub refused the call (``AppError`` with a ``kit:<code>:`` message): ``code`` is what
+    to branch on, ``text`` what to show. A :class:`CrowdyExecError` with status ``AppError``, so
+    code that handles exec errors handles it."""
+
+    def __init__(self, code: str, text: str, cause: BaseException | object | None = None) -> None:
+        super().__init__("AppError", f"kit:{code}: {text}", cause)
+        self.code = code
+        self.text = text
+
+    @classmethod
+    def from_error(cls, error: BaseException) -> BaseException:
+        """``error`` as a :class:`KitError` when it is a coded refusal; otherwise ``error``."""
+        if isinstance(error, KitError):
+            return error
+        if isinstance(error, CrowdyExecError) and error.status == "AppError":
+            # A CrowdyExecError's message leads with its status.
+            raw = str(error.args[0]) if error.args else ""
+            raw = raw.removeprefix(f"{error.status}: ")
+            coded = parse_kit_refusal(raw)
+            if coded:
+                return cls(coded[0], coded[1], error)
+        return error
+
+
+def kit_error_code(error: BaseException) -> str | None:
+    """The refusal code of ``error``, when it is a kit refusal."""
+    e = KitError.from_error(error)
+    return e.code if isinstance(e, KitError) else None
+
+
+# ---- action ids ----
+
+
+def new_action_id() -> str:
+    """A fresh ``action_id``: unique per attempt, the same for every resend of that attempt."""
+    return uuid.uuid4().hex
+
+
+def with_action_id(args: Any, action_id: str) -> Any:
+    """``args`` with ``action_id`` beside them: a dict gains the field, ``None`` becomes
+    ``{"action_id": ...}``. Anything else cannot carry one and is returned as it is."""
+    if args is None:
+        return {"action_id": action_id}
+    if isinstance(args, dict):
+        return {**args, "action_id": action_id}
+    return args
+
+
+# ---- shard keys ----
+
+
+def shard_centre(x: int, z: int, size: int) -> tuple[int, int]:
+    """The centre chunk of the shard holding chunk ``(x, z)``: shards are ``size`` by ``size``
+    chunks, keyed by their centre. The same function as ``ckx_sdk::kit::shard``, so a client
+    finds the hub for where it stands without asking."""
+    s = max(1, int(size))
+    half = s // 2
+    return (int(x) // s) * s + half, (int(z) // s) * s + half
+
+
+def shard_key(x: int, z: int, size: int) -> str:
+    """The key of the shard holding chunk ``(x, z)``: ``"<x>,<z>"`` of its centre."""
+    cx, cz = shard_centre(x, z, size)
+    return f"{cx},{cz}"
+
+
+_SHARD = re.compile(r"^\s*(-?\d+)\s*,\s*(-?\d+)\s*$")
+
+
+def parse_shard_key(key: str) -> tuple[int, int] | None:
+    """The centre chunk a shard key names, or ``None`` when it is not ``"<x>,<z>"``."""
+    m = _SHARD.match(key)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def shard_keys_around(x: int, z: int, size: int, radius: int) -> list[str]:
+    """The keys of the shards within ``radius`` shards of the one holding ``(x, z)``, its own
+    first."""
+    s = max(1, int(size))
+    cx, cz = shard_centre(x, z, s)
+    keys = [f"{cx},{cz}"]
+    keys.extend(
+        f"{cx + dx * s},{cz + dz * s}"
+        for dz in range(-radius, radius + 1)
+        for dx in range(-radius, radius + 1)
+        if dx or dz
+    )
+    return keys

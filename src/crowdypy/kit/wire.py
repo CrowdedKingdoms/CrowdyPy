@@ -1,5 +1,10 @@
-"""The engine wire formats the Game Kit shares with CrowdyJS: a 48-byte actor pose and the
-JSON engine events (``[u16 eventType LE][UTF-8 JSON]``)."""
+"""The kit's realtime wire, shared with CrowdyJS and CrowdyCPP: the server-event registry kit
+hubs emit through the realtime tier (``ckx_sdk::kit::wire`` is its source: ids 77 and 90-101,
+``[u16 eventType LE][UTF-8 JSON]`` with camelCase keys, an app's own from
+:data:`EVENT_APP_FIRST`), and the 48-byte engine pose with its flag bits, for hubs that show
+actors with it rather than with :class:`~crowdypy.kit.realtime.KitActorState`. The registry's
+bodies are held to ck-exec's ``kit-protocol.json`` by ``tests/unit/test_kit_protocol.py``: a
+change lands in ``ckx_sdk::kit::wire`` first."""
 
 from __future__ import annotations
 
@@ -11,9 +16,13 @@ from typing import Any
 
 __all__ = [
     "EVENT_ABILITY",
+    "EVENT_APP_FIRST",
     "EVENT_CONTACT_DAMAGE",
     "EVENT_CONTROL_POINT",
+    "EVENT_EMOTE",
+    "EVENT_ENCOUNTER",
     "EVENT_MOVEMENT_VIOLATION",
+    "EVENT_POSSESSION",
     "EVENT_PROPOSAL",
     "EVENT_RACE_TIMING",
     "EVENT_SCORE",
@@ -28,8 +37,11 @@ __all__ = [
     "AbilityEvent",
     "ContactDamageEvent",
     "ControlPointEvent",
+    "EmoteEvent",
+    "EncounterEvent",
     "EnginePose",
     "MovementViolationEvent",
+    "PossessionEvent",
     "ProposalEvent",
     "RaceTimingEvent",
     "ScoreEvent",
@@ -43,8 +55,11 @@ __all__ = [
     "parse_ability_event",
     "parse_contact_damage",
     "parse_control_point_event",
+    "parse_emote_event",
+    "parse_encounter_event",
     "parse_engine_event",
     "parse_movement_violation",
+    "parse_possession_event",
     "parse_proposal_event",
     "parse_race_timing_event",
     "parse_score_event",
@@ -140,6 +155,14 @@ EVENT_MOVEMENT_VIOLATION = 95
 EVENT_CONTROL_POINT = 96
 EVENT_RACE_TIMING = 97
 EVENT_ZONE_CHANGE = 98
+#: A wave began or ended, or a boss changed phase.
+EVENT_ENCOUNTER = 99
+#: The contested object (a ball) changed hands, or a goal was scored.
+EVENT_POSSESSION = 100
+#: An emote: a client event players send each other, the kit's convention (``kit.emotes``).
+EVENT_EMOTE = 101
+#: The first event type an app's own events may use.
+EVENT_APP_FIRST = 1000
 
 
 def parse_engine_event(data: bytes) -> tuple[int, dict[str, Any]] | None:
@@ -376,3 +399,64 @@ def parse_zone_change_event(data: bytes) -> ZoneChangeEvent | None:
         _number(body, "centerZ"),
         body,
     )
+
+
+@dataclass
+class EncounterEvent:
+    #: ``wave_started``, ``wave_cleared``, ``boss_phase`` or ``finished``.
+    kind: str
+    encounter_id: str
+    wave: float
+    phase: float
+    body: dict[str, Any] = field(default_factory=dict)
+
+
+def parse_encounter_event(data: bytes) -> EncounterEvent | None:
+    body = _body(data, EVENT_ENCOUNTER)
+    if body is None:
+        return None
+    return EncounterEvent(
+        _text(body, "kind"),
+        _text(body, "encounterId"),
+        _number(body, "wave"),
+        _number(body, "phase"),
+        body,
+    )
+
+
+@dataclass
+class PossessionEvent:
+    #: ``claimed``, ``passed``, ``loose`` or ``goal``.
+    kind: str
+    holder_id: str | None
+    team: str | None
+    body: dict[str, Any] = field(default_factory=dict)
+
+
+def parse_possession_event(data: bytes) -> PossessionEvent | None:
+    body = _body(data, EVENT_POSSESSION)
+    if body is None:
+        return None
+    holder, team = body.get("holderId"), body.get("team")
+    return PossessionEvent(
+        _text(body, "kind"),
+        str(holder) if holder is not None else None,
+        str(team) if team is not None else None,
+        body,
+    )
+
+
+@dataclass
+class EmoteEvent:
+    emote: str
+    #: The actor the emote is aimed at, if any.
+    target_uuid: str | None
+    body: dict[str, Any] = field(default_factory=dict)
+
+
+def parse_emote_event(data: bytes) -> EmoteEvent | None:
+    body = _body(data, EVENT_EMOTE)
+    if body is None:
+        return None
+    target = body.get("targetUuid")
+    return EmoteEvent(_text(body, "emote"), str(target) if target is not None else None, body)
