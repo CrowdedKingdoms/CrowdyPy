@@ -120,18 +120,18 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 
 [tool.crowdypy.crowdyjs]
 version = "18.10.0"
-commit = "b3e2de96ae738d272488ca06ab6de2c792aef14f"
+commit = "4e362e01cbe41ca4c6ed1abc112052551be57bc8"
 
 [tool.crowdypy.crowdycpp]
 version = "0.63.0"
-tag = "dev/v0.63.0"
-commit = "8682d39ab9cd368996eb35b76e6dfb10b43b7d62"
-tree-sha256 = "318b0db6138c877a666261fe71d1fc8bb2a644f333f3c927487f435371856c87"
+tag = "test/v0.63.0"
+commit = "fcac09fd7d6c4f290cafdace808bbbf332cd746d"
+tree-sha256 = "65fed41d0bc9aa792d64af49ca832447295f52ee0be44f024e3c472d89c2c861"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
 [tool.crowdypy.graphql]
-schema-sha256 = "3cdc1b7196de4a006ab595401e7ff09b6549a79e346d43356e2162653e59c43e"
+schema-sha256 = "9ee0200dc66c999b482c42b86a9ede0e951f7ea0ba0264eaa2039b5b72dffb84"
 operations-sha256 = "37b1e06dc4e997bb42506968c50698a184934581a6d94d9471a29d2ce74ff3d3"
 
 # The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it
