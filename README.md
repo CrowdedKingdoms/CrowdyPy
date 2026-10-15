@@ -11,6 +11,13 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.11.0: access that ends ends for good, and channel and team bans (CrowdyJS 18.10.0, CrowdyCPP
+0.63.0).** A host's `4403` close (ck-exec 0.16: the player was suspended, revoked, signed out or
+blocked) is final: `ExecConnection.on_access_ended` hears the reason, the call in flight fails
+`Denied`, and the connection does not redial. `client.channels.ban` / `unban` and
+`client.teams.ban` / `unban` manage bans, and `account_blocked_of` / `group_member_banned_of` read
+the two refusals. See [MIGRATION.md](MIGRATION.md).
+
 **v0.10.0: the input log says what it lost (CrowdyJS 18.9.0, CrowdyCPP 0.62.0).** Every session
 from `client.input_log.sessions` carries `missingRecords`, the inputs the replication server
 accepted that never reached the log, which needs the Game API release after v2.40.2. Its

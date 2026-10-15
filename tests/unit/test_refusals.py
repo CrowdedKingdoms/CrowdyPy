@@ -15,12 +15,15 @@ from crowdypy.domains.portal import AppRuntimeGate, AppTokenResponse, PortalAPI
 from crowdypy.domains.users import PLAYER_PROFILES_MAX, UsersAPI
 from crowdypy.errors import (
     CrowdyAccessRefusal,
+    CrowdyAccountBlocked,
     CrowdyActorExists,
     CrowdyAppPaused,
     CrowdyGraphQLError,
     access_refusal_of,
+    account_blocked_of,
     actor_exists_of,
     app_paused_of,
+    group_member_banned_of,
     is_app_paused,
 )
 from crowdypy.graphql import AsyncGraphQLClient
@@ -153,3 +156,34 @@ async def test_player_profiles_refuses_more_than_100_ids_and_sends_nothing_for_n
     with pytest.raises(TypeError):
         await users.player_profiles("123")
     assert api.sent == []
+
+
+def test_account_blocked_and_group_member_banned_are_read_from_an_error_or_an_entry() -> None:
+    timed = CrowdyGraphQLError(
+        [
+            {
+                "message": "This account is blocked until …",
+                "extensions": {
+                    "code": "ACCOUNT_BLOCKED",
+                    "blockedUntil": "2026-10-15T12:00:00.000Z",
+                },
+            }
+        ]
+    )
+    assert account_blocked_of(timed) == CrowdyAccountBlocked("2026-10-15T12:00:00.000Z")
+    assert account_blocked_of(
+        {"message": "m", "extensions": {"code": "ACCOUNT_BLOCKED"}}
+    ) == CrowdyAccountBlocked(None)
+    assert account_blocked_of({"message": "m", "extensions": {"code": "FORBIDDEN"}}) is None
+    assert account_blocked_of(ValueError("x")) is None
+    banned = CrowdyGraphQLError(
+        [
+            {"message": "a", "extensions": {"code": "BAD_USER_INPUT"}},
+            {"message": "b", "extensions": {"code": "GROUP_MEMBER_BANNED"}},
+        ]
+    )
+    assert group_member_banned_of(banned) is True
+    assert group_member_banned_of({"message": "m", "extensions": {"code": "FORBIDDEN"}}) is False
+    assert crowdypy.ACCOUNT_BLOCKED_CODE == "ACCOUNT_BLOCKED"
+    assert crowdypy.GROUP_MEMBER_BANNED_CODE == "GROUP_MEMBER_BANNED"
+    assert crowdypy.EXEC_CLOSE_ACCESS_ENDED == 4403
