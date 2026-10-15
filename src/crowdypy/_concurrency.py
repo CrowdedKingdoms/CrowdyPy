@@ -14,7 +14,14 @@ import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-__all__ = ["AsyncSingleFlight", "SingleFlight", "run_now", "run_soon"]
+__all__ = [
+    "AsyncSingleFlight",
+    "SingleFlight",
+    "run_detached",
+    "run_in_thread",
+    "run_now",
+    "run_soon",
+]
 
 
 class AsyncSingleFlight[T]:
@@ -127,3 +134,20 @@ def run_now(job: Callable[[], Any]) -> None:
         job()
     except Exception:
         _logger.exception("background job failed")
+
+
+def run_detached(job: Callable[[], Awaitable[Any]]) -> None:
+    """Start ``job`` without waiting for it, from a callback that must not wait: a push or a
+    reconnect handler. A failure is logged.
+
+    In the async client this is :func:`run_soon`. scripts/unasync.py maps it to
+    :func:`run_in_thread`, because the blocking client runs those handlers on a connection's
+    reader thread, and a call made there would wait on a reply only that thread can read.
+    """
+    run_soon(job)
+
+
+def run_in_thread(job: Callable[[], Any]) -> None:
+    """Run ``job`` on a daemon thread; a failure is logged (the blocking twin of
+    :func:`run_detached`)."""
+    threading.Thread(target=run_now, args=(job,), name="crowdypy-kit", daemon=True).start()

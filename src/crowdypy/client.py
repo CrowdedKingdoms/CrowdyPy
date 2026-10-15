@@ -224,13 +224,24 @@ class AsyncCrowdyClient:
         return WorldClient(app_id, self.udp)
 
     def kit(self, app_id: str | int, **options: Any) -> GameKitClient:
-        """The app-scoped Game Kit: parties, guilds and chat rooms (``kit.social``)."""
+        """The app-scoped Game Kit: typed clients for the ck-exec starter hubs (``world``,
+        ``matchmaking``, ``sessions``, ``npcs``), ``topology``, ``spectate``, ``emotes``,
+        ``shards`` and ``social`` (parties, guilds and chat rooms). Options are
+        :class:`~crowdypy.kit.GameKitClient`'s."""
+
+        async def who_am_i() -> str | None:
+            me = await self.users.me()
+            user_id = (me or {}).get("userId")
+            return None if user_id is None else str(user_id)
+
         return GameKitClient(
             app_id,
             self.game_apps,
             teams=self.teams,
             channels=self.channels,
             udp=self.udp,
+            exec=self.exec,
+            who_am_i=who_am_i,
             **options,
         )
 

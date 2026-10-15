@@ -3,6 +3,48 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.12.0
+
+CrowdyJS 18.11.0 and CrowdyCPP 0.64.0. Additive. The kit's typed clients drive the ck-exec
+starter hubs, whose server half is `ckx_sdk::kit` (ckx-sdk 0.10.0): the tier's compute toolchain
+must carry it (dev's v1.12.0 does) and the app must run the starters (`kit.topology.deploy`).
+
+- **The modules.** `kit.world` (`conditions` and `nodes` mirrored; `state`, `harvest`, and
+  `schedule` / `cancel` for developers), `kit.matchmaking.queue(name)` (`join(rating, party=...,
+  leader=...)`, `leave`, `accept`, `decline`, `status`, `configure`, `place`, `watch` / `unwatch`,
+  `on_matched`), `kit.sessions.open(key)` (`watch`, `join`, `ready`, `start_game`, `act`,
+  `configure`, `current_turn`, `is_my_turn`, `state` mirrored), `kit.npcs.area(key)` /
+  `area_at(x, z)` (`mobs`, `npcs`, `pets`, `attack`, `talk`, `adopt`, `rename`, `summon`,
+  `dismiss`, `release`, `my_pets`), `kit.topology` (`pack`, `types`, `plan(select,
+  overrides=...)`, `deploy`; `kit_manifest_problems`), `kit.spectate.observe(uuid, chunk)` (a
+  heartbeat to `run()` beside the game), `kit.emotes` (`send`, `parse`: client event 101 with
+  `{"emote", "targetUuid"}`) and `kit.shards`. Replies are the hub's msgpack as Python values:
+  snake_case keys as the hub sends them, and a hub's integer-keyed maps (a session's `scores`) keep
+  integer keys.
+- **Refusals.** A hub's `kit:<code>:` refusal raises `KitError` (a `CrowdyExecError` with status
+  `AppError`): branch on `code`, show `text`. `KitError.from_error` and `kit_error_code` read one
+  out of any exec error.
+- **The runtime.** `kit.runtime` (`KitRuntime`) is one exec connection for every module, opened
+  on first use: as the player with an app token, or as a developer with `developer=True`. It paces
+  what it sends to `call_budget` (100) a `budget_window_ms` (10 s), holds as long as a `Busy` "rate
+  limited" refusal says, sends a call again when it did not run (`Busy`, `RateLimited`) or when it
+  carries an action id and its outcome is unknown (`DeadlineExceeded`, `Unavailable`, `Moved`), at
+  most `retries` (2) times, and refuses a 257th subscription with code `limit`. `call(...,
+  action=True)` sends a fresh `action_id` the hub answers once.
+- **Mirrors.** `HubState`, `CollectionMirror` (`list`, `member`), `PrivateState` (read with a
+  caller-scoped call, again on a `changed` that names the player) and `WritableKitStore`. A mirror
+  takes a new snapshot on another epoch, a gap in a collection's `seq`, and a reconnect. In the
+  blocking client the resync a push or a reconnect starts runs on a thread of its own
+  (`run_detached`), because those handlers run on the connection's reader thread.
+- **Realtime.** `decode_kit_actor_state` and `kit_actor_lanes` for the actors hubs show,
+  `KIT_EVENT_TYPES`, `parse_kit_server_event`; `crowdypy.kit.wire` adds events 99 (encounter), 100
+  (possession) and 101 (emote) with their parsers and `EVENT_APP_FIRST` (1000).
+- **Exec reconnects** wait half their backoff plus up to as much again at random, in both
+  connections, so the players of a host that went away do not all dial at once.
+- `tests/fixtures/kit-protocol.json` is ck-exec's golden record of the starters (by way of
+  CrowdyJS); `tests/unit/test_kit_protocol.py` replays it through a gateway that answers only the
+  next recorded step, with both clients. The parity gate reads CrowdyJS `src/kit/modules/` too.
+
 ## 0.11.0
 
 CrowdyJS 18.10.0 and CrowdyCPP 0.63.0. Additive.
