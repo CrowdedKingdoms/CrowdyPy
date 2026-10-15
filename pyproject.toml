@@ -120,13 +120,13 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 
 [tool.crowdypy.crowdyjs]
 version = "18.10.0"
-commit = "4e362e01cbe41ca4c6ed1abc112052551be57bc8"
+commit = "02921c258254ed938f8ced588c033ab13c1c6d3d"
 
 [tool.crowdypy.crowdycpp]
 version = "0.63.0"
-tag = "test/v0.63.0"
-commit = "fcac09fd7d6c4f290cafdace808bbbf332cd746d"
-tree-sha256 = "65fed41d0bc9aa792d64af49ca832447295f52ee0be44f024e3c472d89c2c861"
+tag = "prod/v0.63.0"
+commit = "cff66e5f63e6b9ac9cd75bc39dacd918aa179684"
+tree-sha256 = "6c9a96c86665942afd8cfde45b412b0a849bdcf2ba804da0b01ed1c4dde5916a"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
