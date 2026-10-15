@@ -11,6 +11,13 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.13.0: the genre starters (CrowdyJS 18.12.0, CrowdyCPP 0.65.0).** Nine more kit modules,
+one per ck-exec genre starter: `kit.leaderboards.board(name)`, `kit.tables.table(key)` (the
+caller's hand as private state), `kit.tactics.battle(key)`, `kit.encounters.encounter(key)`,
+`kit.minigames.duel(key)`, `kit.instances.run(key)`, `kit.arenas.arena(key)`,
+`kit.racing.race(key)` / `ball(key)` and `kit.territory.map(key)` / `zone(key)`, in both clients.
+They need a compute toolchain with ckx-sdk 0.11.0 on the tier.
+
 **v0.12.0: the Game Kit on ck-exec (CrowdyJS 18.11.0, CrowdyCPP 0.64.0).** `client.kit(app_id)`
 gains typed clients for the ck-exec starter hubs, the client half of the game kit whose server
 half is `ckx_sdk::kit`: `kit.world` (conditions and resource nodes mirrored, harvests, liveops for

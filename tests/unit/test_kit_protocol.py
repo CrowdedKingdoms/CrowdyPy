@@ -69,8 +69,14 @@ RECORD = json.loads(
 )
 
 
-def starter(crate: str) -> dict[str, Any]:
-    return next(s for s in RECORD["starters"] if s["crate"] == crate)
+def starter(name: str) -> dict[str, Any]:
+    """``crate``'s script, or ``crate:node_type``'s when the crate serves two types."""
+    crate, _, node_type = name.partition(":")
+    return next(
+        s
+        for s in RECORD["starters"]
+        if s["crate"] == crate and (not node_type or s["node_type"] == node_type)
+    )
 
 
 def body_of(value: dict[str, Any]) -> dict[str, Any]:
@@ -472,6 +478,297 @@ async def test_npcs(replay: Replay) -> None:
     replay.done()
     for k in (k1, k2):
         await k.runtime.close()
+
+
+# ---- the genre starters ----
+
+
+async def kits(replay: Replay, *callers: tuple[str, int]) -> list[GameKitClient]:
+    return [await kit_for(replay, kind, ident) for kind, ident in callers]
+
+
+async def close_all(*ks: GameKitClient) -> None:
+    for k in ks:
+        await k.runtime.close()
+
+
+def step_calling(script: dict[str, Any], method: str) -> dict[str, Any]:
+    return next(s for s in script["steps"] if s.get("call") == method)
+
+
+@pytest.mark.parametrize("replay", ["leaderboard"], indirect=True)
+async def test_leaderboards(replay: Replay) -> None:
+    p1, p2, dev = await kits(replay, ("player", 1), ("player", 2), ("developer", 9))
+    board = p1.leaderboards.board("weekly")
+    assert (await board.watch())["season"] == 1
+    assert await code(board.submit(1, 9)) == "forbidden"
+    for _ in range(4):  # the hubs that decided the scores submit them; the board publishes
+        await replay.server_step()
+    await until("the top", lambda: len(board.view.get()["top"]) == 2)
+    assert [r["player"] for r in await board.top(limit=10)] == [2, 1]
+    assert await board.me() == {"player": 1, "rank": 2, "score": 9}
+    assert len(await p2.leaderboards.board("weekly").around(radius=1)) == 2
+    assert (await board.season())["entries"] == 2
+    assert await code(board.roll()) == "forbidden"
+    assert await dev.leaderboards.board("weekly").roll() == 2
+    assert (await board.view.resync())["season"] == 2
+    replay.done()
+    await close_all(p1, p2, dev)
+
+
+@pytest.mark.parametrize("replay", ["deck"], indirect=True)
+async def test_tables(replay: Replay) -> None:
+    p1, p2 = await kits(replay, ("player", 1), ("player", 2))
+    t1, t2 = p1.tables.table("t1"), p2.tables.table("t1")
+    assert (await t1.table.start())["phase"] == "lobby"
+    assert await t1.join() is True
+    assert await t2.join() is True
+    assert await code(t2.start()) == "forbidden"
+    assert await t1.start() is True
+    view = await p1.runtime.call("deck", "t1", "state")
+    assert view["phase"] == "playing"
+    turn = view["turn"]
+    mover, waiter = (p1, p2) if turn == 1 else (p2, p1)
+    moving, waiting = (t1, t2) if turn == 1 else (t2, t1)
+    assert len((await mover.runtime.call("deck", "t1", "hand"))["cards"]) == 5
+    assert len((await waiter.runtime.call("deck", "t1", "hand"))["cards"]) == 5
+    assert await code(waiting.draw()) == "not_your_turn"
+    play = next(
+        s
+        for s in replay.script["steps"]
+        if s.get("call") == "play" or (s.get("call") == "draw" and s["ok"])
+    )
+    if play["call"] == "play":
+        args = without_action_id(play["args"])
+        assert await moving.play(args["card"], args.get("suit")) is True
+        assert await mover.runtime.call("deck", "t1", "play", args, action="resent") is True
+    else:
+        assert await moving.draw() is True
+        assert await moving.pass_() is True
+    assert "hand_counts" in await t1.table.resync()
+    replay.done()
+    await close_all(p1, p2)
+
+
+@pytest.mark.parametrize("replay", ["tactics"], indirect=True)
+async def test_tactics(replay: Replay) -> None:
+    p1, p2 = await kits(replay, ("player", 1), ("player", 2))
+    b1, b2 = p1.tactics.battle("b1"), p2.tactics.battle("b1")
+    assert (await b1.watch())["phase"] == "lobby"
+    assert await b1.join() is True
+    assert await b2.join() is True
+    assert await code(b2.start()) == "forbidden"
+    assert await b1.start() is True
+    await until("the players' phase", lambda: b1.battle.get()["phase"] == "players")
+    assert len((await p1.runtime.call("tactics", "b1", "state"))["units"]) > 0
+    [mine, *_] = await b1.my_units()
+    move = step_calling(replay.script, "move")["args"]
+    assert (move["x"], move["z"]) == (mine["x"] + 1, mine["z"])
+    assert await b1.move(move["x"], move["z"]) is True
+    again = {"x": move["x"], "z": move["z"]}
+    assert await p1.runtime.call("tactics", "b1", "move", again, action="resent") is True
+    target = step_calling(replay.script, "attack")["args"]["target"]
+    assert await code(b1.attack(target)) == "out_of_reach"
+    assert await b1.end_turn() is True
+    assert await b2.end_turn() is True
+    assert len((await b1.battle.resync())["log"]) > 0
+    replay.done()
+    await close_all(p1, p2)
+
+
+@pytest.mark.parametrize("replay", ["director"], indirect=True)
+async def test_encounters(replay: Replay) -> None:
+    p1, p2 = await kits(replay, ("player", 1), ("player", 2))
+    e = p1.encounters.encounter("gate")
+    events: list[str] = []
+    e.view.on_event(lambda body, _h: events.append(body["type"]))
+    assert (await e.watch())["phase"] == "lobby"
+    assert await e.join() is True
+    assert await code(p2.encounters.encounter("gate").start()) == "forbidden"
+    assert await e.start() is True
+    assert await e.build(5, 3) == 20
+    assert (
+        await p1.runtime.call("director", "gate", "build", {"x": 5, "z": 3}, action="resent") == 20
+    )
+    assert await code(e.build(99, 0)) == "bad_request"
+    await replay.server_step()  # the first wave
+    await until("the wave", lambda: "wave_started" in events)
+    enemy = (await p1.runtime.call("director", "gate", "state"))["enemies"][0]["id"]
+    assert await e.hit(enemy) == 15
+    assert await code(e.hit(enemy)) == "cooldown"
+    assert (await e.view.resync())["enemies"][0]["hp"] == 15
+    replay.done()
+    await close_all(p1, p2)
+
+
+@pytest.mark.parametrize("replay", ["minigame"], indirect=True)
+async def test_minigames(replay: Replay) -> None:
+    p1, p2, p3 = await kits(replay, ("player", 1), ("player", 2), ("player", 3))
+    d1, d2 = p1.minigames.duel("t1"), p2.minigames.duel("t1")
+    assert (await d1.watch())["phase"] == "waiting"
+    assert await d1.join() is False
+    assert await d2.join() is True  # the second seat starts the first round
+    assert await code(p3.minigames.duel("t1").join()) == "full"
+    assert await d1.throw("rock") is False
+    assert await code(d1.throw("paper")) == "conflict"
+    assert await code(d2.throw("lizard")) == "bad_request"
+    assert await d2.throw("scissors") is True
+    await until("the reveal", lambda: (d1.view.get()["last"] or {}).get("round") == 1)
+    assert d1.view.get()["last"]["hands"] == ["rock", "scissors"]
+    assert await d1.throw("paper") is False
+    assert (
+        await p1.runtime.call("minigame", "t1", "throw", {"hand": "paper"}, action="resent")
+        is False
+    )
+    assert await d2.throw("rock") is True
+    await until("the winner", lambda: d1.view.get()["winner"] == 1)
+    assert await d2.rematch() is True
+    assert (await d1.view.resync())["phase"] == "playing"
+    replay.done()
+    await close_all(p1, p2, p3)
+
+
+@pytest.mark.parametrize("replay", ["instance"], indirect=True)
+async def test_instances(replay: Replay) -> None:
+    p1, p2, p3 = await kits(replay, ("player", 1), ("player", 2), ("player", 3))
+    r1, r2 = p1.instances.run("run-a"), p2.instances.run("run-a")
+    assert (await r1.watch())["phase"] == "unopened"
+    assert await r1.open(seed=7) == 7
+    assert await code(r2.join()) == "forbidden"
+    assert await r1.invite(2) is True
+    assert await r2.join() is True
+    assert await code(p3.instances.run("run-a").enter()) == "not_member"
+    first = await r2.enter()
+    assert "won" in first
+    assert await p2.runtime.call("instance", "run-a", "enter", None, action="resent") == first
+    assert "the boss: won" in await r1.enter()
+    assert await code(r1.enter()) == "finished"
+    assert (await r1.view.resync())["phase"] == "cleared"
+    replay.done()
+    await close_all(p1, p2, p3)
+
+
+@pytest.mark.parametrize("replay", ["arena"], indirect=True)
+async def test_arenas(replay: Replay) -> None:
+    p1, p2, p3 = await kits(replay, ("player", 1), ("player", 2), ("player", 3))
+    a1, a2 = p1.arenas.arena("pit"), p2.arenas.arena("pit")
+    events: list[str] = []
+    a1.view.on_event(lambda body, _h: events.append(body["type"]))
+    assert (await a1.watch())["phase"] == "waiting"
+    assert await a1.join("warrior") is True
+    assert await a2.join("mage") is True
+    assert await code(p3.arenas.arena("pit").join("bard")) == "bad_request"
+    assert await code(a2.start()) == "forbidden"
+    assert await a1.start() is True
+    assert await a1.cast("strike", 11, 10) is True
+    again = {"ability": "strike", "x": 11, "z": 10}
+    assert await p1.runtime.call("arena", "pit", "cast", again, action="resent") is True
+    assert await code(a1.cast("strike", 11, 10)) == "cooldown"
+    assert await a2.cast("bolt", 10, 10) is False  # a projectile lands later
+    await replay.server_step()
+    await until("the impact", lambda: "impact" in events)
+    assert await a2.move(30, 10) == [11, 10]  # a jump is refused
+    assert len((await a1.view.resync())["fighters"]) == 2
+    replay.done()
+    await close_all(p1, p2, p3)
+
+
+@pytest.mark.parametrize("replay", ["racing:race"], indirect=True)
+async def test_race(replay: Replay) -> None:
+    p1, p2 = await kits(replay, ("player", 1), ("player", 2))
+    race = p1.racing.race("r1")
+    events: list[str] = []
+    race.view.on_event(
+        lambda body, _h: events.append(body["stage"] if body["type"] == "timing" else body["type"])
+    )
+    assert (await race.watch())["phase"] == "lobby"
+    assert await race.join() is True
+    assert await p2.racing.race("r1").join() is True
+    assert await code(p2.racing.race("r1").start()) == "forbidden"
+    assert await race.start() is True
+    await replay.server_step()  # the countdown ends
+    await until("the start", lambda: "started" in events)
+    for x in (5, 10, 5, 0):
+        await replay.server_step()
+        assert await race.pos(x, 0) == [x, 0]
+    await until("the finish", lambda: "finished" in events)
+    ghost = await p2.racing.race("r1").ghost()
+    assert ghost is not None
+    assert ghost["player"] == 1
+    assert len(ghost["frames"]) >= 4
+    await replay.server_step()  # the rest's time runs out
+    done = await race.view.resync()
+    assert done["phase"] == "finished"
+    assert next(r for r in done["racers"] if r["player"] == 2)["did_not_finish"] is True
+    replay.done()
+    await close_all(p1, p2)
+
+
+@pytest.mark.parametrize("replay", ["racing:ball"], indirect=True)
+async def test_ball(replay: Replay) -> None:
+    p1, p2 = await kits(replay, ("player", 1), ("player", 2))
+    m1, m2 = p1.racing.ball("m1"), p2.racing.ball("m1")
+    events: list[str] = []
+    m1.view.on_event(lambda body, _h: events.append(body["type"]))
+    assert (await m1.watch())["phase"] == "lobby"
+    assert await m1.join("red") is True
+    assert await m2.join("blue") is True
+    assert await m1.start() is True
+    for x in (22, 29.5):
+        await replay.server_step()
+        assert await m1.pos(x, 20) == [x, 20]
+    assert await code(m2.claim()) == "out_of_reach"
+    assert await m1.claim() is True
+    assert await m1.shoot(60, 20) is True
+    await replay.server_step()
+    await until("the goal", lambda: "goal" in events)
+    assert (await m1.view.resync())["score"] == [1, 0]
+    replay.done()
+    await close_all(p1, p2)
+
+
+def point(view: dict[str, Any], ident: str) -> dict[str, Any]:
+    return next(p for p in view["points"] if p["id"] == ident)
+
+
+@pytest.mark.parametrize("replay", ["territory:territory"], indirect=True)
+async def test_territory(replay: Replay) -> None:
+    p1, p2, dev = await kits(replay, ("player", 1), ("player", 2), ("developer", 9))
+    m = p1.territory.map("valley")
+    events: list[str] = []
+    m.view.on_event(lambda body, _h: events.append(body["type"]))
+    assert (await m.watch())["phase"] == "open"
+    assert await m.join("blue") is True
+    assert await code(m.join("red")) == "conflict"
+    assert await code(p2.territory.map("valley").join("green")) == "bad_request"
+    await replay.server_step()  # two scans
+    await until("the capture", lambda: "captured" in events)
+    state = await p1.runtime.call("territory", "valley", "state")
+    assert point(state, "tower")["owner"] == "blue"
+    assert await code(m.reset()) == "forbidden"
+    assert await dev.territory.map("valley").reset() is True
+    assert point(await m.view.resync(), "tower")["owner"] is None
+    replay.done()
+    await close_all(p1, p2, dev)
+
+
+@pytest.mark.parametrize("replay", ["territory:zone"], indirect=True)
+async def test_zone(replay: Replay) -> None:
+    p1, p2, p3 = await kits(replay, ("player", 1), ("player", 2), ("player", 3))
+    z1 = p1.territory.zone("match-1")
+    assert (await z1.watch())["phase"] == "lobby"
+    assert await z1.join() is True
+    assert await p2.territory.zone("match-1").join() is True
+    assert await code(p2.territory.zone("match-1").start()) == "forbidden"
+    assert await z1.start() is True
+    await replay.server_step()  # a scan
+    await until("the scan", lambda: any(c["outside"] for c in z1.view.get()["players"]))
+    state = await p1.runtime.call("zone", "match-1", "state")
+    assert [c["outside"] for c in state["players"]] == [False, True]
+    assert await code(p3.territory.zone("match-1").join()) == "started"
+    assert (await z1.view.resync())["alive"] == 2
+    replay.done()
+    await close_all(p1, p2, p3)
 
 
 @pytest.mark.parametrize("replay", ["world-tick"], indirect=True)

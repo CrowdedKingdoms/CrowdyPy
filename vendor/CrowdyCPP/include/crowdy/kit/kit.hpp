@@ -10,6 +10,7 @@
 #include "crowdy/domains/game_apps.hpp"
 #include "crowdy/domains/groups.hpp"
 #include "crowdy/kit/actions.hpp"
+#include "crowdy/kit/genres.hpp"
 #include "crowdy/kit/mirror.hpp"
 #include "crowdy/kit/modules.hpp"
 #include "crowdy/kit/protocol.hpp"
@@ -21,7 +22,9 @@
 
 /// The app-scoped Game Kit — client.kit(appId), here makeKit(client, appId): typed clients for
 /// the ck-exec starter hubs (the root world() with liveops, matchmaking() queues with parties,
-/// game sessions(), areas of npcs() with mobs and pets), the topology() that deploys them, the
+/// game sessions(), areas of npcs() with mobs and pets, leaderboards(), card tables(), tactics()
+/// battles, encounters(), minigames(), private instances(), arenas(), racing(), territory()),
+/// the topology() that deploys them, the
 /// client-side conventions (spectate(), emotes(), shards()), and social() (parties, guilds and
 /// chat over teams and channels). Mirrors CrowdyJS `GameKitClient`.
 ///
@@ -42,6 +45,26 @@ struct GameKitNodeTypes {
   std::string session = "session";
   /// Areas of mobs, NPCs and pets.
   std::string npcs = "npcs";
+  /// Leaderboards.
+  std::string leaderboard = "leaderboard";
+  /// Card tables.
+  std::string deck = "deck";
+  /// Grid battles.
+  std::string tactics = "tactics";
+  /// Waves and bosses.
+  std::string director = "director";
+  /// Duels.
+  std::string minigame = "minigame";
+  /// Private runs.
+  std::string instance = "instance";
+  /// Arenas.
+  std::string arena = "arena";
+  /// Races and ball games.
+  std::string race = "race";
+  std::string ball = "ball";
+  /// Control points and shrinking circles.
+  std::string territory = "territory";
+  std::string zone = "zone";
 };
 
 struct GameKitOptions {
@@ -91,6 +114,32 @@ class GameKitClient {
   SessionsKit& sessions() { return lazy(sessions_, [&] { return std::make_unique<SessionsKit>(runtime_, options_.nodes.session); }); }
   /// Areas of mobs, NPCs and players' pets.
   NpcsKit& npcs() { return lazy(npcs_, [&] { return std::make_unique<NpcsKit>(runtime_, options_.nodes.npcs, options_.areaSize); }); }
+  /// Leaderboards the hubs rank (a client never submits its own score).
+  LeaderboardsKit& leaderboards() {
+    return lazy(leaderboards_, [&] { return std::make_unique<LeaderboardsKit>(runtime_, options_.nodes.leaderboard); });
+  }
+  /// Card tables with hidden hands the hub holds.
+  TablesKit& tables() { return lazy(tables_, [&] { return std::make_unique<TablesKit>(runtime_, options_.nodes.deck); }); }
+  /// Grid battles in turns, against the hub's units.
+  TacticsKit& tactics() { return lazy(tactics_, [&] { return std::make_unique<TacticsKit>(runtime_, options_.nodes.tactics); }); }
+  /// Encounters: waves down a lane, towers, a boss with phases.
+  EncountersKit& encounters() {
+    return lazy(encounters_, [&] { return std::make_unique<EncountersKit>(runtime_, options_.nodes.director); });
+  }
+  /// Duels of hidden throws, revealed together.
+  MinigamesKit& minigames() { return lazy(minigames_, [&] { return std::make_unique<MinigamesKit>(runtime_, options_.nodes.minigame); }); }
+  /// Private runs for one party: seeded floors, permadeath, expiry.
+  InstancesKit& instances() { return lazy(instances_, [&] { return std::make_unique<InstancesKit>(runtime_, options_.nodes.instance); }); }
+  /// Real-time arenas: classes, abilities, the hub's referee.
+  ArenasKit& arenas() { return lazy(arenas_, [&] { return std::make_unique<ArenasKit>(runtime_, options_.nodes.arena); }); }
+  /// Races and ball games, on positions the hub's warden keeps.
+  RacingKit& racing() {
+    return lazy(racing_, [&] { return std::make_unique<RacingKit>(runtime_, options_.nodes.race, options_.nodes.ball); });
+  }
+  /// Control points factions capture, and shrinking circles.
+  TerritoryKit& territory() {
+    return lazy(territory_, [&] { return std::make_unique<TerritoryKit>(runtime_, options_.nodes.territory, options_.nodes.zone); });
+  }
   /// Composing and deploying the app's tree of starter hubs (developers).
   KitTopology& topology() { return lazy(topology_, [&] { return std::make_unique<KitTopology>(appId_, exec_); }); }
   /// Keeping a viewer with no avatar where the world's messages reach it.
@@ -122,6 +171,15 @@ class GameKitClient {
   std::unique_ptr<MatchmakingKit> matchmaking_;
   std::unique_ptr<SessionsKit> sessions_;
   std::unique_ptr<NpcsKit> npcs_;
+  std::unique_ptr<LeaderboardsKit> leaderboards_;
+  std::unique_ptr<TablesKit> tables_;
+  std::unique_ptr<TacticsKit> tactics_;
+  std::unique_ptr<EncountersKit> encounters_;
+  std::unique_ptr<MinigamesKit> minigames_;
+  std::unique_ptr<InstancesKit> instances_;
+  std::unique_ptr<ArenasKit> arenas_;
+  std::unique_ptr<RacingKit> racing_;
+  std::unique_ptr<TerritoryKit> territory_;
   std::unique_ptr<KitTopology> topology_;
   std::unique_ptr<SpectateKit> spectate_;
   std::unique_ptr<EmotesKit> emotes_;

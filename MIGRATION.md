@@ -3,6 +3,28 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.13.0
+
+CrowdyJS 18.12.0 and CrowdyCPP 0.65.0. Additive: a kit module per ck-exec genre starter
+(ckx-sdk 0.11.0, which the tier's compute toolchain must carry; `kit.topology` lists, builds and
+deploys them like the others). Against an app that does not run one, its calls are refused with
+`NotFound` (the app has no such node type).
+
+- **The modules.** `kit.leaderboards.board(name)` (`view` mirrored, `top(limit=, offset=)`,
+  `around(player=, radius=)`, `me`, `season`; `submit`, `configure`, `roll` for developers),
+  `kit.tables.table(key)` (`table` mirrored, `hand` private, `join`, `start`, `play(card, suit)`,
+  `draw`, `pass_`), `kit.tactics.battle(key)` (`move(x, z)`, `attack`, `end_turn`, `my_units`),
+  `kit.encounters.encounter(key)` (`build(x, z)`, `hit`), `kit.minigames.duel(key)` (`throw`,
+  `rematch`), `kit.instances.run(key)` (`open(seed=, party=)`, `invite`, `join`, `enter`,
+  `descend`, `abandon`), `kit.arenas.arena(key)` (`join(hero_class)`, `start`, `move(x, z)`,
+  `cast(ability, x, z)`), `kit.racing.race(key)` (`pos`, `ghost`) and `kit.racing.ball(key)`
+  (`claim`, `pass_`, `shoot`), `kit.territory.map(key)` (`join(faction)`, `reset`) and
+  `kit.territory.zone(key)`. `pass` is a Python keyword, so it is `pass_`.
+- **Node types** a game deployed under other names go in `nodes=`: `leaderboard`, `deck`,
+  `tactics`, `director`, `minigame`, `instance`, `arena`, `race`, `ball`, `territory`, `zone`.
+- **Positions the hub keeps.** `move` / `pos` answer `[x, z]`, the position the hub's movement
+  warden kept, and go without an action id: the next report replaces a lost one.
+
 ## 0.12.0
 
 CrowdyJS 18.11.0 and CrowdyCPP 0.64.0. Additive. The kit's typed clients drive the ck-exec

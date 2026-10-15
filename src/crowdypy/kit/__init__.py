@@ -1,14 +1,23 @@
-"""The Game Kit (CrowdyJS's ``kit``): typed clients for the ck-exec starter hubs over one shared
-connection, mirrors of hub topics, the kit protocol, social helpers over teams and channels, the
+"""The Game Kit (CrowdyJS's ``kit``): typed clients for the ck-exec starter hubs (the genre
+starters' too) over one shared connection, mirrors of hub topics, the kit protocol, social helpers over teams and channels, the
 realtime wire formats, and optimistic actions."""
 
 from crowdypy.kit.actions import OptimisticActionOutcome, run_optimistic_action
 from crowdypy.kit.kit import GameKitClient, ShardKit
 from crowdypy.kit.mirror import CollectionMirror, HubState, KitContainer, PrivateState, TopicMirror
+from crowdypy.kit.modules.arenas import ArenaMatch, ArenasKit
+from crowdypy.kit.modules.encounters import Encounter, EncountersKit
+from crowdypy.kit.modules.instances import InstanceRun, InstancesKit
+from crowdypy.kit.modules.leaderboards import LeaderboardHandle, LeaderboardsKit
 from crowdypy.kit.modules.matchmaking import MatchmakingKit, MatchQueue
+from crowdypy.kit.modules.minigames import Duel, MinigamesKit
 from crowdypy.kit.modules.npcs import NpcArea, NpcsKit
 from crowdypy.kit.modules.presence import EmotesKit, SpectateKit, SpectatorHeartbeat
+from crowdypy.kit.modules.racing import BallMatch, Race, RacingKit
 from crowdypy.kit.modules.sessions import GameSessionHandle, SessionsKit, session_turn
+from crowdypy.kit.modules.tables import CardTable, TablesKit
+from crowdypy.kit.modules.tactics import TacticsBattle, TacticsKit
+from crowdypy.kit.modules.territory import TerritoryKit, TerritoryMap, ZoneMatch
 from crowdypy.kit.modules.world import WorldKit
 from crowdypy.kit.protocol import (
     KIT_ACTION_ID_MAX,
@@ -131,16 +140,25 @@ __all__ = [
     "KIT_SUBSCRIPTIONS_MAX",
     "POSE_BYTES",
     "AbilityEvent",
+    "ArenaMatch",
+    "ArenasKit",
+    "BallMatch",
+    "CardTable",
     "CollectionMirror",
     "ContactDamageEvent",
     "ControlPointEvent",
+    "Duel",
     "EmoteEvent",
     "EmotesKit",
+    "Encounter",
     "EncounterEvent",
+    "EncountersKit",
     "EnginePose",
     "GameKitClient",
     "GameSessionHandle",
     "HubState",
+    "InstanceRun",
+    "InstancesKit",
     "KitActorState",
     "KitChatMessage",
     "KitContainer",
@@ -152,8 +170,11 @@ __all__ = [
     "KitStore",
     "KitTopology",
     "KitTopologyPlan",
+    "LeaderboardHandle",
+    "LeaderboardsKit",
     "MatchQueue",
     "MatchmakingKit",
+    "MinigamesKit",
     "MovementViolationEvent",
     "NpcArea",
     "NpcsKit",
@@ -161,19 +182,27 @@ __all__ = [
     "PossessionEvent",
     "PrivateState",
     "ProposalEvent",
+    "Race",
     "RaceTimingEvent",
+    "RacingKit",
     "ScoreEvent",
     "SessionsKit",
     "ShardKit",
     "SocialKit",
     "SpectateKit",
     "SpectatorHeartbeat",
+    "TablesKit",
+    "TacticsBattle",
+    "TacticsKit",
+    "TerritoryKit",
+    "TerritoryMap",
     "TopicMirror",
     "TurnEvent",
     "WeatherEvent",
     "WorldKit",
     "WritableKitStore",
     "ZoneChangeEvent",
+    "ZoneMatch",
     "decode_engine_pose",
     "decode_kit_actor_state",
     "encode_engine_pose",
