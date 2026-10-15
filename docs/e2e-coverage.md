@@ -58,6 +58,7 @@ player once and signs it in for the later suites.
 | 2026-10-08 | local stack: ck-api at the distance-limited channel branch (off `dev`), two replication servers serving message type 32, the 3-node Citus lab | 0.6.0 (branch) | identity, ranged channel, replication, world and world data suites: 10 passed |
 | 2026-10-09 | dev tier, app `96701660793088`, after replication server v0.35.0 and ck-api v2.38.0 reached dev | `crowdypy 0.6.0.dev1` from PyPI (installed into a clean Python 3.12 with uv) | identity (incl. the terms gate), ranged channel, replication, world and world data suites: 10 passed |
 | 2026-10-13 | dev tier (ck-api v2.42.0), app `96701660793088`, the `harness` provisioning token with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` | 0.10.0 (branch, vendoring CrowdyCPP `dev/v0.62.0`) | identity (the terms-gate case now registers with the token and no consents), input log, ranged channel, replication, world and world data suites: 12 passed; open grid (needs `CROWDY_E2E_THROWAWAY_OWNER=1`) and Studio skipped |
+| 2026-10-14 | dev tier (ck-api v2.44.1, replication server v0.39.0), app `96701660793088`, the `harness` provisioning token | 0.11.0 (`dev` at `586fc40`, vendoring CrowdyCPP 0.63.0) | identity, input log, ranged channel, replication, world and world data suites: 12 passed; open grid (needs `CROWDY_E2E_THROWAWAY_OWNER=1`) and Studio skipped |
 
 ## Not covered here
 
@@ -73,6 +74,7 @@ These CrowdyCPP suites have no CrowdyPy counterpart yet; the reason is in each r
 | `e2e_soak_two_clients`, `e2e_permission_refresh` | long-running; slated for `CROWDY_E2E_SLOW=1` suites |
 | `e2e_host_election`, `e2e_durable_stores`, `e2e_chunk_store_live` | the World Stores' host, save and chunk persistence run over GraphQL timers covered by unit suites against fakes; live coverage needs a dedicated app (chunk write-back closes the wilderness) |
 | `e2e_cross_app`, `e2e_cross_tenant`, `e2e_malicious_input` | platform isolation properties the CrowdyCPP suites already exercise against the same API |
+| `e2e_bans_blocks` | 0.11.0's `channels.ban` / `teams.ban`, `account_blocked_of` and `group_member_banned_of` send the documents CrowdyCPP's suite exercises live, and the unit suites check them against a mocked API; an account block needs the tier operator's credentials. The tier round trip and the nightly identity probe run the same bans and blocks on each tier |
 
 0.8.0's additions (channel audio, the echo of your own voxel edit, `APP_PAUSED`, access
 suspension, player profiles, `exec.restart_type`) have no live suite yet, in CrowdyPy or in

@@ -3,6 +3,31 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.11.0
+
+CrowdyJS 18.10.0 and CrowdyCPP 0.63.0. Additive.
+
+- **Access that ends ends for good.** ck-exec 0.16 closes a session with code `4403` (now
+  `EXEC_CLOSE_ACCESS_ENDED`) and the reason when what it rests on ends: the player's access
+  (suspended, revoked, an expired grant), their session (signed out, everywhere too, or the app's
+  authorization withdrawn), or the account (blocked). `ExecConnection` and `AsyncExecConnection`
+  treat it as final: `on_access_ended(listener)` is called once with the reason, the call in flight
+  fails `Denied`, and the connection does not reconnect. Until 0.10.0 it redialed, and the redial
+  was refused (HTTP 401 "access ended") after one retry. Tell the player; connect again only once
+  they hold access again.
+- **Channel and team bans.** `client.channels.ban(group_id, user_id, reason=None)` /
+  `unban(group_id, user_id)` and the same on `client.teams`, with the group's `manage_members`
+  permission (never the group's owner, never yourself). A banned user is removed, stops receiving
+  the channel, and joining, requesting to join and being added are refused with
+  `GROUP_MEMBER_BANNED` until the ban is lifted; leaving or being removed does not lift it.
+- **Two refusal readers.** `account_blocked_of(error)` returns `CrowdyAccountBlocked(blocked_until)`
+  for `ACCOUNT_BLOCKED` (a platform operator blocked the account: every request and sign-in is
+  refused; `blocked_until` is set for a timed block), and `group_member_banned_of(error)` is `True`
+  for `GROUP_MEMBER_BANNED`. Neither is fixed by retrying. `ACCOUNT_BLOCKED_CODE` and
+  `GROUP_MEMBER_BANNED_CODE` name the codes.
+- `blockAccount`, `unblockAccount` and `accountBlock` are super-admin operations and are not
+  wrapped (`docs/parity-matrix.md`).
+
 ## 0.10.0
 
 CrowdyJS 18.9.0 and CrowdyCPP 0.62.0. Additive, with one floor: every sessions read selects
