@@ -142,7 +142,9 @@ Merging a PR from the command line: `gh pr merge` fails its preflight on this or
 
 `src/crowdypy/kit/` is the client half of `ckx_sdk::kit`, ported from CrowdyJS `src/kit/` (the
 parity gate reads `src/kit/modules/` too since 0.12.0): one `KitRuntime` per kit, mirrors
-(`mirror.py`), the typed modules (`modules/`), `topology.py` and `realtime.py`. It is async source
+(`mirror.py`), the typed modules (`modules/`, the genre starters' since 0.13.0; a keyword name
+takes a trailing underscore, `pass_`, which the parity gate's `norm()` matches), `topology.py`
+and `realtime.py`. It is async source
 like the rest of the client, so `scripts/unasync.py` generates the blocking kit, and it may use no
 asyncio beyond `asyncio.sleep`. **A push or reconnect handler never waits on a call.** The
 blocking `ExecConnection` runs them on its reader thread, so a call made there would wait on a

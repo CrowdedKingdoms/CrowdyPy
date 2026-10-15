@@ -5,10 +5,19 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from crowdypy.kit.modules.arenas import ArenasKit
+from crowdypy.kit.modules.encounters import EncountersKit
+from crowdypy.kit.modules.instances import InstancesKit
+from crowdypy.kit.modules.leaderboards import LeaderboardsKit
 from crowdypy.kit.modules.matchmaking import MatchmakingKit
+from crowdypy.kit.modules.minigames import MinigamesKit
 from crowdypy.kit.modules.npcs import NpcsKit
 from crowdypy.kit.modules.presence import EmotesKit, SpectateKit
+from crowdypy.kit.modules.racing import RacingKit
 from crowdypy.kit.modules.sessions import SessionsKit
+from crowdypy.kit.modules.tables import TablesKit
+from crowdypy.kit.modules.tactics import TacticsKit
+from crowdypy.kit.modules.territory import TerritoryKit
 from crowdypy.kit.modules.world import WorldKit
 from crowdypy.kit.protocol import shard_key, shard_keys_around
 from crowdypy.kit.runtime import KitRuntime
@@ -41,8 +50,10 @@ class ShardKit:
 class GameKitClient:
     """The app-scoped **Game Kit** that ``client.kit(app_id)`` returns: typed clients for the
     ck-exec starter hubs (the root :attr:`world` with liveops, :attr:`matchmaking` queues with
-    parties, game :attr:`sessions`, areas of :attr:`npcs` with mobs and pets), the
-    :attr:`topology` that deploys them, the client-side conventions (:attr:`spectate`,
+    parties, game :attr:`sessions`, areas of :attr:`npcs` with mobs and pets,
+    :attr:`leaderboards`, card :attr:`tables`, :attr:`tactics` battles, :attr:`encounters`,
+    :attr:`minigames`, private :attr:`instances`, :attr:`arenas`, :attr:`racing`,
+    :attr:`territory`), the :attr:`topology` that deploys them, the client-side conventions (:attr:`spectate`,
     :attr:`emotes`, :attr:`shards`), and :attr:`social` (parties, guilds, chat over teams and
     channels).
 
@@ -51,7 +62,9 @@ class GameKitClient:
     answers once), and mirrors topics with resync on gaps and reconnects. ``connection``,
     ``connect``, ``developer``, ``call_budget``, ``budget_window_ms``, ``retries`` and
     ``player_id`` are :class:`~crowdypy.kit.runtime.KitRuntime`'s; ``nodes`` renames the starter
-    types a game deployed under other names (``world``, ``matchmaker``, ``session``, ``npcs``).
+    types a game deployed under other names (``world``, ``matchmaker``, ``session``, ``npcs``,
+    ``leaderboard``, ``deck``, ``tactics``, ``director``, ``minigame``, ``instance``, ``arena``,
+    ``race``, ``ball``, ``territory``, ``zone``).
     """
 
     def __init__(
@@ -100,6 +113,15 @@ class GameKitClient:
         self._matchmaking: MatchmakingKit | None = None
         self._sessions: SessionsKit | None = None
         self._npcs: NpcsKit | None = None
+        self._leaderboards: LeaderboardsKit | None = None
+        self._tables: TablesKit | None = None
+        self._tactics: TacticsKit | None = None
+        self._encounters: EncountersKit | None = None
+        self._minigames: MinigamesKit | None = None
+        self._instances: InstancesKit | None = None
+        self._arenas: ArenasKit | None = None
+        self._racing: RacingKit | None = None
+        self._territory: TerritoryKit | None = None
         self._topology: KitTopology | None = None
         self._spectate: SpectateKit | None = None
         self._emotes: EmotesKit | None = None
@@ -140,6 +162,76 @@ class GameKitClient:
                 self.runtime, node_type=self._nodes.get("npcs", "npcs"), area_size=self._area_size
             )
         return self._npcs
+
+    def _node(self, name: str) -> str:
+        return self._nodes.get(name, name)
+
+    @property
+    def leaderboards(self) -> LeaderboardsKit:
+        """Leaderboards the hubs rank (a client never submits its own score)."""
+        if self._leaderboards is None:
+            self._leaderboards = LeaderboardsKit(self.runtime, node_type=self._node("leaderboard"))
+        return self._leaderboards
+
+    @property
+    def tables(self) -> TablesKit:
+        """Card tables with hidden hands the hub holds."""
+        if self._tables is None:
+            self._tables = TablesKit(self.runtime, node_type=self._node("deck"))
+        return self._tables
+
+    @property
+    def tactics(self) -> TacticsKit:
+        """Grid battles in turns, against the hub's units."""
+        if self._tactics is None:
+            self._tactics = TacticsKit(self.runtime, node_type=self._node("tactics"))
+        return self._tactics
+
+    @property
+    def encounters(self) -> EncountersKit:
+        """Encounters: waves down a lane, towers, a boss with phases."""
+        if self._encounters is None:
+            self._encounters = EncountersKit(self.runtime, node_type=self._node("director"))
+        return self._encounters
+
+    @property
+    def minigames(self) -> MinigamesKit:
+        """Duels of hidden throws, revealed together."""
+        if self._minigames is None:
+            self._minigames = MinigamesKit(self.runtime, node_type=self._node("minigame"))
+        return self._minigames
+
+    @property
+    def instances(self) -> InstancesKit:
+        """Private runs for one party: seeded floors, permadeath, expiry."""
+        if self._instances is None:
+            self._instances = InstancesKit(self.runtime, node_type=self._node("instance"))
+        return self._instances
+
+    @property
+    def arenas(self) -> ArenasKit:
+        """Real-time arenas: classes, abilities, the hub's referee."""
+        if self._arenas is None:
+            self._arenas = ArenasKit(self.runtime, node_type=self._node("arena"))
+        return self._arenas
+
+    @property
+    def racing(self) -> RacingKit:
+        """Races and ball games, on positions the hub's warden keeps."""
+        if self._racing is None:
+            self._racing = RacingKit(
+                self.runtime, race_type=self._node("race"), ball_type=self._node("ball")
+            )
+        return self._racing
+
+    @property
+    def territory(self) -> TerritoryKit:
+        """Control points factions capture, and shrinking circles."""
+        if self._territory is None:
+            self._territory = TerritoryKit(
+                self.runtime, territory_type=self._node("territory"), zone_type=self._node("zone")
+            )
+        return self._territory
 
     @property
     def topology(self) -> KitTopology:
