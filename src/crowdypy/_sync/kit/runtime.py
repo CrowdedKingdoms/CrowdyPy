@@ -57,7 +57,7 @@ class KitRuntime:
         budget_window_ms: float = 10_000,
         retries: int = 2,
         player_id: str | int | None = None,
-        who_am_i: Callable[[], Awaitable[str | None]] | None = None,
+        who_am_i: Callable[[], str | None] | None = None,
     ) -> None:
         self.app_id = str(app_id)
         self._exec = exec
@@ -171,7 +171,7 @@ class KitRuntime:
 
     def subscribe(
         self, node_type: str, key: str, topic: str, on_push: Callable[[ExecPush], Any]
-    ) -> Callable[[], Awaitable[None]]:
+    ) -> Callable[[], None]:
         """Receives what a hub publishes on ``topic``. Returns the (async) function that stops
         this handler, and the subscription with the last one. Raises :class:`KitError`
         ``limit`` past :data:`KIT_SUBSCRIPTIONS_MAX` subscriptions."""

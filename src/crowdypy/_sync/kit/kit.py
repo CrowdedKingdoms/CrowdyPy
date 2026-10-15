@@ -64,7 +64,7 @@ class GameKitClient:
         channels: ChannelsAPI | None = None,
         udp: UdpAPI | None = None,
         exec: ExecAPI | None = None,
-        who_am_i: Callable[[], Awaitable[str | None]] | None = None,
+        who_am_i: Callable[[], str | None] | None = None,
         actor_uuid: str | None = None,
         party_prefix: str = "party:",
         guild_prefix: str = "guild:",

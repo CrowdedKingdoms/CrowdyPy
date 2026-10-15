@@ -45,7 +45,7 @@ class TopicMirror:
         self._buffer: list[tuple[KitHeader, dict[str, Any]]] | None = None
         self._lock = threading.Lock()
         self._sync: SingleFlight[Any] = SingleFlight()
-        self._stop: Callable[[], Awaitable[None]] | None = None
+        self._stop: Callable[[], None] | None = None
         self._off_reconnect: Callable[[], None] | None = None
         self._started = False
         self._changes = _Listeners()
@@ -263,7 +263,7 @@ class PrivateState:
         key: str,
         topic: str,
         what: str | tuple[str, ...] | list[str],
-        read: Callable[[], Awaitable[Any]],
+        read: Callable[[], Any],
     ) -> None:
         self.runtime = runtime
         self.node_type = node_type
@@ -274,7 +274,7 @@ class PrivateState:
         self._value: Any = None
         self._reading: SingleFlight[Any] = SingleFlight()
         self._again = False
-        self._stop: Callable[[], Awaitable[None]] | None = None
+        self._stop: Callable[[], None] | None = None
         self._off_reconnect: Callable[[], None] | None = None
         self._started = False
         self._listeners = _Listeners()

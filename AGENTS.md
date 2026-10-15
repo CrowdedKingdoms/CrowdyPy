@@ -85,7 +85,11 @@ release re-reads the published wheel.
 
 ## Gates
 
-CI (`.github/workflows/ci.yml`) runs all of these; run them before pushing:
+CI (`.github/workflows/ci.yml`) runs all of these; run them before pushing. CI's `mypy` runs
+without the project installed (`uv sync --group dev --no-install-project`), so it follows
+imports into the generated `_sync/` and checks it too; an editable install hides that, so
+reproduce CI's run in a venv of its own (`UV_PROJECT_ENVIRONMENT=/tmp/lint uv sync --frozen
+--group dev --no-install-project`, then `uv run --no-sync mypy` with the same variable).
 
 ```bash
 ruff check . && ruff format --check . && mypy

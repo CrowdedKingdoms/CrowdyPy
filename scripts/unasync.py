@@ -7,8 +7,8 @@
 The async modules are the source of truth: ``graphql.py``, ``client.py``,
 ``rediscover.py``, ``grid_scope.py``, ``world.py``, ``stores.py``, ``domains/`` and
 ``kit/``. A token-level rewrite (formatting is preserved) drops ``async``/``await``, maps
-the async names to their blocking twins and points imports of those modules at
-``crowdypy._sync``. ``asyncio.sleep`` becomes ``time.sleep``; any other use of asyncio in a
+the async names to their blocking twins, unwraps ``Awaitable[X]`` to ``X`` and points imports
+of those modules at ``crowdypy._sync``. ``asyncio.sleep`` becomes ``time.sleep``; any other use of asyncio in a
 source module is refused, because it would have no blocking equivalent.
 """
 
@@ -106,6 +106,14 @@ def transform(source: str, rel: str) -> str:
             ):
                 raise SystemExit(f"unasync: {rel}:{tok.start[0]} uses asyncio beyond asyncio.sleep")
             edits.append((pos(tok.start), pos(tok.end), "time"))
+        elif tok.type == tokenize.NAME and tok.string == "Awaitable" and nxt and nxt.string == "[":
+            depth = 0
+            for close in tokens[i + 1 :]:
+                depth += {"[": 1, "]": -1}.get(close.string, 0) if close.type == tokenize.OP else 0
+                if depth == 0:
+                    break
+            edits.append((pos(tok.start), pos(nxt.end), ""))
+            edits.append((pos(close.start), pos(close.end), ""))
         elif tok.type == tokenize.NAME and tok.string in NAMES:
             edits.append((pos(tok.start), pos(tok.end), NAMES[tok.string]))
         elif (
