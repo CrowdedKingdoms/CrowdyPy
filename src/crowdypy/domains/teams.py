@@ -166,6 +166,31 @@ class TeamsAPI(Domain):
             )
         )
 
+    async def ban(
+        self, group_id: str | int, user_id: str | int, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Ban a user from this team: their membership (or a new one, for someone not yet in it)
+        becomes ``banned`` and their roles go. Joining, requesting to join and being
+        added are refused with ``GROUP_MEMBER_BANNED`` (:func:`crowdypy.group_member_banned_of`)
+        until :meth:`unban`; leaving or being removed does not lift it. Needs ``manage_members``;
+        never the team's owner, never yourself. ``reason`` (at most 500 characters) is for the
+        team's managers and is not shown to the banned user.
+        """
+        result: dict[str, Any] = await self._request(
+            ops.BAN_TEAM_MEMBER,
+            {"groupId": bigint(group_id), "userId": bigint(user_id), "reason": reason},
+        )
+        return result
+
+    async def unban(self, group_id: str | int, user_id: str | int) -> bool:
+        """Lift a ban, so the user may join or be added again (nothing is restored). ``True``
+        if there was a ban. Needs ``manage_members``."""
+        return bool(
+            await self._request(
+                ops.UNBAN_TEAM_MEMBER, {"groupId": bigint(group_id), "userId": bigint(user_id)}
+            )
+        )
+
     async def set_member_roles(
         self, input: inputs.SetMemberRolesInput | Mapping[str, Any]
     ) -> dict[str, Any]:

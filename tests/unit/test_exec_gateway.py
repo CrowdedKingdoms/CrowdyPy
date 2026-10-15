@@ -83,6 +83,7 @@ class Gateway:
         self.tokens: list[str] = []
         self.moved = False
         self.deny = False
+        self.end_access: str | None = None
 
     async def handle(self, ws: ServerConnection) -> None:
         path = ws.request.path if ws.request is not None else ""
@@ -106,6 +107,9 @@ class Gateway:
             name_len = message[at]
             name = message[at + 1 : at + 1 + name_len].decode()
             payload = message[at + 1 + name_len :]
+            if self.end_access is not None:
+                await ws.close(4403, self.end_access)
+                return
             if tag == 0x02:
                 await ws.send(b"\x81" + rid.to_bytes(4, "little") + b"\x00")
                 push = msgspec.msgpack.encode({"hp": 99})
@@ -290,3 +294,81 @@ async def test_a_refused_upgrade_reports_the_gateway_s_answer(status: int, expec
         raised.value.message
         == f"{expected}: the gateway refused the connection (HTTP {status}: bad signature)"
     )
+
+
+async def test_a_4403_close_ends_the_connection_for_good(gateways: tuple[Gateway, Gateway]) -> None:
+    a, _ = gateways
+    dials = 0
+
+    async def dial() -> ExecEndpoint:
+        nonlocal dials
+        dials += 1
+        return ExecEndpoint(gateway_url=f"ws://127.0.0.1:{a.port}", token="t", host=a.host)
+
+    connection = AsyncExecConnection(dial, call_timeout=3)
+    await connection.connect()
+    reasons: list[str] = []
+    ended = asyncio.Event()
+
+    def on_ended(reason: str) -> None:
+        reasons.append(reason)
+        ended.set()
+
+    connection.on_access_ended(on_ended)
+    a.end_access = "access ended: app access suspended"
+    with pytest.raises(CrowdyExecError) as caught:
+        await connection.call("combat", "m1", "hit")
+    assert caught.value.status == "Denied"
+    await asyncio.wait_for(ended.wait(), 3)
+    await asyncio.sleep(0.5)
+    assert reasons == ["access ended: app access suspended"]
+    assert dials == 1  # final: no redial
+    with pytest.raises(CrowdyExecError):
+        await connection.call("combat", "m1", "hit")
+    await connection.close()
+
+
+def test_the_blocking_connection_ends_on_4403_too() -> None:
+    gateway = Gateway("host-sync")
+    gateway.end_access = "access ended: account_block"
+    ready = threading.Event()
+    stop: asyncio.Future[None] | None = None
+    loop = asyncio.new_event_loop()
+
+    async def run() -> None:
+        nonlocal stop
+        stop = loop.create_future()
+        async with serve(gateway.handle, "127.0.0.1", 0) as server:
+            gateway.port = next(iter(server.sockets)).getsockname()[1]
+            ready.set()
+            await stop
+
+    thread = threading.Thread(target=loop.run_until_complete, args=(run(),), daemon=True)
+    thread.start()
+    assert ready.wait(5)
+    try:
+        dials = 0
+
+        def dial() -> ExecEndpoint:
+            nonlocal dials
+            dials += 1
+            return ExecEndpoint(
+                gateway_url=f"ws://127.0.0.1:{gateway.port}", token="t", host=gateway.host
+            )
+
+        connection = ExecConnection(dial, call_timeout=3)
+        connection.connect()
+        ended = threading.Event()
+        reasons: list[str] = []
+        connection.on_access_ended(lambda reason: (reasons.append(reason), ended.set()))
+        with pytest.raises(CrowdyExecError) as caught:
+            connection.call("combat", "m1", "hit")
+        assert caught.value.status == "Denied"
+        assert ended.wait(3)
+        assert reasons == ["access ended: account_block"]
+        assert dials == 1
+        connection.close()
+    finally:
+        assert stop is not None
+        loop.call_soon_threadsafe(stop.set_result, None)
+        thread.join(5)

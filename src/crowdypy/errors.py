@@ -19,11 +19,14 @@ __all__ = [
     "ACCESS_NOT_GRANTED_CODE",
     "ACCESS_REVOKED_CODE",
     "ACCESS_SUSPENDED_CODE",
+    "ACCOUNT_BLOCKED_CODE",
     "ACTOR_EXISTS_CODE",
     "APP_PAUSED_CODE",
     "APP_UNAVAILABLE_CODE",
+    "GROUP_MEMBER_BANNED_CODE",
     "WRONG_DATACENTER_CODE",
     "CrowdyAccessRefusal",
+    "CrowdyAccountBlocked",
     "CrowdyActorExists",
     "CrowdyAppPaused",
     "CrowdyAppUnavailableError",
@@ -40,8 +43,10 @@ __all__ = [
     "CrowdyUserCodeFaultError",
     "GridScopeError",
     "access_refusal_of",
+    "account_blocked_of",
     "actor_exists_of",
     "app_paused_of",
+    "group_member_banned_of",
     "is_app_paused",
     "player_fault_of",
 ]
@@ -60,6 +65,10 @@ ACCESS_SUSPENDED_CODE = "ACCESS_SUSPENDED"
 ACCESS_NOT_GRANTED_CODE = "ACCESS_NOT_GRANTED"
 #: The app is paused (HTTP 403); see :func:`app_paused_of`.
 APP_PAUSED_CODE = "APP_PAUSED"
+#: A platform operator blocked the account (HTTP 403); see :func:`account_blocked_of`.
+ACCOUNT_BLOCKED_CODE = "ACCOUNT_BLOCKED"
+#: The channel or team banned the user (HTTP 403); see :func:`group_member_banned_of`.
+GROUP_MEMBER_BANNED_CODE = "GROUP_MEMBER_BANNED"
 
 CrowdyFaultBlame = Literal["PLATFORM", "AUTHOR", "BUDGET"]
 
@@ -234,6 +243,15 @@ class CrowdyAccessRefusal:
 
 
 @dataclass(frozen=True, slots=True)
+class CrowdyAccountBlocked:
+    """An ``ACCOUNT_BLOCKED`` refusal: a platform operator blocked the account. Retrying does not
+    help; sign out and tell the player."""
+
+    #: When a timed block lapses by itself (ISO-8601); ``None`` while it lasts until lifted.
+    blocked_until: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CrowdyAppPaused:
     """An ``APP_PAUSED`` refusal: the app's runtime gate is not ``ACTIVE``."""
 
@@ -283,6 +301,22 @@ def access_refusal_of(value: object) -> CrowdyAccessRefusal | None:
         until = extensions.get("suspendedUntil")
         return CrowdyAccessRefusal(code, until if isinstance(until, str) and until else None)
     return None
+
+
+def account_blocked_of(value: object) -> CrowdyAccountBlocked | None:
+    """An ``ACCOUNT_BLOCKED`` refusal (HTTP 403, on a sign-in and on every request of a blocked
+    account) from a raised error or a raw error entry, or ``None``."""
+    extensions = _extensions_with_code(value, ACCOUNT_BLOCKED_CODE)
+    if extensions is None:
+        return None
+    until = extensions.get("blockedUntil")
+    return CrowdyAccountBlocked(until if isinstance(until, str) and until else None)
+
+
+def group_member_banned_of(value: object) -> bool:
+    """Whether a channel or team refused the call with ``GROUP_MEMBER_BANNED`` (joining,
+    requesting to join, or being added or invited). Only an unban lifts it."""
+    return _extensions_with_code(value, GROUP_MEMBER_BANNED_CODE) is not None
 
 
 def app_paused_of(value: object) -> CrowdyAppPaused | None:
