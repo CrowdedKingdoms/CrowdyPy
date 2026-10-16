@@ -1136,9 +1136,14 @@ def test_crowdy_exec_error_reads_rate_limits(
 
 
 def test_statuses_and_helpers() -> None:
-    assert len(EXEC_STATUSES) == 12
+    assert len(EXEC_STATUSES) == 15
     assert [exec_status(0), exec_status(2), exec_status(11)] == ["Ok", "Busy", "BadRequest"]
-    assert [exec_status(12), exec_status(-1)] == ["Unknown", "Unknown"]
+    assert [exec_status(12), exec_status(13), exec_status(14)] == [
+        "AppPaused",
+        "AppDisabled",
+        "TypeDisabled",
+    ]
+    assert [exec_status(15), exec_status(-1)] == ["Unknown", "Unknown"]
     assert exec_mod_type("turret") == "mod:turret"
     assert is_name_list(["hud_set", "log"])
     assert is_name_list([])

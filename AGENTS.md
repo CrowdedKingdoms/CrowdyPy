@@ -85,7 +85,11 @@ release re-reads the published wheel.
 
 ## Gates
 
-CI (`.github/workflows/ci.yml`) runs all of these; run them before pushing:
+CI (`.github/workflows/ci.yml`) runs all of these; run them before pushing. CI's `mypy` runs
+without the project installed (`uv sync --group dev --no-install-project`), so it follows
+imports into the generated `_sync/` and checks it too; an editable install hides that, so
+reproduce CI's run in a venv of its own (`UV_PROJECT_ENVIRONMENT=/tmp/lint uv sync --frozen
+--group dev --no-install-project`, then `uv run --no-sync mypy` with the same variable).
 
 ```bash
 ruff check . && ruff format --check . && mypy
@@ -103,6 +107,12 @@ The parity gate is **strict** (since 0.4.0): every difference from CrowdyJS carr
 reviewed classification (`native-equivalent` or `browser-exclusion`), a stale or missing one
 fails, and a `portable-gap` fails the build. Something new in CrowdyJS that CrowdyPy lacks is
 ported in the same change that moves the pin; it is not parked as a gap.
+
+The gate reads a CrowdyJS class field initialised with `=` (`readonly profile = new Relay()`)
+as a member named `profile`. On the Python side only methods and properties are members; an
+attribute set in `__init__` to one of CrowdyPy's classes contributes its methods as
+`profile.get` and so on, never `profile` itself. Port such a field as a read-only property, as
+`PlayerKit`'s stores are (0.14.0).
 
 ## Live e2e
 
@@ -133,6 +143,24 @@ re-run takes the next N (`scripts/ci/resolve_pypi_version.py` reads what PyPI al
 
 Merging a PR from the command line: `gh pr merge` fails its preflight on this org, so use
 `gh api -X PUT repos/CrowdedKingdoms/CrowdyPy/pulls/<n>/merge -f merge_method=merge`.
+
+## The Game Kit
+
+`src/crowdypy/kit/` is the client half of `ckx_sdk::kit`, ported from CrowdyJS `src/kit/` (the
+parity gate reads `src/kit/modules/` too since 0.12.0): one `KitRuntime` per kit, mirrors
+(`mirror.py`), the typed modules (`modules/`, the genre starters' since 0.13.0; a keyword name
+takes a trailing underscore, `pass_`, which the parity gate's `norm()` matches), `topology.py`
+and `realtime.py`. It is async source
+like the rest of the client, so `scripts/unasync.py` generates the blocking kit, and it may use no
+asyncio beyond `asyncio.sleep`. **A push or reconnect handler never waits on a call.** The
+blocking `ExecConnection` runs them on its reader thread, so a call made there would wait on a
+reply only that thread can read: a mirror starts its resync with `run_detached`, which unasync
+maps to `run_in_thread` (`run_soon` would become `run_now`, inline). Periodic work (a queue's
+`watch`, a spectator's `run`) is a loop the game starts beside itself. The protocol is held to
+ck-exec's golden record, `tests/fixtures/kit-protocol.json`, copied from CrowdyJS at the pin
+(`test_fixture_provenance.py` and the vendored CrowdyCPP copy hold it):
+`tests/unit/test_kit_protocol.py` replays each starter's script through a gateway that answers
+only the next recorded step, with both clients.
 
 ## Performance rules for the native binding
 

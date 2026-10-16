@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import threading
 import time
 from collections.abc import Awaitable, Callable
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from websockets.sync.client import ClientConnection as SyncSocket
 
 __all__ = [
+    "EXEC_CLOSE_ACCESS_ENDED",
     "AsyncExecConnection",
     "ExecCall",
     "ExecConnection",
@@ -41,6 +43,11 @@ __all__ = [
     "decode_exec_frame",
     "encode_exec_frame",
 ]
+
+#: The close code a host ends a session with when the player's access ended: a suspension, a
+#: revoke, a sign-out or an account block (ck-exec 0.16). Final: the connection does not
+#: reconnect, and :meth:`AsyncExecConnection.on_access_ended` listeners hear the reason.
+EXEC_CLOSE_ACCESS_ENDED = 4403
 
 _CALL_TIMEOUT = 10.0
 _OPEN_TIMEOUT = 10.0
@@ -160,6 +167,12 @@ def decode_exec_frame(data: bytes) -> ExecReply | ExecPush | ExecPong:
     raise CrowdyExecError("BadRequest", f"unknown frame type 0x{tag:x} from the gateway")
 
 
+def _jittered(seconds: float) -> float:
+    """Half of a reconnect wait, plus up to as much again at random: the players of a host that
+    went away do not all dial its replacement at once."""
+    return seconds / 2 + random.random() * seconds / 2
+
+
 def _decode_value(payload: bytes) -> Any:
     try:
         return msgspec.msgpack.decode(payload)
@@ -173,7 +186,16 @@ def _url(endpoint: ExecEndpoint) -> str:
 
 def _closed_status(error: BaseException) -> ExecStatus:
     received = getattr(error, "rcvd", None)
-    return "Denied" if received is not None and received.code == 4401 else "Unavailable"
+    denied = received is not None and received.code in (4401, EXEC_CLOSE_ACCESS_ENDED)
+    return "Denied" if denied else "Unavailable"
+
+
+def _access_ended(error: BaseException) -> str | None:
+    """The host's reason when it closed because the player's access ended, else ``None``."""
+    received = getattr(error, "rcvd", None)
+    if received is None or received.code != EXEC_CLOSE_ACCESS_ENDED:
+        return None
+    return str(getattr(received, "reason", "") or "")
 
 
 def _refused(error: BaseException) -> CrowdyExecError | None:
@@ -201,7 +223,13 @@ class _Shared:
 
     subs: dict[tuple[str, str, str], list[Callable[[ExecPush], Any]]] = field(default_factory=dict)
     listeners: list[Callable[[str], Any]] = field(default_factory=list)
+    ended: list[Callable[[str], Any]] = field(default_factory=list)
     next_rid: int = 1
+
+    def access_ended(self, reason: str) -> None:
+        for listener in list(self.ended):
+            with contextlib.suppress(Exception):  # a listener's exception is its own
+                listener(reason)
 
     def rid(self) -> int:
         rid = self.next_rid
@@ -271,6 +299,16 @@ class AsyncExecConnection:
             self._shared.listeners.remove(listener) if listener in self._shared.listeners else None
         )
 
+    def on_access_ended(self, listener: Callable[[str], Any]) -> Callable[[], None]:
+        """Called once, with the host's reason, when the host closes the connection because the
+        player's access ended (close code :data:`EXEC_CLOSE_ACCESS_ENDED`: suspended, revoked,
+        signed out or blocked). The connection is closed for good then and does not reconnect;
+        tell the player, and connect again only once they hold access again."""
+        self._shared.ended.append(listener)
+        return lambda: (
+            self._shared.ended.remove(listener) if listener in self._shared.ended else None
+        )
+
     async def connect(self) -> None:
         if self._ready is None:
             self._ready = asyncio.ensure_future(self._dial_once())
@@ -310,14 +348,16 @@ class AsyncExecConnection:
 
         status: ExecStatus = "Unavailable"
         why = "the connection to the execution host closed"
+        ended: str | None = None
         try:
             async for message in ws:
                 if isinstance(message, bytes):
                     self._on_message(ws, message)
         except ConnectionClosed as exc:
             status, why = _closed_status(exc), f"the gateway closed the connection ({exc})"
+            ended = _access_ended(exc)
         finally:
-            self._on_closed(ws, status, why)
+            self._on_closed(ws, status, why, ended)
 
     def _on_message(self, ws: Any, data: bytes) -> None:
         try:
@@ -343,12 +383,17 @@ class AsyncExecConnection:
                 if not future.done():
                     future.set_exception(CrowdyExecError(status, why))
 
-    def _on_closed(self, ws: Any, status: ExecStatus, why: str) -> None:
+    def _on_closed(self, ws: Any, status: ExecStatus, why: str, ended: str | None = None) -> None:
         self._reject(ws, why, status)
         if self._ws is not ws:
             return
         self._ws = None
         self._ready = None
+        if ended is not None:
+            # Final: reconnecting would only be refused again.
+            self._closed = True
+            self._shared.access_ended(ended)
+            return
         if not self._closed and self._reconnect_enabled:
             self._spawn(self._reconnect())
 
@@ -361,7 +406,7 @@ class AsyncExecConnection:
                     listener(self.host)
                 return
             except Exception:
-                await asyncio.sleep(self._backoff)
+                await asyncio.sleep(_jittered(self._backoff))
                 self._backoff = min(self._backoff * 2, _MAX_BACKOFF)
 
     async def _redial(self, origin: Any) -> None:
@@ -561,6 +606,15 @@ class ExecConnection:
             self._shared.listeners.remove(listener) if listener in self._shared.listeners else None
         )
 
+    def on_access_ended(self, listener: Callable[[str], Any]) -> Callable[[], None]:
+        """Called once, with the host's reason, when the host closes the connection because the
+        player's access ended (:data:`EXEC_CLOSE_ACCESS_ENDED`); the connection does not
+        reconnect. Runs on the reader thread."""
+        self._shared.ended.append(listener)
+        return lambda: (
+            self._shared.ended.remove(listener) if listener in self._shared.ended else None
+        )
+
     def connect(self) -> None:
         with self._lock:
             if self._ws is not None:
@@ -593,14 +647,16 @@ class ExecConnection:
 
         status: ExecStatus = "Unavailable"
         why = "the connection to the execution host closed"
+        ended: str | None = None
         try:
             for message in ws:
                 if isinstance(message, bytes):
                     self._on_message(message)
         except ConnectionClosed as exc:
             status, why = _closed_status(exc), f"the gateway closed the connection ({exc})"
+            ended = _access_ended(exc)
         finally:
-            self._on_closed(ws, status, why)
+            self._on_closed(ws, status, why, ended)
 
     def _on_message(self, data: bytes) -> None:
         try:
@@ -627,12 +683,17 @@ class ExecConnection:
             slot.error = CrowdyExecError(status, why)
             slot.done.set()
 
-    def _on_closed(self, ws: Any, status: ExecStatus, why: str) -> None:
+    def _on_closed(self, ws: Any, status: ExecStatus, why: str, ended: str | None = None) -> None:
         self._reject(ws, why, status)
         with self._lock:
             if self._ws is not ws:
                 return
             self._ws = None
+        if ended is not None:
+            # Final: reconnecting would only be refused again.
+            self._closed = True
+            self._shared.access_ended(ended)
+            return
         if not self._closed and self._reconnect_enabled:
             threading.Thread(
                 target=self._reconnect, name="crowdypy-exec-reconnect", daemon=True
@@ -647,7 +708,7 @@ class ExecConnection:
                     listener(self.host)
                 return
             except Exception:
-                time.sleep(self._backoff)
+                time.sleep(_jittered(self._backoff))
                 self._backoff = min(self._backoff * 2, _MAX_BACKOFF)
 
     def _redial(self, origin: Any) -> None:
