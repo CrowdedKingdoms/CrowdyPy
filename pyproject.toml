@@ -123,10 +123,10 @@ version = "18.13.0"
 commit = "7aeee709ad661c836a045f2d396c9a867f1d278a"
 
 [tool.crowdypy.crowdycpp]
-version = "0.65.0"
-tag = "dev/v0.65.0"
-commit = "866804861bd319a6f376db2dd24b9b6d2f14900c"
-tree-sha256 = "92c909a4bb760548d9745860eb56cfb5f25f578e8d5614fb9c93dc0648082a37"
+version = "0.66.0"
+tag = "dev/v0.66.0"
+commit = "d57cafe80c48c45fdf9ae14309d59b80d466d308"
+tree-sha256 = "e92629e7d769516bdb126b9ad39f489b6d98d6c2f5f03743437127d370a689cf"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.

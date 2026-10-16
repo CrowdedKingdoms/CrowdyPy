@@ -16,7 +16,7 @@ wheel. Python never touches a datagram.
 `kit.achievements`, `kit.quests`, `kit.crafting`, `kit.loot` and `kit.production`; markets by
 name: `kit.shops.at(key)`, `kit.market.at(key)` and `kit.trades.at(key)`. It lives in hub state
 and is not a ledger. A change refused `unavailable` is sent again with its action id. They need
-ckx-sdk 0.12.0 in the tier's compute toolchain.
+ckx-sdk 0.12.1 in the tier's compute toolchain (dev: v1.15.0).
 
 **v0.13.0: the genre starters (CrowdyJS 18.12.0, CrowdyCPP 0.65.0).** Nine more kit modules,
 one per ck-exec genre starter: `kit.leaderboards.board(name)`, `kit.tables.table(key)` (the

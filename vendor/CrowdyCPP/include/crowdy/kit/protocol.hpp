@@ -111,6 +111,8 @@ inline constexpr std::string_view kOutOfReach = "out_of_reach";
 inline constexpr std::string_view kExpired = "expired";
 inline constexpr std::string_view kInsufficient = "insufficient";
 inline constexpr std::string_view kAlreadyDone = "already_done";
+/// A hub the call needed did not answer: the kit sends a call with an action id again.
+inline constexpr std::string_view kUnavailable = "unavailable";
 }  // namespace codes
 
 /// A kit call's answer: the exec reply, with a hub's coded refusal read out. A refusal is

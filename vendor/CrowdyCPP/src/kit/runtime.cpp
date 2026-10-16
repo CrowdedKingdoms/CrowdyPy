@@ -231,6 +231,16 @@ class KitRuntime::Impl : public std::enable_shared_from_this<KitRuntime::Impl> {
   void answered(const std::shared_ptr<Attempt>& a, ExecReply reply) {
     if (!reply.ok() && a->attempt < retries_) {
       const bool coded = reply.status == ExecStatus::AppError;
+      // A hub that could not hear from another one did not finish, and keeps no receipt.
+      if (coded && a->hasActionId && KitReply::from(reply).code() == codes::kUnavailable) {
+        const long base = std::min(2000L, 200L << a->attempt);
+        a->attempt += 1;
+        std::weak_ptr<Impl> weak = weak_from_this();
+        after(static_cast<long>(static_cast<double>(base) * jitter()), [weak, a] {
+          if (auto self = weak.lock()) self->send(a);
+        });
+        return;
+      }
       if (!coded) {
         if (reply.status == ExecStatus::Busy && reply.rateLimited()) {
           hold(reply.retryAfterMs().value_or(1000));
