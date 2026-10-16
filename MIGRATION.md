@@ -3,6 +3,10 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.14.1
+
+CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive. A paused app, an app switched off, and a type switched off used to arrive as a bare denial. They are now `AppPaused`, `AppDisabled`, and `TypeDisabled`.
+
 ## 0.14.0
 
 CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive: the economy, which lives in hub state and is
