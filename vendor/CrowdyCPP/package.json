@@ -6,7 +6,7 @@
   "description": "Offline parity and schema maintenance tools for CrowdyCPP",
   "crowdyjsParityTarget": {
     "version": "18.13.0",
-    "commit": "21dd2b7dbeb874907d439f082c967df790006a06"
+    "commit": "6b66c5c232a1884da2e78ecb7dc80d2d116d179d"
   },
   "scripts": {
     "codegen": "node scripts/codegen.mjs",
