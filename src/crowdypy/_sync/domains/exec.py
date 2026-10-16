@@ -87,6 +87,9 @@ ExecStatus = Literal[
     "Internal",
     "Trapped",
     "BadRequest",
+    "AppPaused",
+    "AppDisabled",
+    "TypeDisabled",
     "Unknown",
 ]
 
@@ -104,6 +107,9 @@ EXEC_STATUSES: Final[tuple[ExecStatus, ...]] = (
     "Internal",
     "Trapped",
     "BadRequest",
+    "AppPaused",
+    "AppDisabled",
+    "TypeDisabled",
 )
 
 #: The CLIENT ABI version this SDK runs (crowdy-client-sdk ``ABI_VERSION``).
