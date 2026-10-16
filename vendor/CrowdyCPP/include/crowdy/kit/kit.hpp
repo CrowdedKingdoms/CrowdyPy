@@ -10,6 +10,7 @@
 #include "crowdy/domains/game_apps.hpp"
 #include "crowdy/domains/groups.hpp"
 #include "crowdy/kit/actions.hpp"
+#include "crowdy/kit/economy.hpp"
 #include "crowdy/kit/genres.hpp"
 #include "crowdy/kit/mirror.hpp"
 #include "crowdy/kit/modules.hpp"
@@ -23,7 +24,9 @@
 /// The app-scoped Game Kit — client.kit(appId), here makeKit(client, appId): typed clients for
 /// the ck-exec starter hubs (the root world() with liveops, matchmaking() queues with parties,
 /// game sessions(), areas of npcs() with mobs and pets, leaderboards(), card tables(), tactics()
-/// battles, encounters(), minigames(), private instances(), arenas(), racing(), territory()),
+/// battles, encounters(), minigames(), private instances(), arenas(), racing(), territory(); the
+/// economy: player() and its views inventory(), wallet(), progression(), achievements(),
+/// quests(), crafting(), loot(), production(), and market(), shops(), trades()),
 /// the topology() that deploys them, the
 /// client-side conventions (spectate(), emotes(), shards()), and social() (parties, guilds and
 /// chat over teams and channels). Mirrors CrowdyJS `GameKitClient`.
@@ -65,6 +68,10 @@ struct GameKitNodeTypes {
   /// Control points and shrinking circles.
   std::string territory = "territory";
   std::string zone = "zone";
+  /// Each player's own hub: inventory, wallet, progression, crafting, loot.
+  std::string player = "player";
+  /// Markets: vendors, order books, trades.
+  std::string market = "market";
 };
 
 struct GameKitOptions {
@@ -140,6 +147,23 @@ class GameKitClient {
   TerritoryKit& territory() {
     return lazy(territory_, [&] { return std::make_unique<TerritoryKit>(runtime_, options_.nodes.territory, options_.nodes.zone); });
   }
+  /// The caller's own `player` hub (its key is the runtime's playerId): what they own and what
+  /// they did. The economy lives in hub state and is not a ledger; the views below share it.
+  PlayerKit& player() { return lazy(player_, [&] { return std::make_unique<PlayerKit>(runtime_, options_.nodes.player); }); }
+  InventoryKit& inventory() { return lazy(inventory_, [&] { return std::make_unique<InventoryKit>(player()); }); }
+  WalletKit& wallet() { return lazy(wallet_, [&] { return std::make_unique<WalletKit>(player()); }); }
+  ProgressionKit& progression() { return lazy(progression_, [&] { return std::make_unique<ProgressionKit>(player()); }); }
+  AchievementsKit& achievements() { return lazy(achievements_, [&] { return std::make_unique<AchievementsKit>(player()); }); }
+  QuestsKit& quests() { return lazy(quests_, [&] { return std::make_unique<QuestsKit>(player()); }); }
+  CraftingKit& crafting() { return lazy(crafting_, [&] { return std::make_unique<CraftingKit>(player()); }); }
+  LootKit& loot() { return lazy(loot_, [&] { return std::make_unique<LootKit>(player()); }); }
+  ProductionKit& production() { return lazy(production_, [&] { return std::make_unique<ProductionKit>(player()); }); }
+  /// Markets' order books.
+  MarketsKit& market() { return lazy(market_, [&] { return std::make_unique<MarketsKit>(marketCores()); }); }
+  /// Markets' vendors.
+  ShopsKit& shops() { return lazy(shops_, [&] { return std::make_unique<ShopsKit>(marketCores()); }); }
+  /// Trades between two players at a market.
+  TradesKit& trades() { return lazy(trades_, [&] { return std::make_unique<TradesKit>(marketCores()); }); }
   /// Composing and deploying the app's tree of starter hubs (developers).
   KitTopology& topology() { return lazy(topology_, [&] { return std::make_unique<KitTopology>(appId_, exec_); }); }
   /// Keeping a viewer with no avatar where the world's messages reach it.
@@ -155,9 +179,18 @@ class GameKitClient {
  private:
   template <typename T, typename Make>
   T& lazy(std::unique_ptr<T>& slot, Make make) {
+    {
+      std::lock_guard lock(mu_);
+      if (slot) return *slot;
+    }
+    auto made = make();
     std::lock_guard lock(mu_);
-    if (!slot) slot = make();
+    if (!slot) slot = std::move(made);
     return *slot;
+  }
+
+  MarketCores& marketCores() {
+    return lazy(marketCores_, [&] { return std::make_unique<MarketCores>(runtime_, options_.nodes.market); });
   }
 
   std::string appId_;
@@ -180,6 +213,19 @@ class GameKitClient {
   std::unique_ptr<ArenasKit> arenas_;
   std::unique_ptr<RacingKit> racing_;
   std::unique_ptr<TerritoryKit> territory_;
+  std::unique_ptr<PlayerKit> player_;
+  std::unique_ptr<InventoryKit> inventory_;
+  std::unique_ptr<WalletKit> wallet_;
+  std::unique_ptr<ProgressionKit> progression_;
+  std::unique_ptr<AchievementsKit> achievements_;
+  std::unique_ptr<QuestsKit> quests_;
+  std::unique_ptr<CraftingKit> crafting_;
+  std::unique_ptr<LootKit> loot_;
+  std::unique_ptr<ProductionKit> production_;
+  std::unique_ptr<MarketCores> marketCores_;
+  std::unique_ptr<MarketsKit> market_;
+  std::unique_ptr<ShopsKit> shops_;
+  std::unique_ptr<TradesKit> trades_;
   std::unique_ptr<KitTopology> topology_;
   std::unique_ptr<SpectateKit> spectate_;
   std::unique_ptr<EmotesKit> emotes_;

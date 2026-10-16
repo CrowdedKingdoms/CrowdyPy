@@ -771,6 +771,101 @@ async def test_zone(replay: Replay) -> None:
     await close_all(p1, p2, p3)
 
 
+# ---- the economy ----
+
+
+@pytest.mark.parametrize("replay", ["player"], indirect=True)
+async def test_player(replay: Replay) -> None:
+    p1, p2, dev = await kits(replay, ("player", 1), ("player", 2), ("developer", 9))
+    events: list[str] = []
+    p1.player.on_event(lambda e: events.append(e["type"]))
+    await p1.player.watch("profile")
+    assert p1.progression.profile.get()["level"] == 1
+    me = await p1.player.me()
+    assert me["wallet"]["balances"]["gold"] == 100
+    assert next(q for q in me["progress"]["quests"] if q["id"] == "welcome")["state"] == "active"
+    assert await code(p2.runtime.call("player", "1", "me")) == "forbidden"
+    assert (await p2.progression.profile_of(1))["player"] == 1
+    assert any(r["id"] == "plank" for r in await p1.crafting.recipes())
+    deposit = {"ref": "seed-wood", "bundle": {"items": {"wood": 4}}}
+    assert await dev.runtime.call("player", "1", "deposit", deposit) is True
+    crafted = await p1.crafting.craft("plank", 2)
+    assert crafted["made"]["items"] == {"plank": 2}
+    assert crafted["earned"]["achievements"] == ["first_craft"]
+    again = {"recipe": "plank", "times": 2}
+    assert same(await p1.runtime.call("player", "1", "craft", again, action="resent"), crafted)
+    assert await code(p1.crafting.craft("plank")) == "insufficient"
+    assert await code(p1.quests.step("crafted")) == "forbidden"
+    assert (await p1.quests.step("tutorial:inventory"))["quests"] == ["welcome"]
+    assert (await p1.quests.claim("welcome"))["currency"] == {"gold": 25}
+    assert await code(p1.quests.claim("welcome")) == "not_ready"
+    assert (await p1.loot.open("chest"))["roll"]["count"] > 0
+    await replay.server_step()  # half an hour away
+    assert (await p1.production.collect())["items"] == {"ore": 30, "wood": 60}
+    for _ in range(4):  # a market holds, settles, releases and sells
+        await replay.server_step()
+    grant = {"ref": "nope", "bundle": {"currency": {"gold": 1}}}
+    assert await code(p1.runtime.call("player", "1", "grant", grant)) == "forbidden"
+    await replay.server_step()  # a run's reward: three levels
+    await until("the level events", lambda: "level" in events)
+    assert (await p1.inventory.take_mail()) == {"items": {}, "currency": {}}
+    assert (await p1.wallet.watch())["balances"]["gold"] == 80
+    assert p1.wallet.balance("gems") == 10
+    await p1.inventory.watch()
+    assert p1.inventory.count("plank") == 2
+    assert (await p1.progression.watch())["level"] == 4
+    assert (
+        next(a for a in p1.achievements.list() if a["id"] == "first_craft")["unlocked_at"]
+        is not None
+    )
+    assert next(q for q in p1.quests.list() if q["id"] == "welcome")["state"] == "done"
+    await replay.server_step()
+    await until(
+        "the profile at level 4", lambda: (p1.progression.profile.get() or {}).get("level") == 4
+    )
+    topic = {"topic": "player"}
+    assert (await p1.runtime.call("player", "1", "snapshot", topic))["level"] == 4
+    replay.done()
+    await close_all(p1, p2, dev)
+
+
+@pytest.mark.parametrize("replay", ["market"], indirect=True)
+async def test_market(replay: Replay) -> None:
+    p1, p2, p3 = await kits(replay, ("player", 1), ("player", 2), ("player", 3))
+    shop = p1.shops.at("town")
+    assert (await shop.watch())["currency"] == "gold"
+    assert (await shop.vendors())[0]["id"] == "smith"
+    assert await shop.buy("smith", "sword") == {"items": {"sword": 1}, "currency": {}}
+    sword = {"vendor": "smith", "item": "sword"}
+    assert await p1.runtime.call("market", "town", "buy", sword, action="resent") == {
+        "items": {"sword": 1},
+        "currency": {},
+    }
+    assert await code(shop.buy("smith", "sword")) == "limit"
+    assert await code(p3.shops.at("town").buy("smith", "potion", 2)) == "insufficient"
+    assert await shop.sell("smith", "sword") == {"items": {}, "currency": {"gold": 20}}
+    sell = await p2.market.at("town").order(item="ore", side="sell", price=4, count=10)
+    assert sell["open"] == 10
+    buy = await p1.market.at("town").order(item="ore", side="buy", price=5, count=6)
+    assert (buy["fills"], buy["open"]) == ([[4, 6]], 0)
+    assert (await p1.market.at("town").book("ore"))["asks"] == [[4, 4]]
+    [mine] = await p2.runtime.call("market", "town", "orders")
+    assert mine["open"] == 4
+    assert await p2.market.at("town").cancel(mine["id"]) is True
+    desk = p1.trades.at("town")
+    trade = await desk.open(2)
+    assert await desk.offer(trade, {"currency": {"gold": 30}}) is True
+    assert await p2.trades.at("town").offer(trade, {"items": {"ore": 2}}) is True
+    assert await desk.accept(trade) == "open"
+    assert await p2.trades.at("town").accept(trade) == "settling"
+    assert await p1.runtime.call("market", "town", "trades") == []
+    assert await code(p3.trades.at("town").decline(trade)) == "forbidden"
+    await replay.server_step()
+    assert (await shop.view.resync())["open_trades"] == 0
+    replay.done()
+    await close_all(p1, p2, p3)
+
+
 @pytest.mark.parametrize("replay", ["world-tick"], indirect=True)
 async def test_the_blocking_kit_plays_the_same_script(replay: Replay) -> None:
     """The generated blocking client's kit, over ExecConnection's threads, against the same
@@ -870,6 +965,10 @@ async def test_resends_only_what_is_safe(scripted: Any) -> None:
             return 8, b"host went away"
         if name == "plain":
             return 8, b"host went away"
+        if name == "buy" and seen[name] == 1:
+            return 1, b"kit:unavailable: the player's hub did not answer; send it again"
+        if name == "buy-plain":
+            return 1, b"kit:unavailable: no answer"
         return 0, msgspec.msgpack.encode(7)
 
     gw, rt = await scripted(answer)
@@ -884,6 +983,13 @@ async def test_resends_only_what_is_safe(scripted: Any) -> None:
         await rt.call("arena", "m1", "plain")
     assert caught.value.status == "Unavailable"
     assert seen["plain"] == 1
+    # A hub that could not hear from another keeps no receipt: sent again with the action id.
+    assert await rt.call("market", "town", "buy", {"item": "potion"}, action=True) == 7
+    buys = [args["action_id"] for name, args in gw.calls if name == "buy"]
+    assert len(buys) == 2
+    assert len(set(buys)) == 1
+    assert await code(rt.call("market", "town", "buy-plain")) == "unavailable"
+    assert seen["buy-plain"] == 1, "without an action id the caller decides"
     await rt.close()
 
 

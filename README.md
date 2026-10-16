@@ -11,6 +11,13 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.14.0: the economy (CrowdyJS 18.13.0, CrowdyCPP 0.66.0).** `kit.player`, the caller's own
+`player` hub, and its views `kit.inventory`, `kit.wallet`, `kit.progression`,
+`kit.achievements`, `kit.quests`, `kit.crafting`, `kit.loot` and `kit.production`; markets by
+name: `kit.shops.at(key)`, `kit.market.at(key)` and `kit.trades.at(key)`. It lives in hub state
+and is not a ledger. A change refused `unavailable` is sent again with its action id. They need
+ckx-sdk 0.12.1 in the tier's compute toolchain (dev: v1.15.0).
+
 **v0.13.0: the genre starters (CrowdyJS 18.12.0, CrowdyCPP 0.65.0).** Nine more kit modules,
 one per ck-exec genre starter: `kit.leaderboards.board(name)`, `kit.tables.table(key)` (the
 caller's hand as private state), `kit.tactics.battle(key)`, `kit.encounters.encounter(key)`,

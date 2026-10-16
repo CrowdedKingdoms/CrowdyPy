@@ -1,0 +1,208 @@
+"""Markets (the ``market`` starter): vendors, order books and trades between players, each with
+what a player puts up held in their own hub. CrowdyJS ``src/kit/modules/market.ts``."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+from crowdypy.kit.mirror import HubState, PrivateState
+
+if TYPE_CHECKING:
+    from crowdypy.kit.runtime import KitRuntime
+
+__all__ = [
+    "MarketCore",
+    "MarketHandle",
+    "MarketsKit",
+    "ShopHandle",
+    "ShopsKit",
+    "TradeDesk",
+    "TradesKit",
+]
+
+TOPIC = "market"
+
+
+class MarketCore:
+    """One market hub's mirrors and calls, shared by its market, shop and trade handles."""
+
+    def __init__(self, runtime: KitRuntime, node_type: str, key: str) -> None:
+        self.runtime = runtime
+        self.node_type = node_type
+        self.key = key
+        #: The ``market`` topic: vendors' stock, quotes, open trades.
+        self.view = HubState(runtime, node_type, key, TOPIC)
+
+        def reader(method: str) -> Any:
+            async def read() -> Any:
+                return await runtime.call(node_type, key, method)
+
+            return read
+
+        #: The caller's open orders, read again when the market says they moved.
+        self.orders = PrivateState(
+            runtime, node_type=node_type, key=key, topic=TOPIC, what="orders", read=reader("orders")
+        )
+        #: The caller's open and settling trades.
+        self.trades = PrivateState(
+            runtime, node_type=node_type, key=key, topic=TOPIC, what="trades", read=reader("trades")
+        )
+
+    async def change(self, method: str, args: Any) -> Any:
+        return await self.runtime.call(self.node_type, self.key, method, args, action=True)
+
+    async def read(self, method: str, args: Any = None) -> Any:
+        return await self.runtime.call(self.node_type, self.key, method, args)
+
+
+class MarketsKit:
+    """Markets' order books: :meth:`at` a market by its name."""
+
+    def __init__(self, core: Callable[[str], MarketCore]) -> None:
+        self._core = core
+
+    def at(self, key: str = "town") -> MarketHandle:
+        return MarketHandle(self._core(key))
+
+
+class MarketHandle:
+    """A market's order books: limit orders matched at price-time priority. An order holds what
+    it offers in the player's own hub until it fills or is cancelled."""
+
+    def __init__(self, core: MarketCore) -> None:
+        self._core = core
+
+    @property
+    def view(self) -> HubState:
+        return self._core.view
+
+    @property
+    def orders(self) -> PrivateState:
+        return self._core.orders
+
+    async def watch(self) -> dict[str, Any]:
+        view: dict[str, Any] = await self._core.view.start()
+        await self._core.orders.start()
+        return view
+
+    async def unwatch(self) -> None:
+        await self._core.view.stop()
+        await self._core.orders.stop()
+
+    async def book(self, item: str) -> dict[str, Any]:
+        book: dict[str, Any] = await self._core.read("book", {"item": item})
+        return book
+
+    async def order(self, *, item: str, side: str, price: int, count: int) -> dict[str, Any]:
+        """A buy holds ``price * count`` of the market's currency, a sell the items. Raises
+        ``insufficient``, ``limit``, ``not_found``, ``unavailable``."""
+        placed: dict[str, Any] = await self._core.change(
+            "order", {"item": item, "side": side, "price": price, "count": count}
+        )
+        return placed
+
+    async def cancel(self, order: int) -> bool:
+        """What it still holds comes back. Raises ``not_found``."""
+        done: bool = await self._core.change("cancel", {"order": order})
+        return done
+
+
+class ShopsKit:
+    """Markets' vendors: :meth:`at` a market by its name."""
+
+    def __init__(self, core: Callable[[str], MarketCore]) -> None:
+        self._core = core
+
+    def at(self, key: str = "town") -> ShopHandle:
+        return ShopHandle(self._core(key))
+
+
+def _shop(vendor: str, item: str, count: int | None) -> dict[str, Any]:
+    return (
+        {"vendor": vendor, "item": item}
+        if count is None
+        else {"vendor": vendor, "item": item, "count": count}
+    )
+
+
+class ShopHandle:
+    """A market's vendors: fixed prices, stock that restocks, a limit per player."""
+
+    def __init__(self, core: MarketCore) -> None:
+        self._core = core
+
+    @property
+    def view(self) -> HubState:
+        return self._core.view
+
+    async def watch(self) -> dict[str, Any]:
+        view: dict[str, Any] = await self._core.view.start()
+        return view
+
+    async def unwatch(self) -> None:
+        await self._core.view.stop()
+
+    async def vendors(self) -> list[dict[str, Any]]:
+        vendors: list[dict[str, Any]] = await self._core.read("vendors")
+        return vendors
+
+    async def buy(self, vendor: str, item: str, count: int | None = None) -> dict[str, Any]:
+        """Buys ``count`` (one without). Raises ``insufficient`` (gold or stock), ``limit``,
+        ``full``, ``not_found``, ``unavailable``."""
+        got: dict[str, Any] = await self._core.change("buy", _shop(vendor, item, count))
+        return got
+
+    async def sell(self, vendor: str, item: str, count: int | None = None) -> dict[str, Any]:
+        """Raises ``forbidden`` (it does not buy them), ``insufficient``, ``unavailable``."""
+        paid: dict[str, Any] = await self._core.change("sell", _shop(vendor, item, count))
+        return paid
+
+
+class TradesKit:
+    """Trades between two players at a market: :meth:`at` a market by its name."""
+
+    def __init__(self, core: Callable[[str], MarketCore]) -> None:
+        self._core = core
+
+    def at(self, key: str = "town") -> TradeDesk:
+        return TradeDesk(self._core(key))
+
+
+class TradeDesk:
+    """Trades between two players: each offers a bundle, held in their own hub; when both
+    accept the last offers, the market moves each to the other."""
+
+    def __init__(self, core: MarketCore) -> None:
+        self._core = core
+
+    @property
+    def mine(self) -> PrivateState:
+        return self._core.trades
+
+    async def watch(self) -> list[dict[str, Any]]:
+        trades: list[dict[str, Any]] = await self._core.trades.start()
+        return trades
+
+    async def unwatch(self) -> None:
+        await self._core.trades.stop()
+
+    async def open(self, player: int | str) -> int:
+        """Opens a trade with ``player``; returns its id."""
+        trade: int = await self._core.change("trade", {"with": int(player)})
+        return trade
+
+    async def offer(self, trade: int, bundle: dict[str, Any]) -> bool:
+        """Offers ``bundle`` (``items`` and ``currency``), held at once. Raises ``insufficient``,
+        ``forbidden``, ``finished``."""
+        done: bool = await self._core.change("offer", {"trade": trade, "bundle": bundle})
+        return done
+
+    async def accept(self, trade: int) -> str:
+        """Returns the trade's state. Raises ``not_ready``, ``finished``."""
+        state: str = await self._core.change("accept", {"trade": trade})
+        return state
+
+    async def decline(self, trade: int) -> bool:
+        done: bool = await self._core.change("decline", {"trade": trade})
+        return done

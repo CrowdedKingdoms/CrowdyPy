@@ -118,6 +118,8 @@ KIT_CODES = {
     "EXPIRED": "expired",
     "INSUFFICIENT": "insufficient",
     "ALREADY_DONE": "already_done",
+    # A hub the call needed did not answer: the kit sends a call with an action id again.
+    "UNAVAILABLE": "unavailable",
 }
 
 

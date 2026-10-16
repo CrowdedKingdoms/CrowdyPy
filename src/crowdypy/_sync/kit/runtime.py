@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from crowdypy._concurrency import SingleFlight
 from crowdypy._sync.domains.exec import CrowdyExecError
-from crowdypy._sync.kit.protocol import KitError, new_action_id, with_action_id
+from crowdypy._sync.kit.protocol import KIT_CODES, KitError, new_action_id, with_action_id
 from crowdypy.kit.runtime import _Budget  # one class in both clients
 
 if TYPE_CHECKING:
@@ -152,6 +152,16 @@ class KitRuntime:
                 return conn.call(node_type, key, method, sent, timeout=timeout)
             except CrowdyExecError as exc:
                 err = KitError.from_error(exc)
+                # A hub that could not hear from another one did not finish, and kept no receipt.
+                if (
+                    attempt < self._retries
+                    and action_id
+                    and isinstance(err, KitError)
+                    and err.code == KIT_CODES["UNAVAILABLE"]
+                ):
+                    time.sleep(min(2.0, 0.2 * 2**attempt) * (0.5 + random.random() / 2))
+                    attempt += 1
+                    continue
                 if (
                     attempt < self._retries
                     and not isinstance(err, KitError)
