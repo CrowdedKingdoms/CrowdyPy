@@ -99,6 +99,9 @@ struct GraphQLErrorDetail {
   std::optional<bool> ownedByCaller;
   /// extensions.suspendedUntil (ISO-8601) on ACCESS_SUSPENDED; empty elsewhere.
   std::string suspendedUntil;
+  /// extensions.blockedUntil (ISO-8601) on ACCOUNT_BLOCKED for a timed block; empty
+  /// elsewhere, and while a block lasts until lifted.
+  std::string blockedUntil;
   /// extensions.reason on APP_PAUSED (why the app's runtime gate is not ACTIVE);
   /// empty elsewhere.
   std::string reason;
@@ -119,6 +122,12 @@ inline constexpr std::string_view kAccessSuspendedCode = "ACCESS_SUSPENDED";
 inline constexpr std::string_view kAccessNotGrantedCode = "ACCESS_NOT_GRANTED";
 /// extensions.code for an app whose runtime gate is not ACTIVE (HTTP 403).
 inline constexpr std::string_view kAppPausedCode = "APP_PAUSED";
+/// extensions.code for an account a platform operator has blocked (HTTP 403), on every
+/// sign-in and every request of a blocked account; see accountBlockedOf().
+inline constexpr std::string_view kAccountBlockedCode = "ACCOUNT_BLOCKED";
+/// extensions.code for a user a channel or team has banned (HTTP 403), on a join, a
+/// request, an add or an invite; see groupMemberBannedOf().
+inline constexpr std::string_view kGroupMemberBannedCode = "GROUP_MEMBER_BANNED";
 /// extensions.code for an input-log read that cannot be served right now (the log
 /// is unreachable); retryable with the same cursor.
 inline constexpr std::string_view kInputLogTemporarilyUnavailableCode =
@@ -176,6 +185,24 @@ inline std::optional<AppPaused> appPausedOf(const std::vector<GraphQLErrorDetail
   const GraphQLErrorDetail* e = errorWithCode(errors, kAppPausedCode);
   if (!e) return std::nullopt;
   return AppPaused{e->reason};
+}
+
+/// An ACCOUNT_BLOCKED refusal: a platform operator blocked the account. `blockedUntil` is
+/// extensions.blockedUntil (ISO-8601) for a timed block, which lapses by itself; empty while
+/// the block lasts until lifted. Not fixed by retrying; sign out and tell the player.
+struct AccountBlocked {
+  std::string blockedUntil;
+};
+inline std::optional<AccountBlocked> accountBlockedOf(const std::vector<GraphQLErrorDetail>& errors) {
+  const GraphQLErrorDetail* e = errorWithCode(errors, kAccountBlockedCode);
+  if (!e) return std::nullopt;
+  return AccountBlocked{e->blockedUntil};
+}
+
+/// True when a channel or team refused the call with GROUP_MEMBER_BANNED; only an unban
+/// lifts it.
+inline bool groupMemberBannedOf(const std::vector<GraphQLErrorDetail>& errors) {
+  return errorWithCode(errors, kGroupMemberBannedCode) != nullptr;
 }
 
 /// True when an input-log read failed in a way worth repeating with the SAME cursor

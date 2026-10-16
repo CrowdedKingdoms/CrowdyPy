@@ -48,15 +48,19 @@ _LAZY: dict[str, str] = {
     "GraphQLSubscriptions": "crowdypy.subscriptions",
     "AsyncExecConnection": "crowdypy.exec_gateway",
     "ExecConnection": "crowdypy.exec_gateway",
+    "EXEC_CLOSE_ACCESS_ENDED": "crowdypy.exec_gateway",
     # errors
     "ACCESS_NOT_GRANTED_CODE": "crowdypy.errors",
+    "ACCOUNT_BLOCKED_CODE": "crowdypy.errors",
     "ACCESS_REVOKED_CODE": "crowdypy.errors",
     "ACCESS_SUSPENDED_CODE": "crowdypy.errors",
     "ACTOR_EXISTS_CODE": "crowdypy.errors",
     "APP_PAUSED_CODE": "crowdypy.errors",
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
+    "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
     "CrowdyAccessRefusal": "crowdypy.errors",
+    "CrowdyAccountBlocked": "crowdypy.errors",
     "CrowdyActorExists": "crowdypy.errors",
     "CrowdyAppPaused": "crowdypy.errors",
     "CrowdyAppUnavailableError": "crowdypy.errors",
@@ -72,8 +76,10 @@ _LAZY: dict[str, str] = {
     "CrowdyUserCodeFaultError": "crowdypy.errors",
     "GridScopeError": "crowdypy.errors",
     "access_refusal_of": "crowdypy.errors",
+    "account_blocked_of": "crowdypy.errors",
     "actor_exists_of": "crowdypy.errors",
     "app_paused_of": "crowdypy.errors",
+    "group_member_banned_of": "crowdypy.errors",
     "is_app_paused": "crowdypy.errors",
     "player_fault_of": "crowdypy.errors",
     # sessions, tokens, routing
@@ -397,6 +403,9 @@ if TYPE_CHECKING:
         ACCESS_SUSPENDED_CODE as ACCESS_SUSPENDED_CODE,
     )
     from crowdypy.errors import (
+        ACCOUNT_BLOCKED_CODE as ACCOUNT_BLOCKED_CODE,
+    )
+    from crowdypy.errors import (
         ACTOR_EXISTS_CODE as ACTOR_EXISTS_CODE,
     )
     from crowdypy.errors import (
@@ -406,10 +415,16 @@ if TYPE_CHECKING:
         APP_UNAVAILABLE_CODE as APP_UNAVAILABLE_CODE,
     )
     from crowdypy.errors import (
+        GROUP_MEMBER_BANNED_CODE as GROUP_MEMBER_BANNED_CODE,
+    )
+    from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
     )
     from crowdypy.errors import (
         CrowdyAccessRefusal as CrowdyAccessRefusal,
+    )
+    from crowdypy.errors import (
+        CrowdyAccountBlocked as CrowdyAccountBlocked,
     )
     from crowdypy.errors import (
         CrowdyActorExists as CrowdyActorExists,
@@ -457,10 +472,16 @@ if TYPE_CHECKING:
         access_refusal_of as access_refusal_of,
     )
     from crowdypy.errors import (
+        account_blocked_of as account_blocked_of,
+    )
+    from crowdypy.errors import (
         actor_exists_of as actor_exists_of,
     )
     from crowdypy.errors import (
         app_paused_of as app_paused_of,
+    )
+    from crowdypy.errors import (
+        group_member_banned_of as group_member_banned_of,
     )
     from crowdypy.errors import (
         is_app_paused as is_app_paused,
@@ -470,6 +491,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.estate import (
         is_same_estate as is_same_estate,
+    )
+    from crowdypy.exec_gateway import (
+        EXEC_CLOSE_ACCESS_ENDED as EXEC_CLOSE_ACCESS_ENDED,
     )
     from crowdypy.exec_gateway import (
         AsyncExecConnection as AsyncExecConnection,

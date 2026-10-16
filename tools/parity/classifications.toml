@@ -46,6 +46,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.createTierAccessProvisioningToken" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.creditOrgWallet" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.endTierAccessSessions" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.blockAccount" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.forceLogoutUser" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.forgetEmailDeliverability" = { kind = "browser-exclusion", reason = "operator-only email deliverability control; not a game-client surface" }
 "mutation.grantTierAccessByPattern" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -64,10 +65,12 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.setOrgBillingExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setOrgStatus" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setSuperAdmin" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.unblockAccount" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setTierAccessMode" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setUserTierAccess" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.takeDownHostedGame" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.updateUserType" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.accountBlock" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.agentRateCards" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.allHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.billingCharges" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
@@ -123,6 +126,7 @@ GraphQLClient = "AsyncGraphQLClient"
 
 # --- native-equivalent
 "CrowdyClient.close" = { kind = "native-equivalent", reason = "AsyncCrowdyClient.aclose(), the asyncio spelling; the blocking CrowdyClient has close()" }
+"KitError.from" = { kind = "native-equivalent", reason = "KitError.from_error(error): `from` is a Python keyword" }
 
 # --- browser-exclusion
 "PortalAPI.embeddedHostInfo" = { kind = "browser-exclusion", reason = "answers whether the page runs inside the Crowdy Games shell iframe; a a Python client client never does" }
@@ -136,6 +140,7 @@ GraphQLClient = "AsyncGraphQLClient"
 # --- native-equivalent
 "BUNDLE_HEADER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
 "BUNDLE_LENGTH_PREFIX_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
+"execWireIntegers" = { kind = "native-equivalent", reason = "msgspec writes a Python int as a msgpack integer of its width, so there is no float for a hub's integer field to refuse; @msgpack/msgpack writes a JS number of 2^32 or more as a float without it" }
 "BrowserLocalStorageTokenStore" = { kind = "native-equivalent", reason = "token persistence is TokenStore / SessionStore; the localStorage backing is browser-only, and FileTokenStore mirrors its session / app key split" }
 "GraphQLTransport" = { kind = "native-equivalent", reason = "pass an httpx.AsyncClient / httpx.Client as http_client= (transport, proxies, HTTP/2, timeouts)" }
 "RELAY_MAX_BUNDLE_MEMBERS" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_BUNDLE_MEMBERS" }

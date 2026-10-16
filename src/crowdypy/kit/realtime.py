@@ -1,0 +1,152 @@
+"""What kit hubs show players near them through the realtime tier, decoded: server-driven
+actors (mobs, NPCs, pets, a ball) and server events. CrowdyJS ``src/kit/realtime.ts``.
+
+A server-driven actor's state is :class:`KitActorState` as msgpack (``ckx_sdk::kit::wire``
+``ActorState``). A server event is an event type from the registry in :mod:`crowdypy.kit.wire`
+with a JSON body.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from dataclasses import dataclass
+from typing import Any
+
+import msgspec
+
+from crowdypy.kit.wire import (
+    EVENT_ABILITY,
+    EVENT_CONTACT_DAMAGE,
+    EVENT_CONTROL_POINT,
+    EVENT_EMOTE,
+    EVENT_ENCOUNTER,
+    EVENT_MOVEMENT_VIOLATION,
+    EVENT_POSSESSION,
+    EVENT_PROPOSAL,
+    EVENT_RACE_TIMING,
+    EVENT_SCORE,
+    EVENT_TURN,
+    EVENT_WEATHER,
+    EVENT_ZONE_CHANGE,
+)
+
+__all__ = [
+    "KIT_EVENT_TYPES",
+    "KitActorState",
+    "decode_kit_actor_state",
+    "is_kit_actor_state",
+    "kit_actor_lanes",
+    "parse_kit_server_event",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class KitActorState:
+    """A server-driven actor as a kit hub shows it."""
+
+    #: What it is: ``mob``, ``npc``, ``pet``, ``ball``, ``ghost``, or a game's own word.
+    kind: str
+    #: Its id within the hub that shows it.
+    id: int
+    #: Where it is, in chunks.
+    x: float
+    y: float
+    z: float
+    hp: int | None = None
+    max_hp: int | None = None
+    mode: str | None = None
+    #: The player it belongs to (a pet, a summon).
+    owner: int | None = None
+    yaw: float | None = None
+    name: str | None = None
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def is_kit_actor_state(value: Any) -> bool:
+    """Whether a decoded value is a kit actor's state: a map with ``kind``, ``id``, ``x``, ``z``."""
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("kind"), str)
+        and isinstance(value.get("id"), int)
+        and _number(value.get("x"))
+        and _number(value.get("z"))
+    )
+
+
+def decode_kit_actor_state(data: bytes) -> KitActorState | None:
+    """A kit actor's state from its msgpack bytes, or ``None`` when they are not one (a
+    player's own state, say)."""
+    try:
+        v = msgspec.msgpack.decode(data)
+    except Exception:
+        return None
+    if not is_kit_actor_state(v):
+        return None
+    return KitActorState(
+        kind=v["kind"],
+        id=v["id"],
+        x=float(v["x"]),
+        y=float(v["y"]) if _number(v.get("y")) else 0.0,
+        z=float(v["z"]),
+        hp=v["hp"] if isinstance(v.get("hp"), int) else None,
+        max_hp=v.get("max_hp") if isinstance(v.get("max_hp"), int) else None,
+        mode=v.get("mode") if isinstance(v.get("mode"), str) else None,
+        owner=v.get("owner") if isinstance(v.get("owner"), int) else None,
+        yaw=float(v["yaw"]) if _number(v.get("yaw")) else None,
+        name=v.get("name") if isinstance(v.get("name"), str) else None,
+    )
+
+
+def kit_actor_lanes() -> dict[str, Any]:
+    """Lane predicates over decoded remote actors (a :class:`KitActorState`, or anything else
+    for a player's): ``players``, ``mobs``, ``npcs``, ``pets``, and ``others`` for any other
+    kind a hub shows."""
+    known = {"mob", "npc", "pet"}
+
+    def kind(actor: Any) -> str:
+        return actor.kind if isinstance(actor, KitActorState) else "player"
+
+    return {
+        "players": lambda a: kind(a) == "player",
+        "mobs": lambda a: kind(a) == "mob",
+        "npcs": lambda a: kind(a) == "npc",
+        "pets": lambda a: kind(a) == "pet",
+        "others": lambda a: kind(a) not in known and kind(a) != "player",
+    }
+
+
+#: The event types of the kit's registry; each body is JSON.
+KIT_EVENT_TYPES: tuple[int, ...] = (
+    EVENT_CONTACT_DAMAGE,
+    EVENT_WEATHER,
+    EVENT_TURN,
+    EVENT_SCORE,
+    EVENT_PROPOSAL,
+    EVENT_ABILITY,
+    EVENT_MOVEMENT_VIOLATION,
+    EVENT_CONTROL_POINT,
+    EVENT_RACE_TIMING,
+    EVENT_ZONE_CHANGE,
+    EVENT_ENCOUNTER,
+    EVENT_POSSESSION,
+    EVENT_EMOTE,
+)
+
+
+def parse_kit_server_event(
+    event_type: int, state: bytes | str
+) -> tuple[int, dict[str, Any]] | None:
+    """A server event a kit hub sent: its type and the JSON object its state carries (bytes, or
+    base64 as a notification carries it), or ``None`` when the state is not one."""
+    try:
+        raw = base64.b64decode(state) if isinstance(state, str) else state
+        body = json.loads(raw.decode("utf-8")) if raw else {}
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    return event_type, body
