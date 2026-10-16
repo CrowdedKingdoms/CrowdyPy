@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import threading
 import time
 from collections.abc import Awaitable, Callable
@@ -164,6 +165,12 @@ def decode_exec_frame(data: bytes) -> ExecReply | ExecPush | ExecPong:
     if tag == 0x84:
         return ExecPong(int.from_bytes(take(4), "little"))
     raise CrowdyExecError("BadRequest", f"unknown frame type 0x{tag:x} from the gateway")
+
+
+def _jittered(seconds: float) -> float:
+    """Half of a reconnect wait, plus up to as much again at random: the players of a host that
+    went away do not all dial its replacement at once."""
+    return seconds / 2 + random.random() * seconds / 2
 
 
 def _decode_value(payload: bytes) -> Any:
@@ -399,7 +406,7 @@ class AsyncExecConnection:
                     listener(self.host)
                 return
             except Exception:
-                await asyncio.sleep(self._backoff)
+                await asyncio.sleep(_jittered(self._backoff))
                 self._backoff = min(self._backoff * 2, _MAX_BACKOFF)
 
     async def _redial(self, origin: Any) -> None:
@@ -701,7 +708,7 @@ class ExecConnection:
                     listener(self.host)
                 return
             except Exception:
-                time.sleep(self._backoff)
+                time.sleep(_jittered(self._backoff))
                 self._backoff = min(self._backoff * 2, _MAX_BACKOFF)
 
     def _redial(self, origin: Any) -> None:

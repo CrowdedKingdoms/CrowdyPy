@@ -126,6 +126,7 @@ GraphQLClient = "AsyncGraphQLClient"
 
 # --- native-equivalent
 "CrowdyClient.close" = { kind = "native-equivalent", reason = "AsyncCrowdyClient.aclose(), the asyncio spelling; the blocking CrowdyClient has close()" }
+"KitError.from" = { kind = "native-equivalent", reason = "KitError.from_error(error): `from` is a Python keyword" }
 
 # --- browser-exclusion
 "PortalAPI.embeddedHostInfo" = { kind = "browser-exclusion", reason = "answers whether the page runs inside the Crowdy Games shell iframe; a a Python client client never does" }
@@ -139,6 +140,7 @@ GraphQLClient = "AsyncGraphQLClient"
 # --- native-equivalent
 "BUNDLE_HEADER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
 "BUNDLE_LENGTH_PREFIX_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
+"execWireIntegers" = { kind = "native-equivalent", reason = "msgspec writes a Python int as a msgpack integer of its width, so there is no float for a hub's integer field to refuse; @msgpack/msgpack writes a JS number of 2^32 or more as a float without it" }
 "BrowserLocalStorageTokenStore" = { kind = "native-equivalent", reason = "token persistence is TokenStore / SessionStore; the localStorage backing is browser-only, and FileTokenStore mirrors its session / app key split" }
 "GraphQLTransport" = { kind = "native-equivalent", reason = "pass an httpx.AsyncClient / httpx.Client as http_client= (transport, proxies, HTTP/2, timeouts)" }
 "RELAY_MAX_BUNDLE_MEMBERS" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_BUNDLE_MEMBERS" }
