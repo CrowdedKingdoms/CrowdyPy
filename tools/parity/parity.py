@@ -51,7 +51,7 @@ KINDS = {
 # The CrowdyJS sources whose public classes form the compared surface: the set
 # CrowdyCPP's tools/parity/parity.mjs reads, plus the client entry points and the grid
 # scope (crowdy-client.ts, client.ts, grid-scope.ts), which CrowdyCPP's gate does not compare.
-JS_CLASS_DIRS = ("src/domains/", "src/kit/", "src/stores/")
+JS_CLASS_DIRS = ("src/domains/", "src/kit/", "src/kit/modules/", "src/stores/")
 JS_CLASS_FILES = (
     "src/crowdy-client.ts",
     "src/client.ts",
