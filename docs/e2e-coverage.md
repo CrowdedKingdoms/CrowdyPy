@@ -17,7 +17,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_HTTP_URL` | no | the game API origin, when not the minted `game_api_url` |
 | `CROWDY_E2E_STUDIO_GRID_ID` | no | a grid in the app that the owner controls (Studio suite) |
 | `CROWDY_E2E_SLOW=1` | no | long-running suites |
-| `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards) |
+| `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards), at `crowdy-e2e-py-<kind>-<id>@test.invalid` addresses and with the provisioning token when one is set |
 | `CROWDY_E2E_PROVISIONING_TOKEN` | dev and test | dev and test are staff-only, so a new derived player is refused (`TIER_ACCESS_REQUIRED`) unless `register` carries a provisioning token covering its address. Use the `harness` token (Secrets Manager `infra-cp/<tier>/loadtest/provisioning-token-harness`, `token` key), which covers `crowdy-e2e*@test.invalid`, with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` (the `*` needs at least one character, so the bare `crowdy-e2e@test.invalid` is refused for a suite that registers the base address). Sent on `register` only; other tiers ignore it |
 
 ```bash
@@ -59,6 +59,7 @@ player once and signs it in for the later suites.
 | 2026-10-09 | dev tier, app `96701660793088`, after replication server v0.35.0 and ck-api v2.38.0 reached dev | `crowdypy 0.6.0.dev1` from PyPI (installed into a clean Python 3.12 with uv) | identity (incl. the terms gate), ranged channel, replication, world and world data suites: 10 passed |
 | 2026-10-13 | dev tier (ck-api v2.42.0), app `96701660793088`, the `harness` provisioning token with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` | 0.10.0 (branch, vendoring CrowdyCPP `dev/v0.62.0`) | identity (the terms-gate case now registers with the token and no consents), input log, ranged channel, replication, world and world data suites: 12 passed; open grid (needs `CROWDY_E2E_THROWAWAY_OWNER=1`) and Studio skipped |
 | 2026-10-14 | dev tier (ck-api v2.44.1, replication server v0.39.0), app `96701660793088`, the `harness` provisioning token | 0.11.0 (`dev` at `586fc40`, vendoring CrowdyCPP 0.63.0) | identity, input log, ranged channel, replication, world and world data suites: 12 passed; open grid (needs `CROWDY_E2E_THROWAWAY_OWNER=1`) and Studio skipped |
+| 2026-10-16 | test tier (ck-api v2.49.1, compute toolchain v1.15.0), app `101970621262848` (CrowdyPy e2e, in the test org admin's org), the `harness` provisioning token; the open-grid suite in its own throwaway org and app | `crowdypy 0.14.0rc1` from PyPI (the `test/v0.14.0` release, installed into a clean Python 3.12 with uv, numpy beside it for the replication suite) | identity, input log, ranged channel, replication, world and world data suites: 12 passed; open grid: refused `TIER_ACCESS_REQUIRED` at first (its throwaway accounts registered without the token, at addresses it does not cover), then 2 passed once they register through `identity_client` at `crowdy-e2e-py-*@test.invalid`; Studio skipped |
 
 ## Not covered here
 
