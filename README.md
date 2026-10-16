@@ -11,6 +11,40 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.14.1: the exec socket names a paused app and a switched-off app or type.** `AppPaused`, `AppDisabled`, and `TypeDisabled`. Still CrowdyJS 18.13.0 and CrowdyCPP 0.66.0.
+
+**v0.14.0: the economy (CrowdyJS 18.13.0, CrowdyCPP 0.66.0).** `kit.player`, the caller's own
+`player` hub, and its views `kit.inventory`, `kit.wallet`, `kit.progression`,
+`kit.achievements`, `kit.quests`, `kit.crafting`, `kit.loot` and `kit.production`; markets by
+name: `kit.shops.at(key)`, `kit.market.at(key)` and `kit.trades.at(key)`. It lives in hub state
+and is not a ledger. A change refused `unavailable` is sent again with its action id. They need
+ckx-sdk 0.12.1 in the tier's compute toolchain (dev: v1.15.0).
+
+**v0.13.0: the genre starters (CrowdyJS 18.12.0, CrowdyCPP 0.65.0).** Nine more kit modules,
+one per ck-exec genre starter: `kit.leaderboards.board(name)`, `kit.tables.table(key)` (the
+caller's hand as private state), `kit.tactics.battle(key)`, `kit.encounters.encounter(key)`,
+`kit.minigames.duel(key)`, `kit.instances.run(key)`, `kit.arenas.arena(key)`,
+`kit.racing.race(key)` / `ball(key)` and `kit.territory.map(key)` / `zone(key)`, in both clients.
+They need a compute toolchain with ckx-sdk 0.11.0 on the tier.
+
+**v0.12.0: the Game Kit on ck-exec (CrowdyJS 18.11.0, CrowdyCPP 0.64.0).** `client.kit(app_id)`
+gains typed clients for the ck-exec starter hubs, the client half of the game kit whose server
+half is `ckx_sdk::kit`: `kit.world` (conditions and resource nodes mirrored, harvests, liveops for
+developers), `kit.matchmaking.queue(name)` (parties matched whole), `kit.sessions.open(key)` (lobby
+to result), `kit.npcs.area(key)` (mobs, NPCs, players' pets), `kit.topology` (compose, check, build
+and deploy the starters), and `kit.spectate`, `kit.emotes` and `kit.shards`. They share one exec
+connection (`kit.runtime`) that paces calls under the gateway's limit, resends only what is safe
+and mirrors topics with resync on gaps, epochs and reconnects; a hub's refusal is a `KitError`
+with its `code`. Both clients have it: the blocking one runs a mirror's resync beside the
+connection's reader thread. Exec reconnects wait with jitter. See [MIGRATION.md](MIGRATION.md).
+
+**v0.11.0: access that ends ends for good, and channel and team bans (CrowdyJS 18.10.0, CrowdyCPP
+0.63.0).** A host's `4403` close (ck-exec 0.16: the player was suspended, revoked, signed out or
+blocked) is final: `ExecConnection.on_access_ended` hears the reason, the call in flight fails
+`Denied`, and the connection does not redial. `client.channels.ban` / `unban` and
+`client.teams.ban` / `unban` manage bans, and `account_blocked_of` / `group_member_banned_of` read
+the two refusals. See [MIGRATION.md](MIGRATION.md).
+
 **v0.10.0: the input log says what it lost (CrowdyJS 18.9.0, CrowdyCPP 0.62.0).** Every session
 from `client.input_log.sessions` carries `missingRecords`, the inputs the replication server
 accepted that never reached the log, which needs the Game API release after v2.40.2. Its
@@ -252,6 +286,33 @@ cannot hold (a type outside 0-255, a position outside 0-15) is kept in the chunk
 `overlay()`, and `voxel_type_at` reads it first. The echo of your own `set_voxel` is not
 applied a second time. A game with other addressing reads every edit from
 `session.on("voxel_update", ...)`, which includes those echoes.
+
+## Game Kit
+
+`client.kit(app_id)` drives the ck-exec starter hubs (the server half is `ckx_sdk::kit`), with
+the same modules as CrowdyJS's `client.kit(appId)`:
+
+```python
+kit = game.kit(app_id)
+await kit.world.conditions.start()  # mirrored: time of day, weather, liveops modifiers
+queue = kit.matchmaking.queue("ranked")
+queue.on_matched(lambda session: print("matched into", session))
+await queue.join(1200)
+watching = asyncio.create_task(queue.watch())  # asks while the player waits
+try:
+    await kit.npcs.area_at(12, -3).attack(4)
+except KitError as e:
+    if e.code == "cooldown":
+        ...
+```
+
+`kit.world`, `kit.matchmaking`, `kit.sessions`, `kit.npcs` and `kit.topology` (compose, check,
+build and deploy the starters) share one exec connection (`kit.runtime`): it paces calls under the
+gateway's 120 per 10 s, sends a call again only when that is safe (it did not run, or it carries
+an `action_id` the hub answers once), and its mirrors (`HubState`, `CollectionMirror`,
+`PrivateState`) take a new snapshot after a gap, another epoch or a reconnect. `kit.spectate`,
+`kit.emotes` and `kit.shards` are the client conventions, and `kit.social` the parties, guilds and
+chat rooms. The blocking client's kit is the same, with blocking calls.
 
 ## Crowdy Studio
 

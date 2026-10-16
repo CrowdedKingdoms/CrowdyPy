@@ -17,7 +17,7 @@ import pytest
 import crowdypy
 from crowdypy.domains.exec import CrowdyExecError, exec_gateway_refusal
 from crowdypy.exec_gateway import AsyncExecConnection
-from e2e.conftest import CONFIG
+from e2e.conftest import CONFIG, identity_client
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CROWDY_E2E_THROWAWAY_OWNER") != "1",
@@ -66,10 +66,9 @@ class World:
 
 
 async def _account(kind: str) -> tuple[crowdypy.AsyncCrowdyClient, str]:
-    client = crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url)
-    email = f"crowdypy-e2e-{kind}-{rid()}@test.invalid"
-    auth = await patiently(lambda: client.auth.register(email, f"Aa1!e2e-{rid()}{rid()}"))
-    return client, auth.user.user_id
+    # On dev and test the harness provisioning token admits only crowdy-e2e*@test.invalid.
+    email = f"crowdy-e2e-py-{kind}-{rid()}@test.invalid"
+    return await patiently(lambda: identity_client(email))
 
 
 async def _game(identity: crowdypy.AsyncCrowdyClient, app_id: str) -> crowdypy.AsyncCrowdyClient:

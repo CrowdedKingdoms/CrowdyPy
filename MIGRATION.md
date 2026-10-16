@@ -3,6 +3,118 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.14.1
+
+CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive. A paused app, an app switched off, and a type switched off used to arrive as a bare denial. They are now `AppPaused`, `AppDisabled`, and `TypeDisabled`.
+
+## 0.14.0
+
+CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive: the economy, which lives in hub state and is
+not a ledger (HS-52); the `player` and `market` starters need ckx-sdk 0.12.0.
+
+- **`kit.player`** (`PlayerKit`), the caller's own hub, keyed by `player_id` (pass it to
+  `client.kit()` or let the kit ask who the player is): `watch(*parts)`, `me`, `rules`,
+  `profile_of`, `on_event`, and the stores `profile`, `inventory`, `wallet`, `progress`, filled
+  as they are read. Its views: `kit.inventory` (`items`, `count`, `discard`, `take_mail`),
+  `kit.wallet` (`balances`, `balance`), `kit.progression` (`on_level`, `profile_of`),
+  `kit.achievements` (`list`, `on_unlock`), `kit.quests` (`list`, `accept`, `claim`, `step`),
+  `kit.crafting` (`recipes`, `craft(recipe, times)`), `kit.loot` (`tables`, `open`),
+  `kit.production` (`view`, `collect`).
+- **Markets**: `kit.shops.at(key)` (`vendors`, `buy`, `sell`), `kit.market.at(key)` (`book`,
+  `order(item=, side=, price=, count=)`, `cancel`, `orders` mirrored) and `kit.trades.at(key)`
+  (`open`, `offer`, `accept`, `decline`, `mine` mirrored).
+- **`KIT_CODES["UNAVAILABLE"]`**: a hub refuses a change it could not finish because another hub
+  did not answer and keeps no receipt; the kit sends a call with an action id again.
+
+## 0.13.0
+
+CrowdyJS 18.12.0 and CrowdyCPP 0.65.0. Additive: a kit module per ck-exec genre starter
+(ckx-sdk 0.11.0, which the tier's compute toolchain must carry; `kit.topology` lists, builds and
+deploys them like the others). Against an app that does not run one, its calls are refused with
+`NotFound` (the app has no such node type).
+
+- **The modules.** `kit.leaderboards.board(name)` (`view` mirrored, `top(limit=, offset=)`,
+  `around(player=, radius=)`, `me`, `season`; `submit`, `configure`, `roll` for developers),
+  `kit.tables.table(key)` (`table` mirrored, `hand` private, `join`, `start`, `play(card, suit)`,
+  `draw`, `pass_`), `kit.tactics.battle(key)` (`move(x, z)`, `attack`, `end_turn`, `my_units`),
+  `kit.encounters.encounter(key)` (`build(x, z)`, `hit`), `kit.minigames.duel(key)` (`throw`,
+  `rematch`), `kit.instances.run(key)` (`open(seed=, party=)`, `invite`, `join`, `enter`,
+  `descend`, `abandon`), `kit.arenas.arena(key)` (`join(hero_class)`, `start`, `move(x, z)`,
+  `cast(ability, x, z)`), `kit.racing.race(key)` (`pos`, `ghost`) and `kit.racing.ball(key)`
+  (`claim`, `pass_`, `shoot`), `kit.territory.map(key)` (`join(faction)`, `reset`) and
+  `kit.territory.zone(key)`. `pass` is a Python keyword, so it is `pass_`.
+- **Node types** a game deployed under other names go in `nodes=`: `leaderboard`, `deck`,
+  `tactics`, `director`, `minigame`, `instance`, `arena`, `race`, `ball`, `territory`, `zone`.
+- **Positions the hub keeps.** `move` / `pos` answer `[x, z]`, the position the hub's movement
+  warden kept, and go without an action id: the next report replaces a lost one.
+
+## 0.12.0
+
+CrowdyJS 18.11.0 and CrowdyCPP 0.64.0. Additive. The kit's typed clients drive the ck-exec
+starter hubs, whose server half is `ckx_sdk::kit` (ckx-sdk 0.10.0): the tier's compute toolchain
+must carry it (dev's v1.12.0 does) and the app must run the starters (`kit.topology.deploy`).
+
+- **The modules.** `kit.world` (`conditions` and `nodes` mirrored; `state`, `harvest`, and
+  `schedule` / `cancel` for developers), `kit.matchmaking.queue(name)` (`join(rating, party=...,
+  leader=...)`, `leave`, `accept`, `decline`, `status`, `configure`, `place`, `watch` / `unwatch`,
+  `on_matched`), `kit.sessions.open(key)` (`watch`, `join`, `ready`, `start_game`, `act`,
+  `configure`, `current_turn`, `is_my_turn`, `state` mirrored), `kit.npcs.area(key)` /
+  `area_at(x, z)` (`mobs`, `npcs`, `pets`, `attack`, `talk`, `adopt`, `rename`, `summon`,
+  `dismiss`, `release`, `my_pets`), `kit.topology` (`pack`, `types`, `plan(select,
+  overrides=...)`, `deploy`; `kit_manifest_problems`), `kit.spectate.observe(uuid, chunk)` (a
+  heartbeat to `run()` beside the game), `kit.emotes` (`send`, `parse`: client event 101 with
+  `{"emote", "targetUuid"}`) and `kit.shards`. Replies are the hub's msgpack as Python values:
+  snake_case keys as the hub sends them, and a hub's integer-keyed maps (a session's `scores`) keep
+  integer keys.
+- **Refusals.** A hub's `kit:<code>:` refusal raises `KitError` (a `CrowdyExecError` with status
+  `AppError`): branch on `code`, show `text`. `KitError.from_error` and `kit_error_code` read one
+  out of any exec error.
+- **The runtime.** `kit.runtime` (`KitRuntime`) is one exec connection for every module, opened
+  on first use: as the player with an app token, or as a developer with `developer=True`. It paces
+  what it sends to `call_budget` (100) a `budget_window_ms` (10 s), holds as long as a `Busy` "rate
+  limited" refusal says, sends a call again when it did not run (`Busy`, `RateLimited`) or when it
+  carries an action id and its outcome is unknown (`DeadlineExceeded`, `Unavailable`, `Moved`), at
+  most `retries` (2) times, and refuses a 257th subscription with code `limit`. `call(...,
+  action=True)` sends a fresh `action_id` the hub answers once.
+- **Mirrors.** `HubState`, `CollectionMirror` (`list`, `member`), `PrivateState` (read with a
+  caller-scoped call, again on a `changed` that names the player) and `WritableKitStore`. A mirror
+  takes a new snapshot on another epoch, a gap in a collection's `seq`, and a reconnect. In the
+  blocking client the resync a push or a reconnect starts runs on a thread of its own
+  (`run_detached`), because those handlers run on the connection's reader thread.
+- **Realtime.** `decode_kit_actor_state` and `kit_actor_lanes` for the actors hubs show,
+  `KIT_EVENT_TYPES`, `parse_kit_server_event`; `crowdypy.kit.wire` adds events 99 (encounter), 100
+  (possession) and 101 (emote) with their parsers and `EVENT_APP_FIRST` (1000).
+- **Exec reconnects** wait half their backoff plus up to as much again at random, in both
+  connections, so the players of a host that went away do not all dial at once.
+- `tests/fixtures/kit-protocol.json` is ck-exec's golden record of the starters (by way of
+  CrowdyJS); `tests/unit/test_kit_protocol.py` replays it through a gateway that answers only the
+  next recorded step, with both clients. The parity gate reads CrowdyJS `src/kit/modules/` too.
+
+## 0.11.0
+
+CrowdyJS 18.10.0 and CrowdyCPP 0.63.0. Additive.
+
+- **Access that ends ends for good.** ck-exec 0.16 closes a session with code `4403` (now
+  `EXEC_CLOSE_ACCESS_ENDED`) and the reason when what it rests on ends: the player's access
+  (suspended, revoked, an expired grant), their session (signed out, everywhere too, or the app's
+  authorization withdrawn), or the account (blocked). `ExecConnection` and `AsyncExecConnection`
+  treat it as final: `on_access_ended(listener)` is called once with the reason, the call in flight
+  fails `Denied`, and the connection does not reconnect. Until 0.10.0 it redialed, and the redial
+  was refused (HTTP 401 "access ended") after one retry. Tell the player; connect again only once
+  they hold access again.
+- **Channel and team bans.** `client.channels.ban(group_id, user_id, reason=None)` /
+  `unban(group_id, user_id)` and the same on `client.teams`, with the group's `manage_members`
+  permission (never the group's owner, never yourself). A banned user is removed, stops receiving
+  the channel, and joining, requesting to join and being added are refused with
+  `GROUP_MEMBER_BANNED` until the ban is lifted; leaving or being removed does not lift it.
+- **Two refusal readers.** `account_blocked_of(error)` returns `CrowdyAccountBlocked(blocked_until)`
+  for `ACCOUNT_BLOCKED` (a platform operator blocked the account: every request and sign-in is
+  refused; `blocked_until` is set for a timed block), and `group_member_banned_of(error)` is `True`
+  for `GROUP_MEMBER_BANNED`. Neither is fixed by retrying. `ACCOUNT_BLOCKED_CODE` and
+  `GROUP_MEMBER_BANNED_CODE` name the codes.
+- `blockAccount`, `unblockAccount` and `accountBlock` are super-admin operations and are not
+  wrapped (`docs/parity-matrix.md`).
+
 ## 0.10.0
 
 CrowdyJS 18.9.0 and CrowdyCPP 0.62.0. Additive, with one floor: every sessions read selects

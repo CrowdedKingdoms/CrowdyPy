@@ -29,7 +29,7 @@ def _denial(result: Any) -> str | None:
 
 def run_optimistic_action(
     apply: Callable[[], Callable[[], Any] | None],
-    invoke: Callable[[str], Awaitable[Any]],
+    invoke: Callable[[str], Any],
     *,
     rollback: Callable[[], Any] | None = None,
     validate: Callable[[Any], bool] | None = None,
