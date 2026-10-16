@@ -56,14 +56,34 @@ class PlayerKit:
         self._runtime = runtime
         self.node_type = node_type
         self._key = key
-        self.profile = _Relay()
-        self.inventory = _Relay()
-        self.wallet = _Relay()
-        self.progress = _Relay()
+        self._profile = _Relay()
+        self._inventory = _Relay()
+        self._wallet = _Relay()
+        self._progress = _Relay()
         self._parts: dict[str, Any] | None = None
         self._making: AsyncSingleFlight[dict[str, Any]] = AsyncSingleFlight()
         self._rules: Any = None
         self._listeners: builtins.list[Callable[[dict[str, Any]], Any]] = []
+
+    @property
+    def profile(self) -> _Relay:
+        """The player's public profile."""
+        return self._profile
+
+    @property
+    def inventory(self) -> _Relay:
+        """What the player carries, and their mail."""
+        return self._inventory
+
+    @property
+    def wallet(self) -> _Relay:
+        """The player's balances."""
+        return self._wallet
+
+    @property
+    def progress(self) -> _Relay:
+        """The player's level, experience and counters."""
+        return self._progress
 
     async def key(self) -> str:
         """The hub's key: the player's id."""
