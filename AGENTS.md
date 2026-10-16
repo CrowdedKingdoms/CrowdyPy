@@ -108,6 +108,12 @@ reviewed classification (`native-equivalent` or `browser-exclusion`), a stale or
 fails, and a `portable-gap` fails the build. Something new in CrowdyJS that CrowdyPy lacks is
 ported in the same change that moves the pin; it is not parked as a gap.
 
+The gate reads a CrowdyJS class field initialised with `=` (`readonly profile = new Relay()`)
+as a member named `profile`. On the Python side only methods and properties are members; an
+attribute set in `__init__` to one of CrowdyPy's classes contributes its methods as
+`profile.get` and so on, never `profile` itself. Port such a field as a read-only property, as
+`PlayerKit`'s stores are (0.14.0).
+
 ## Live e2e
 
 `tests/e2e/` holds black-box suites over the `CROWDY_E2E_*` variables CrowdyCPP's suites read;
