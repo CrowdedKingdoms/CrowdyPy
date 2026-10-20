@@ -59,11 +59,18 @@ class PlayerWalletAPI(Domain):
     def charges(
         self, app_id: str | int | None = None, limit: int | None = None
     ) -> list[dict[str, Any]]:
-        """The caller's posted hourly usage charges, newest first, optionally for one app.
+        """Deprecated: the cents-era charges, which nothing adds to any more. Use
+        :meth:`transactions`: its ``usage_debit`` entries are the usage charges.
 
-        Each splits ``platformCents`` (the platform's rate card) from ``markupCents`` (the
-        studio's markup) with a per-metric snapshot. ``limit`` defaults to 50, at most 200.
+        The caller's hourly usage charges from before the lossless ledger, newest first,
+        optionally for one app. ``limit`` defaults to 50, at most 200.
         """
+        warnings.warn(
+            "PlayerWalletAPI.charges is deprecated: nothing is added to it any more; "
+            "the usage_debit entries of transactions are the usage charges",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         result: list[dict[str, Any]] = self._request(
             ops.PLAYER_USAGE_CHARGES, omit_none({"appId": _optional_bigint(app_id), "limit": limit})
         )

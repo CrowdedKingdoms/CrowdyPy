@@ -3,6 +3,15 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.14.2
+
+CrowdyJS 18.14.0 and CrowdyCPP 0.67.3. No breaking change. `PlayerWalletAPI.charges()` is
+deprecated and warns (`DeprecationWarning`), as the `playerUsageCharges` field it wraps is: it
+reads the cents-era hourly rows, which the lossless ledger does not write. Read
+`transactions()`: each `usage_debit` entry is one usage charge. The schema's billing
+descriptions are 18.14.0's. The vendored native core moves from CrowdyCPP 0.66.0 to 0.67.3;
+the replication client it binds is unchanged.
+
 ## 0.14.1
 
 CrowdyJS 18.13.0 and CrowdyCPP 0.66.0. Additive. A paused app, an app switched off, and a type switched off used to arrive as a bare denial. They are now `AppPaused`, `AppDisabled`, and `TypeDisabled`.

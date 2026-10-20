@@ -5,7 +5,7 @@ no client-side checks), so the contract under test is the operation, the variabl
 arguments as decimal strings, omitted optionals, idempotency keys under the document's
 variable name) and the root field handed back untouched. On top of that: the one argument
 whose omission and explicit null differ (``set_auto_billing``'s ``limit_cents``) and the
-deprecated ``app_markup_accrued``.
+deprecated ``app_markup_accrued`` and ``charges``.
 """
 
 from __future__ import annotations
@@ -435,16 +435,6 @@ CASES: list[Case] = [
         {"limit": 20, "offset": 40},
         [ROW],
     ),
-    Case(PlayerWalletAPI, "charges", (), "PlayerUsageCharges", {}, [ROW]),
-    Case(
-        PlayerWalletAPI,
-        "charges",
-        (42,),
-        "PlayerUsageCharges",
-        {"appId": "42", "limit": 5},
-        [ROW],
-        {"limit": 5},
-    ),
     Case(PlayerWalletAPI, "spend_caps", (), "PlayerSpendCaps", {}, [ROW]),
     Case(
         PlayerWalletAPI,
@@ -546,6 +536,7 @@ def test_method_set_is_crowdyjs_snake_cased_and_every_method_is_covered(
     covered = {case.method for case in CASES if case.domain is domain}
     if domain is PlayerWalletAPI:
         covered.add("app_markup_accrued")  # test_app_markup_accrued_is_deprecated
+        covered.add("charges")  # test_charges_is_deprecated
     assert covered == ported
 
 
@@ -585,6 +576,19 @@ async def test_app_markup_accrued_is_deprecated(api: MockApi, graphql: AsyncGrap
     assert api.last.operation_name == "AppPlayerMarkupAccrued"
     assert api.last.query == ops.APP_PLAYER_MARKUP_ACCRUED.document
     assert api.last.variables == {"appId": "42"}
+
+
+async def test_charges_is_deprecated(api: MockApi, graphql: AsyncGraphQLClient) -> None:
+    wallet = PlayerWalletAPI(graphql)
+    api.reply_with_root([ROW])
+    with pytest.warns(DeprecationWarning, match="usage_debit"):
+        assert await wallet.charges() == [ROW]
+    assert api.last.operation_name == "PlayerUsageCharges"
+    assert api.last.query == ops.PLAYER_USAGE_CHARGES.document
+    assert api.last.variables == {}
+    with pytest.warns(DeprecationWarning, match="usage_debit"):
+        await wallet.charges(42, limit=5)
+    assert api.last.variables == {"appId": "42", "limit": 5}
 
 
 async def test_a_bad_id_is_refused_before_anything_is_sent(
