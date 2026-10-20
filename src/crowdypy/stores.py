@@ -851,6 +851,8 @@ class ChunkStore:
         z: int,
         voxel_type: int,
         state: Any = None,
+        *,
+        optimistic: bool = True,
     ) -> int:
         """Apply an edit locally, replicate it, and queue the chunk for write-back. Returns
         the send's sequence number.
@@ -858,15 +860,23 @@ class ChunkStore:
         The position and type are the app's signed 16-bit values; one the dense grid cannot
         hold is kept in the :meth:`overlay`. The encoded state is at most 1,024 bytes. Raises
         ``ValueError`` for anything else, before anything changes or is sent. The server's
-        echo of the edit is not applied again."""
+        echo of the edit is not applied again.
+
+        ``optimistic=False`` (CrowdyJS's ``optimistic: false``) changes nothing locally and
+        queues nothing for write-back: the edit is applied when the server's echo of it
+        arrives, so the cache holds only what the server accepted."""
         coord = _coord(chunk)
         encoded = self._voxel_codec.encode(state) if state is not None else b""
         assert_voxel_edit((x, y, z), voxel_type, encoded)
-        sequence: int = self._session._native.set_voxel(*coord, x, y, z, voxel_type, encoded)
+        sequence: int = self._session._native.set_voxel(
+            *coord, x, y, z, voxel_type, encoded, optimistic
+        )
         self._session.track_send(
             {"kind": "voxelUpdate", "sequence": sequence, "sent_at": _now_ms(),
              "uuid": self._session.actor_uuid, "detail": {"chunk": coord, "x": x, "y": y, "z": z}}
         )  # fmt: skip
+        if not optimistic:
+            return sequence
         meta = self._entry(coord)
         if meta.load_state in ("loading", "missing"):
             meta.load_state = "seeded"
