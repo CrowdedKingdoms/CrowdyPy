@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.15.0: a voxel edit that waits for the server, and opcode 140 from `client.udp`.** `chunks.set_voxel(..., optimistic=False)` changes nothing locally until the server's echo of the edit arrives; `client.udp.send_generic_spatial` sends an app-defined spatial message. CrowdyJS 18.15.0 and CrowdyCPP 0.67.4. See [MIGRATION.md](MIGRATION.md).
+
 **v0.14.2: CrowdyJS 18.14.0 and CrowdyCPP 0.67.3.** `player_wallet.charges()` is deprecated: read `transactions()`, whose `usage_debit` entries are the usage charges.
 
 **v0.14.1: the exec socket names a paused app and a switched-off app or type.** `AppPaused`, `AppDisabled`, and `TypeDisabled`. Still CrowdyJS 18.13.0 and CrowdyCPP 0.66.0.
@@ -286,7 +288,8 @@ states = pose.decode_many(snapshot.state_offsets, snapshot.state_data)  # numpy,
 `session.chunks` is a helper for 16x16x16 chunks with one byte per voxel. An edit that grid
 cannot hold (a type outside 0-255, a position outside 0-15) is kept in the chunk's
 `overlay()`, and `voxel_type_at` reads it first. The echo of your own `set_voxel` is not
-applied a second time. A game with other addressing reads every edit from
+applied a second time; with `optimistic=False` the edit is applied only when that echo arrives,
+and nothing is queued for write-back. A game with other addressing reads every edit from
 `session.on("voxel_update", ...)`, which includes those echoes.
 
 ## Game Kit

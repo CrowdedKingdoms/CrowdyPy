@@ -139,6 +139,7 @@ GraphQLClient = "AsyncGraphQLClient"
 
 # --- native-equivalent
 "BUNDLE_HEADER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
+"GENERIC_SPATIAL_MAX_PAYLOAD_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_LONG_SPATIAL_PAYLOAD" }
 "BUNDLE_LENGTH_PREFIX_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
 "execWireIntegers" = { kind = "native-equivalent", reason = "msgspec writes a Python int as a msgpack integer of its width, so there is no float for a hub's integer field to refuse; @msgpack/msgpack writes a JS number of 2^32 or more as a float without it" }
 "BrowserLocalStorageTokenStore" = { kind = "native-equivalent", reason = "token persistence is TokenStore / SessionStore; the localStorage backing is browser-only, and FileTokenStore mirrors its session / app key split" }
@@ -161,6 +162,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "serializeChannelAudio" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_audio" }
 "serializeChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_message with the message type" }
 "serializeClientEvent" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
+"serializeGenericSpatial" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeRangedChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_ranged_channel_message" }
 "serializeSingleActorMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeTextPacket" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }

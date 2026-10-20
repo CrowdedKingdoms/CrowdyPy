@@ -3,6 +3,19 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.15.0
+
+CrowdyJS 18.15.0 and CrowdyCPP 0.67.4. Additive.
+
+- **`chunks.set_voxel(..., optimistic=False)`**, CrowdyJS's `setVoxel({ optimistic: false })`:
+  nothing changes locally and nothing is queued for write-back; the edit is applied when the
+  server's echo of it arrives, so the cache holds only what the server accepted. The default
+  (`True`) is the edit as before. The native core carries the flag since CrowdyCPP 0.67.4
+  (`ChunkStore::setVoxel(..., optimistic)`).
+- **`client.udp.send_generic_spatial(chunk, uuid, payload)`**: an app-defined spatial message
+  (opcode 140) that the actors near `chunk` receive as `generic_spatial`; CrowdyJS 18.15.0's
+  `udp.sendGenericSpatial`. The replication connection had `send_generic_spatial` already.
+
 ## 0.14.2
 
 CrowdyJS 18.14.0 and CrowdyCPP 0.67.3. No breaking change. `PlayerWalletAPI.charges()` is
