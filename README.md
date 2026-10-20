@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.14.2: CrowdyJS 18.14.0 and CrowdyCPP 0.67.3.** `player_wallet.charges()` is deprecated: read `transactions()`, whose `usage_debit` entries are the usage charges.
+
 **v0.14.1: the exec socket names a paused app and a switched-off app or type.** `AppPaused`, `AppDisabled`, and `TypeDisabled`. Still CrowdyJS 18.13.0 and CrowdyCPP 0.66.0.
 
 **v0.14.0: the economy (CrowdyJS 18.13.0, CrowdyCPP 0.66.0).** `kit.player`, the caller's own
