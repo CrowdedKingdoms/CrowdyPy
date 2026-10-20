@@ -518,7 +518,7 @@ class PySession {
   }
 
   int setVoxel(std::int64_t x, std::int64_t y, std::int64_t z, int vx, int vy, int vz,
-               int voxelType, nb::handle state) {
+               int voxelType, nb::handle state, bool optimistic) {
     BufferView body(state);
     const std::int16_t type = i16_arg(voxelType, "voxel type");
     Result<std::uint8_t> result = Errc::InvalidArgument;
@@ -526,7 +526,8 @@ class PySession {
       nb::gil_scoped_release release;
       std::lock_guard lock(conn_.consumerMutex());
       auto& s = live();
-      result = s.chunks().setVoxel(coord_of(x, y, z), vx, vy, vz, type, body.bytes(), s.actorUuid());
+      result = s.chunks().setVoxel(coord_of(x, y, z), vx, vy, vz, type, body.bytes(), s.actorUuid(),
+                                   optimistic);
       if (result.ok()) s.errors().recordSend(result.value(), session::SendKind::VoxelUpdate, s.actorUuid());
     }
     return sent(result, "setVoxel");
@@ -798,7 +799,8 @@ void register_session(nb::module_& m) {
       .def("voxel_state_at", &PySession::voxelStateAt, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("vx"), nb::arg("vy"), nb::arg("vz"))
       .def("set_voxel", &PySession::setVoxel, nb::arg("x"), nb::arg("y"), nb::arg("z"),
-           nb::arg("vx"), nb::arg("vy"), nb::arg("vz"), nb::arg("voxel_type"), nb::arg("state"))
+           nb::arg("vx"), nb::arg("vy"), nb::arg("vz"), nb::arg("voxel_type"), nb::arg("state"),
+           nb::arg("optimistic") = true)
       .def("seed", &PySession::seed, nb::arg("x"), nb::arg("y"), nb::arg("z"), nb::arg("voxels"))
       .def("hydrate", &PySession::hydrate, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("voxels"), nb::arg("entries"))
