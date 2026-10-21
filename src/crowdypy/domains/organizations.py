@@ -109,8 +109,8 @@ class OrganizationsAPI(Domain):
         """Permanently deactivate an org token. Needs ``manage_tokens``.
 
         Irreversible. ``False`` when there is no such token. ``end_sessions`` also ends every
-        session the token signed org-managed players in with (dev only), so their devices stop
-        now rather than at their sessions' end.
+        session the token signed org-managed players in with, so their devices stop now rather
+        than at their sessions' end.
         """
         variables: dict[str, Any] = {"orgTokenId": bigint(org_token_id)}
         if end_sessions:

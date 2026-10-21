@@ -60,6 +60,7 @@ _LAZY: dict[str, str] = {
     "ASSERTION_REJECTED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
+    "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
     "CrowdyAccessRefusal": "crowdypy.errors",
     "CrowdyAccountBlocked": "crowdypy.errors",
@@ -85,6 +86,7 @@ _LAZY: dict[str, str] = {
     "app_paused_of": "crowdypy.errors",
     "group_member_banned_of": "crowdypy.errors",
     "managed_player_not_allowed_of": "crowdypy.errors",
+    "org_legal_acceptance_required_of": "crowdypy.errors",
     "is_app_paused": "crowdypy.errors",
     "player_fault_of": "crowdypy.errors",
     # sessions, tokens, routing
@@ -433,6 +435,9 @@ if TYPE_CHECKING:
         MANAGED_PLAYER_NOT_ALLOWED_CODE as MANAGED_PLAYER_NOT_ALLOWED_CODE,
     )
     from crowdypy.errors import (
+        ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE as ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
     )
     from crowdypy.errors import (
@@ -509,6 +514,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         managed_player_not_allowed_of as managed_player_not_allowed_of,
+    )
+    from crowdypy.errors import (
+        org_legal_acceptance_required_of as org_legal_acceptance_required_of,
     )
     from crowdypy.errors import (
         player_fault_of as player_fault_of,

@@ -1,4 +1,4 @@
-"""Org-managed players (CrowdyJS 18.16.0, dev only).
+"""Org-managed players (CrowdyJS 18.16.0; the addendum, CrowdyJS 18.17.0).
 
 The device holds the player's own app token and never the organization's org token, so the
 SDK carries the device's two steps (``portal.adopt_app_token``,
@@ -23,8 +23,10 @@ from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.portal import AppTokenResponse, PortalAPI
 from crowdypy.errors import (
     CrowdyAssertionRejected,
+    CrowdyGraphQLError,
     assertion_rejected_of,
     managed_player_not_allowed_of,
+    org_legal_acceptance_required_of,
 )
 from crowdypy.graphql import AsyncGraphQLClient
 
@@ -159,6 +161,36 @@ def test_the_refusal_readers() -> None:
     assert managed_player_not_allowed_of(rejected) is False
 
 
+def test_the_organizations_addendum_refusal_is_its_own_never_the_players_clickwrap() -> None:
+    message = (
+        "Organization 7 has not accepted the current Org-Managed Players Addendum "
+        "(managed-players-addendum-2026-10-21)"
+    )
+    org_refusal = {"message": message, "extensions": {"code": "ORG_LEGAL_ACCEPTANCE_REQUIRED"}}
+    assert org_legal_acceptance_required_of(org_refusal) is True
+    assert (
+        org_legal_acceptance_required_of({"extensions": {"code": "LEGAL_ACCEPTANCE_REQUIRED"}})
+        is False
+    )
+    # A managed player has no clickwrap to show: the player reader must not claim the org's
+    # refusal, by its code or by a message that carries the org code's name.
+    as_error = CrowdyGraphQLError(
+        [{**org_refusal, "message": f"ORG_LEGAL_ACCEPTANCE_REQUIRED: {message}"}]
+    )
+    assert org_legal_acceptance_required_of(as_error) is True
+    assert portal_module.is_legal_acceptance_required_error(as_error) is False
+    assert (
+        portal_module.is_legal_acceptance_required_error(
+            Exception("ORG_LEGAL_ACCEPTANCE_REQUIRED: x")
+        )
+        is False
+    )
+    assert (
+        portal_module.is_legal_acceptance_required_error(Exception("LEGAL_ACCEPTANCE_REQUIRED: x"))
+        is True
+    )
+
+
 def test_the_client_exposes_managed_players_at_the_top_and_under_admin() -> None:
     client = AsyncCrowdyClient(http_url="https://ck.example.test")
     assert isinstance(client.managed_players, ManagedPlayersAPI)
@@ -169,6 +201,8 @@ def test_no_operation_mints_with_an_org_token() -> None:
     operations = "".join(p.read_text() for p in (ROOT / "operations").rglob("*.graphql"))
     assert "managedPlayers(" in operations
     assert "mintManagedPlayerToken" not in operations
+    # The addendum binds the organization: a person accepts it in Studio, never this SDK.
+    assert "acceptManagedPlayerTerms" not in operations
     # The installed module: a wheel test run has no src/ tree.
     portal = Path(portal_module.__file__).read_text()
     assert re.search(r"mintManagedPlayerToken\s*\(", portal) is None

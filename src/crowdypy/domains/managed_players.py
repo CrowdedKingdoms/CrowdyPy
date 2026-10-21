@@ -1,5 +1,5 @@
-"""Org-managed players (dev only): an organization's own players, signed in by the
-organization instead of with a Crowded Kingdoms password.
+"""Org-managed players: an organization's own players, signed in by the organization instead
+of with a Crowded Kingdoms password.
 
 The organization vouches for a player in one of two ways, and either ends in the player's own
 app token: its server mints it with an org token (the ``mintManagedPlayerToken`` mutation,
@@ -11,8 +11,15 @@ it stays on the organization's server.
 
 The methods here are the organization's administration: an org admin's session with
 ``manage_players`` (from the organization's server, an org token with ``players:manage`` also
-works for the six player operations). Every field answers ``FEATURE_DISABLED`` outside the dev
-tier.
+works for the six player operations).
+
+The Org-Managed Players Addendum (ck-api v2.53.0): before any of the organization's players is
+created or signed in, an admin of the organization accepts it in Studio. Until then sign-ins
+(both ways), refreshes and :meth:`ManagedPlayersAPI.provision` answer
+``ORG_LEGAL_ACCEPTANCE_REQUIRED`` (:func:`crowdypy.errors.org_legal_acceptance_required_of`);
+:meth:`ManagedPlayersAPI.settings` says where the organization stands. This SDK has no wrapper
+for the acceptance, on purpose: it binds the organization, so a person makes it, in Studio. A
+tier that does not serve org-managed players answers ``FEATURE_DISABLED`` to every field.
 """
 
 from __future__ import annotations
@@ -78,7 +85,8 @@ class ManagedPlayersAPI(Domain):
     ) -> dict[str, Any]:
         """Create players ahead of their first sign-in, up to 500 a call (much faster than first
         sign-ins one at a time: pre-provision before a launch). A player that already exists is
-        left as it is and counted in ``existing``."""
+        left as it is and counted in ``existing``. Refused with ``ORG_LEGAL_ACCEPTANCE_REQUIRED``
+        until the organization has accepted the current Org-Managed Players Addendum."""
         result: dict[str, Any] = await self._request(
             ops.PROVISION_MANAGED_PLAYERS, {"input": input}
         )
@@ -113,7 +121,10 @@ class ManagedPlayersAPI(Domain):
 
     async def settings(self, org_id: str | int) -> dict[str, Any]:
         """Whether an operator turned managed players on for the organization, and its limits:
-        the player cap, sign-ins per minute and the session lengths. Read-only here."""
+        the player cap, sign-ins per minute and the session lengths. Also where it stands on
+        the Org-Managed Players Addendum: ``termsVersion``, ``termsUrl``, ``termsAccepted``,
+        the latest acceptance, and ``viewerMayAcceptTerms`` (whether the signed-in user is an
+        admin of the organization who may accept it, in Studio). Read-only here."""
         result: dict[str, Any] = await self._request(
             ops.ORG_MANAGED_PLAYER_SETTINGS, {"orgId": bigint(org_id)}
         )

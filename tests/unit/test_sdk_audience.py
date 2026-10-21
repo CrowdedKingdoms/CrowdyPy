@@ -51,7 +51,7 @@ PLATFORM_ONLY = {
     "userTierAccess", "setUserTierAccess", "grantTierAccessByPattern", "endTierAccessSessions",
     "tierAccessProvisioningTokens", "createTierAccessProvisioningToken",
     "revokeTierAccessProvisioningToken", "tierAccessInventory", "setTierAccessMode",
-    # org-managed players (cks-game-api #557, dev only): an operator turns them on for an
+    # org-managed players (cks-game-api #557): an operator turns them on for an
     # org; orgManagedPlayerSettings is an org admin's read and is wrapped.
     "setOrgManagedPlayerSettings",
 }  # fmt: skip
