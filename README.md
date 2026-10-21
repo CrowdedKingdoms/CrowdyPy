@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.16.0: org-managed players (dev only).** An organization that runs its own accounts signs its players in itself: its server mints a player's app token with an org token, or its sign-in service signs an assertion. A device holds the first with `client.portal.adopt_app_token(response)` (it refuses an org token, which stays on the organization's server; there is no org-token mint wrapper) or trades the second with `client.portal.exchange_managed_player_assertion(app_id, assertion)`, and gives the result to `client.set_app_token`. `client.managed_players` is the organization's administration. CrowdyJS 18.16.0 and CrowdyCPP 0.68.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.15.0: a voxel edit that waits for the server, and opcode 140 from `client.udp`.** `chunks.set_voxel(..., optimistic=False)` changes nothing locally until the server's echo of the edit arrives; `client.udp.send_generic_spatial` sends an app-defined spatial message. CrowdyJS 18.15.0 and CrowdyCPP 0.67.4. See [MIGRATION.md](MIGRATION.md).
 
 **v0.14.2: CrowdyJS 18.14.0 and CrowdyCPP 0.67.3.** `player_wallet.charges()` is deprecated: read `transactions()`, whose `usage_debit` entries are the usage charges.
