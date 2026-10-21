@@ -23,13 +23,17 @@ __all__ = [
     "ACTOR_EXISTS_CODE",
     "APP_PAUSED_CODE",
     "APP_UNAVAILABLE_CODE",
+    "ASSERTION_REJECTED_CODE",
     "GROUP_MEMBER_BANNED_CODE",
+    "MANAGED_PLAYER_NOT_ALLOWED_CODE",
+    "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "WRONG_DATACENTER_CODE",
     "CrowdyAccessRefusal",
     "CrowdyAccountBlocked",
     "CrowdyActorExists",
     "CrowdyAppPaused",
     "CrowdyAppUnavailableError",
+    "CrowdyAssertionRejected",
     "CrowdyError",
     "CrowdyFaultBlame",
     "CrowdyGraphQLError",
@@ -46,8 +50,11 @@ __all__ = [
     "account_blocked_of",
     "actor_exists_of",
     "app_paused_of",
+    "assertion_rejected_of",
     "group_member_banned_of",
     "is_app_paused",
+    "managed_player_not_allowed_of",
+    "org_legal_acceptance_required_of",
     "player_fault_of",
 ]
 
@@ -69,6 +76,17 @@ APP_PAUSED_CODE = "APP_PAUSED"
 ACCOUNT_BLOCKED_CODE = "ACCOUNT_BLOCKED"
 #: The channel or team banned the user (HTTP 403); see :func:`group_member_banned_of`.
 GROUP_MEMBER_BANNED_CODE = "GROUP_MEMBER_BANNED"
+#: Something an org-managed player cannot do (HTTP 403): it has no wallet, and its mods are
+#: refused where its organization has not switched them on; see
+#: :func:`managed_player_not_allowed_of`.
+MANAGED_PLAYER_NOT_ALLOWED_CODE = "MANAGED_PLAYER_NOT_ALLOWED"
+#: A refused org-signed player assertion (HTTP 401), with the failed check in
+#: ``extensions.reason``; see :func:`assertion_rejected_of`.
+ASSERTION_REJECTED_CODE = "ASSERTION_REJECTED"
+#: The player's organization has not accepted the current Org-Managed Players Addendum
+#: (HTTP 403), on an org-managed player's sign-in and refresh and on provisioning; see
+#: :func:`org_legal_acceptance_required_of`.
+ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE = "ORG_LEGAL_ACCEPTANCE_REQUIRED"
 
 CrowdyFaultBlame = Literal["PLATFORM", "AUTHOR", "BUDGET"]
 
@@ -260,6 +278,16 @@ class CrowdyAppPaused:
     reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CrowdyAssertionRejected:
+    """An ``ASSERTION_REJECTED`` refusal: the organization's signed player assertion failed a
+    check. Resending it cannot succeed."""
+
+    #: The check that failed (``expired``, ``replayed``, ``signature``, ...), or ``None`` when
+    #: the server did not say.
+    reason: str | None
+
+
 def _extensions_with_code(value: object, code: str) -> Mapping[str, Any] | None:
     """The extensions of the first error entry carrying ``code``, from a raised
     :class:`CrowdyGraphQLError` or one raw GraphQL error entry."""
@@ -317,6 +345,35 @@ def group_member_banned_of(value: object) -> bool:
     """Whether a channel or team refused the call with ``GROUP_MEMBER_BANNED`` (joining,
     requesting to join, or being added or invited). Only an unban lifts it."""
     return _extensions_with_code(value, GROUP_MEMBER_BANNED_CODE) is not None
+
+
+def managed_player_not_allowed_of(value: object) -> bool:
+    """Whether an org-managed player was refused with ``MANAGED_PLAYER_NOT_ALLOWED``: a
+    wallet, or a mod, a Crowdy Studio write or the Studio agent in an app whose organization
+    has not switched its managed players' mods on. Not fixed by retrying."""
+    return _extensions_with_code(value, MANAGED_PLAYER_NOT_ALLOWED_CODE) is not None
+
+
+def assertion_rejected_of(value: object) -> CrowdyAssertionRejected | None:
+    """An ``ASSERTION_REJECTED`` refusal from ``portal.exchange_managed_player_assertion``, or
+    ``None``. ``reason`` is the check that failed (for example ``expired``, ``replayed``,
+    ``signature``, ``audience`` or ``unknown_key``). Resending the same assertion cannot
+    succeed; ask the organization's sign-in service for a new one."""
+    extensions = _extensions_with_code(value, ASSERTION_REJECTED_CODE)
+    if extensions is None:
+        return None
+    reason = extensions.get("reason")
+    return CrowdyAssertionRejected(reason if isinstance(reason, str) and reason else None)
+
+
+def org_legal_acceptance_required_of(value: object) -> bool:
+    """Whether the player's organization has not accepted the current Org-Managed Players
+    Addendum (``ORG_LEGAL_ACCEPTANCE_REQUIRED``, ck-api v2.53.0): it signs no player in,
+    provisions none, and its players' tokens do not refresh. Neither the player nor the
+    organization's server can fix it: an admin of the organization accepts it in Studio. Not
+    fixed by retrying. Distinct from the player's own ``LEGAL_ACCEPTANCE_REQUIRED``, which a
+    managed player never gets."""
+    return _extensions_with_code(value, ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE) is not None
 
 
 def app_paused_of(value: object) -> CrowdyAppPaused | None:

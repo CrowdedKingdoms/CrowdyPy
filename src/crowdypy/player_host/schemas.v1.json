@@ -1,7 +1,7 @@
 {
   "crowdyJs": {
-    "version": "18.15.0",
-    "commit": "406b241c72270eaac40f5df484b5e4735fd8fb4f"
+    "version": "18.17.0",
+    "commit": "98508efe3abe7dfa573ddd160f9da9053a4f78ad"
   },
   "schemas": {
     "GAME_COMMAND_RESULT_SCHEMA_V1": {
