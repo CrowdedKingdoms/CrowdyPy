@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from crowdypy._sync.domains.apps import AppsAPI
     from crowdypy._sync.domains.billing import BillingAPI
     from crowdypy._sync.domains.game_apps import GameAppsAPI
+    from crowdypy._sync.domains.managed_players import ManagedPlayersAPI
     from crowdypy._sync.domains.organizations import OrganizationsAPI
     from crowdypy._sync.domains.payments import PaymentsAPI
     from crowdypy._sync.domains.quotas import QuotasAPI
@@ -29,6 +30,8 @@ class AdminAPI:
 
     #: Organizations, members, RBAC roles and org API tokens.
     organizations: OrganizationsAPI
+    #: Org-managed players: the organization's own players and signing keys.
+    managed_players: ManagedPlayersAPI
     #: The app registry, routing and player-code admission policy.
     apps: AppsAPI
     #: App access tiers and per-user access grants.
@@ -50,6 +53,7 @@ class AdminAPI:
         self,
         *,
         organizations: OrganizationsAPI,
+        managed_players: ManagedPlayersAPI,
         apps: AppsAPI,
         app_access: AppAccessAPI,
         billing: BillingAPI,
@@ -60,6 +64,7 @@ class AdminAPI:
         grids: GameAppsAPI,
     ) -> None:
         self.organizations = organizations
+        self.managed_players = managed_players
         self.apps = apps
         self.app_access = app_access
         self.billing = billing

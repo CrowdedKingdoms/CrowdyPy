@@ -32,6 +32,7 @@ from crowdypy.domains.app_access import AppAccessAPI
 from crowdypy.domains.apps import AppRoute, AppsAPI
 from crowdypy.domains.billing import BillingAPI
 from crowdypy.domains.discovery import AppEndpoint, DiscoveryDomain
+from crowdypy.domains.managed_players import ManagedPlayersAPI
 from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.payments import PaymentsAPI
 from crowdypy.domains.platform import INLINE_OPERATIONS, PLATFORM_CONFIG, PlatformAPI
@@ -1107,6 +1108,7 @@ async def test_set_auto_billing_keeps_or_removes_the_period_cap(
 def test_admin_groups_the_same_instances(graphql: AsyncGraphQLClient) -> None:
     parts: dict[str, Any] = {
         "organizations": OrganizationsAPI(graphql),
+        "managed_players": ManagedPlayersAPI(graphql),
         "apps": AppsAPI(graphql),
         "app_access": AppAccessAPI(graphql),
         "billing": BillingAPI(graphql),
