@@ -40,6 +40,7 @@ from crowdypy._sync.domains.game_apps import GameAppsAPI
 from crowdypy._sync.domains.grids import GridsAPI
 from crowdypy._sync.domains.host import HostAPI
 from crowdypy._sync.domains.input_log import InputLogAPI
+from crowdypy._sync.domains.managed_players import ManagedPlayersAPI
 from crowdypy._sync.domains.marketplace import MarketplaceAPI
 from crowdypy._sync.domains.organizations import OrganizationsAPI
 from crowdypy._sync.domains.payments import PaymentsAPI
@@ -130,6 +131,7 @@ class CrowdyClient:
         self.discovery = DiscoveryDomain(self.graphql)
         self.platform = PlatformAPI(self.graphql)
         self.organizations = OrganizationsAPI(self.graphql)
+        self.managed_players = ManagedPlayersAPI(self.graphql)
         self.app_access = AppAccessAPI(self.graphql)
         self.billing = BillingAPI(self.graphql)
         self.payments = PaymentsAPI(self.graphql)
@@ -157,6 +159,7 @@ class CrowdyClient:
         self.game_apps = GameAppsAPI(self.graphql)
         self.admin = AdminAPI(
             organizations=self.organizations,
+            managed_players=self.managed_players,
             apps=self.apps,
             app_access=self.app_access,
             billing=self.billing,

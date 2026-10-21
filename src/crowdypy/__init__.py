@@ -57,10 +57,13 @@ _LAZY: dict[str, str] = {
     "ACTOR_EXISTS_CODE": "crowdypy.errors",
     "APP_PAUSED_CODE": "crowdypy.errors",
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
+    "ASSERTION_REJECTED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
+    "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
     "CrowdyAccessRefusal": "crowdypy.errors",
     "CrowdyAccountBlocked": "crowdypy.errors",
+    "CrowdyAssertionRejected": "crowdypy.errors",
     "CrowdyActorExists": "crowdypy.errors",
     "CrowdyAppPaused": "crowdypy.errors",
     "CrowdyAppUnavailableError": "crowdypy.errors",
@@ -77,9 +80,11 @@ _LAZY: dict[str, str] = {
     "GridScopeError": "crowdypy.errors",
     "access_refusal_of": "crowdypy.errors",
     "account_blocked_of": "crowdypy.errors",
+    "assertion_rejected_of": "crowdypy.errors",
     "actor_exists_of": "crowdypy.errors",
     "app_paused_of": "crowdypy.errors",
     "group_member_banned_of": "crowdypy.errors",
+    "managed_player_not_allowed_of": "crowdypy.errors",
     "is_app_paused": "crowdypy.errors",
     "player_fault_of": "crowdypy.errors",
     # sessions, tokens, routing
@@ -141,6 +146,7 @@ _LAZY: dict[str, str] = {
     "GridsAPI": "crowdypy.domains.grids",
     "HostAPI": "crowdypy.domains.host",
     "MarketplaceAPI": "crowdypy.domains.marketplace",
+    "ManagedPlayersAPI": "crowdypy.domains.managed_players",
     "OrganizationsAPI": "crowdypy.domains.organizations",
     "PaymentsAPI": "crowdypy.domains.payments",
     "PlatformAPI": "crowdypy.domains.platform",
@@ -318,6 +324,9 @@ if TYPE_CHECKING:
     from crowdypy.domains.input_log import (
         InputLogAPI as InputLogAPI,
     )
+    from crowdypy.domains.managed_players import (
+        ManagedPlayersAPI as ManagedPlayersAPI,
+    )
     from crowdypy.domains.marketplace import (
         MarketplaceAPI as MarketplaceAPI,
     )
@@ -415,7 +424,13 @@ if TYPE_CHECKING:
         APP_UNAVAILABLE_CODE as APP_UNAVAILABLE_CODE,
     )
     from crowdypy.errors import (
+        ASSERTION_REJECTED_CODE as ASSERTION_REJECTED_CODE,
+    )
+    from crowdypy.errors import (
         GROUP_MEMBER_BANNED_CODE as GROUP_MEMBER_BANNED_CODE,
+    )
+    from crowdypy.errors import (
+        MANAGED_PLAYER_NOT_ALLOWED_CODE as MANAGED_PLAYER_NOT_ALLOWED_CODE,
     )
     from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
@@ -434,6 +449,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         CrowdyAppUnavailableError as CrowdyAppUnavailableError,
+    )
+    from crowdypy.errors import (
+        CrowdyAssertionRejected as CrowdyAssertionRejected,
     )
     from crowdypy.errors import (
         CrowdyError as CrowdyError,
@@ -481,10 +499,16 @@ if TYPE_CHECKING:
         app_paused_of as app_paused_of,
     )
     from crowdypy.errors import (
+        assertion_rejected_of as assertion_rejected_of,
+    )
+    from crowdypy.errors import (
         group_member_banned_of as group_member_banned_of,
     )
     from crowdypy.errors import (
         is_app_paused as is_app_paused,
+    )
+    from crowdypy.errors import (
+        managed_player_not_allowed_of as managed_player_not_allowed_of,
     )
     from crowdypy.errors import (
         player_fault_of as player_fault_of,

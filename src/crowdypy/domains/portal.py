@@ -235,6 +235,15 @@ REFRESH_APP_TOKEN_ON_SERVER = inline_operation(
     + _APP_TOKEN_FIELDS
     + " authorizedServer { ip4 clientPort } } }",
 )
+EXCHANGE_MANAGED_PLAYER_ASSERTION = inline_operation(
+    "ExchangeManagedPlayerAssertion",
+    "mutation",
+    "exchangeManagedPlayerAssertion",
+    "mutation ExchangeManagedPlayerAssertion($input: ExchangeManagedPlayerAssertionInput!) { "
+    "exchangeManagedPlayerAssertion(input: $input) { " + _APP_TOKEN_FIELDS + " } }",
+)
+#: What every org token starts with: an organization's server credential, never a device's.
+ORG_TOKEN_PREFIX = "cko_"
 PORTAL_CONSENT = inline_operation(
     "PortalConsent",
     "query",
@@ -340,6 +349,55 @@ class PortalAPI(Domain):
         payload = await self._request(
             EXCHANGE_PORTAL_CODE,
             {"input": omit_none({"code": code, "codeVerifier": code_verifier})},
+        )
+        token = msgspec.convert(payload, AppTokenResponse)
+        self._session.set_token(token.token)
+        return token
+
+    def adopt_app_token(self, response: AppTokenResponse | Mapping[str, Any]) -> AppTokenResponse:
+        """Hold an app token the player's organization minted for it (org-managed players, dev
+        only), so this client plays with it and :meth:`refresh` rotates it.
+
+        The organization's server calls ``mintManagedPlayerToken`` with its org token and sends
+        the response to the player's device, which passes it here. On a game client, give the
+        returned token to ``client.set_app_token`` too, so native UDP signs with it. It
+        refreshes until the sign-in's lifetime (the organization's setting) ends; then the
+        device asks its organization again.
+
+        Raises :class:`ValueError` and holds nothing for a response without a token or with an
+        org token (``cko_...``): an org token signs in any of the organization's players, so a
+        device must never hold one.
+        """
+        token = (
+            response
+            if isinstance(response, AppTokenResponse)
+            else msgspec.convert(response, AppTokenResponse)
+            if isinstance(response, Mapping) and response.get("token")
+            else None
+        )
+        if token is None or not token.token:
+            raise ValueError("adopt_app_token: the response has no token")
+        if token.token.startswith(ORG_TOKEN_PREFIX):
+            raise ValueError(
+                "adopt_app_token: that is an org token, your organization's server credential. "
+                "Give the device the app token mintManagedPlayerToken returns, never the org token."
+            )
+        self._session.set_token(token.token)
+        return token
+
+    async def exchange_managed_player_assertion(
+        self, app_id: str | int, assertion: str
+    ) -> AppTokenResponse:
+        """Trade an assertion the player's organization signed for the player's app token, and
+        hold it (as :meth:`adopt_app_token` does). Public: needs no session and no org token.
+
+        Each assertion works once. A refusal is ``ASSERTION_REJECTED``, with the failed check in
+        ``extensions.reason`` (:func:`crowdypy.errors.assertion_rejected_of`); resending the same
+        assertion cannot succeed.
+        """
+        payload = await self._request(
+            EXCHANGE_MANAGED_PLAYER_ASSERTION,
+            {"input": {"appId": bigint(app_id), "assertion": assertion}},
         )
         token = msgspec.convert(payload, AppTokenResponse)
         self._session.set_token(token.token)

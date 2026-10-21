@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: d46a770eff50f8ef6584f5ed937e8347d6f7121da7337469b8d99213fc9a7281
-// operations sha256: c87015eb452efc3af9be2ea05767a95d686791cd9d0cd4910515f334c1464b2d
+// schema.gql sha256: 981615f7711ee21556959a48eb9e0e010b0a2b0cbe819cefb12150f51574d186
+// operations sha256: bb8a37209b7d835bfac9b1642742e85e0b3f25eab21c404a12607d85ab92fc30
 
 #pragma once
 
@@ -6438,6 +6438,275 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
 
 }  // namespace inputLog
 
+namespace managedPlayers {
+
+/// managedPlayers/ManagedPlayers.graphql
+inline constexpr std::string_view kManagedPlayersDocument = R"gql(fragment ManagedPlayerFields on ManagedPlayer {
+  userId
+  orgId
+  externalId
+  gamertag
+  disambiguation
+  disabled
+  createdAt
+}
+
+fragment OrgSigningKeyFields on OrgSigningKey {
+  keyId
+  orgId
+  kid
+  algorithm
+  publicJwk
+  issuer
+  audience
+  appIds
+  label
+  createdAt
+  revokedAt
+}
+
+query ManagedPlayers($orgId: BigInt!, $search: String, $first: Int, $after: String) {
+  managedPlayers(orgId: $orgId, search: $search, first: $first, after: $after) {
+    players {
+      ...ManagedPlayerFields
+    }
+    nextCursor
+  }
+}
+
+query ManagedPlayer($orgId: BigInt!, $externalId: String!) {
+  managedPlayer(orgId: $orgId, externalId: $externalId) {
+    ...ManagedPlayerFields
+  }
+}
+
+mutation ProvisionManagedPlayers($input: ProvisionManagedPlayersInput!) {
+  provisionManagedPlayers(input: $input) {
+    created
+    existing
+    players {
+      ...ManagedPlayerFields
+    }
+  }
+}
+
+mutation UpdateManagedPlayer($input: UpdateManagedPlayerInput!) {
+  updateManagedPlayer(input: $input) {
+    ...ManagedPlayerFields
+  }
+}
+
+mutation EndManagedPlayerSessions($orgId: BigInt!, $externalId: String!) {
+  endManagedPlayerSessions(orgId: $orgId, externalId: $externalId)
+}
+
+mutation DeleteManagedPlayer($orgId: BigInt!, $externalId: String!) {
+  deleteManagedPlayer(orgId: $orgId, externalId: $externalId)
+}
+
+query OrgManagedPlayerSettings($orgId: BigInt!) {
+  orgManagedPlayerSettings(orgId: $orgId) {
+    orgId
+    enabled
+    maxPlayers
+    playerCount
+    mintsPerMinute
+    defaultSessionTtlSeconds
+    maxSessionTtlSeconds
+  }
+}
+
+query OrgSigningKeys($orgId: BigInt!) {
+  orgSigningKeys(orgId: $orgId) {
+    ...OrgSigningKeyFields
+  }
+}
+
+mutation RegisterOrgSigningKey($input: RegisterOrgSigningKeyInput!) {
+  registerOrgSigningKey(input: $input) {
+    ...OrgSigningKeyFields
+  }
+}
+
+mutation RevokeOrgSigningKey($orgId: BigInt!, $keyId: BigInt!) {
+  revokeOrgSigningKey(orgId: $orgId, keyId: $keyId)
+}
+
+query AppManagedPlayerMods($appId: BigInt!) {
+  app(appId: $appId) {
+    appId
+    managedPlayerModsEnabled
+  }
+}
+
+mutation SetAppManagedPlayerMods($appId: BigInt!, $enabled: Boolean!) {
+  setAppManagedPlayerMods(appId: $appId, enabled: $enabled)
+})gql";
+inline constexpr std::string_view kManagedPlayersIsolatedDocument = R"gql(query ManagedPlayers($orgId: BigInt!, $search: String, $first: Int, $after: String) {
+  managedPlayers(orgId: $orgId, search: $search, first: $first, after: $after) {
+    players {
+      ...ManagedPlayerFields
+    }
+    nextCursor
+  }
+}
+
+fragment ManagedPlayerFields on ManagedPlayer {
+  userId
+  orgId
+  externalId
+  gamertag
+  disambiguation
+  disabled
+  createdAt
+})gql";
+inline constexpr std::string_view kManagedPlayersOperationName = "ManagedPlayers";
+inline constexpr std::string_view kManagedPlayerIsolatedDocument = R"gql(query ManagedPlayer($orgId: BigInt!, $externalId: String!) {
+  managedPlayer(orgId: $orgId, externalId: $externalId) {
+    ...ManagedPlayerFields
+  }
+}
+
+fragment ManagedPlayerFields on ManagedPlayer {
+  userId
+  orgId
+  externalId
+  gamertag
+  disambiguation
+  disabled
+  createdAt
+})gql";
+inline constexpr std::string_view kManagedPlayerOperationName = "ManagedPlayer";
+inline constexpr std::string_view kProvisionManagedPlayersIsolatedDocument = R"gql(mutation ProvisionManagedPlayers($input: ProvisionManagedPlayersInput!) {
+  provisionManagedPlayers(input: $input) {
+    created
+    existing
+    players {
+      ...ManagedPlayerFields
+    }
+  }
+}
+
+fragment ManagedPlayerFields on ManagedPlayer {
+  userId
+  orgId
+  externalId
+  gamertag
+  disambiguation
+  disabled
+  createdAt
+})gql";
+inline constexpr std::string_view kProvisionManagedPlayersOperationName = "ProvisionManagedPlayers";
+inline constexpr std::string_view kUpdateManagedPlayerIsolatedDocument = R"gql(mutation UpdateManagedPlayer($input: UpdateManagedPlayerInput!) {
+  updateManagedPlayer(input: $input) {
+    ...ManagedPlayerFields
+  }
+}
+
+fragment ManagedPlayerFields on ManagedPlayer {
+  userId
+  orgId
+  externalId
+  gamertag
+  disambiguation
+  disabled
+  createdAt
+})gql";
+inline constexpr std::string_view kUpdateManagedPlayerOperationName = "UpdateManagedPlayer";
+inline constexpr std::string_view kEndManagedPlayerSessionsIsolatedDocument = R"gql(mutation EndManagedPlayerSessions($orgId: BigInt!, $externalId: String!) {
+  endManagedPlayerSessions(orgId: $orgId, externalId: $externalId)
+})gql";
+inline constexpr std::string_view kEndManagedPlayerSessionsOperationName = "EndManagedPlayerSessions";
+inline constexpr std::string_view kDeleteManagedPlayerIsolatedDocument = R"gql(mutation DeleteManagedPlayer($orgId: BigInt!, $externalId: String!) {
+  deleteManagedPlayer(orgId: $orgId, externalId: $externalId)
+})gql";
+inline constexpr std::string_view kDeleteManagedPlayerOperationName = "DeleteManagedPlayer";
+inline constexpr std::string_view kOrgManagedPlayerSettingsIsolatedDocument = R"gql(query OrgManagedPlayerSettings($orgId: BigInt!) {
+  orgManagedPlayerSettings(orgId: $orgId) {
+    orgId
+    enabled
+    maxPlayers
+    playerCount
+    mintsPerMinute
+    defaultSessionTtlSeconds
+    maxSessionTtlSeconds
+  }
+})gql";
+inline constexpr std::string_view kOrgManagedPlayerSettingsOperationName = "OrgManagedPlayerSettings";
+inline constexpr std::string_view kOrgSigningKeysIsolatedDocument = R"gql(query OrgSigningKeys($orgId: BigInt!) {
+  orgSigningKeys(orgId: $orgId) {
+    ...OrgSigningKeyFields
+  }
+}
+
+fragment OrgSigningKeyFields on OrgSigningKey {
+  keyId
+  orgId
+  kid
+  algorithm
+  publicJwk
+  issuer
+  audience
+  appIds
+  label
+  createdAt
+  revokedAt
+})gql";
+inline constexpr std::string_view kOrgSigningKeysOperationName = "OrgSigningKeys";
+inline constexpr std::string_view kRegisterOrgSigningKeyIsolatedDocument = R"gql(mutation RegisterOrgSigningKey($input: RegisterOrgSigningKeyInput!) {
+  registerOrgSigningKey(input: $input) {
+    ...OrgSigningKeyFields
+  }
+}
+
+fragment OrgSigningKeyFields on OrgSigningKey {
+  keyId
+  orgId
+  kid
+  algorithm
+  publicJwk
+  issuer
+  audience
+  appIds
+  label
+  createdAt
+  revokedAt
+})gql";
+inline constexpr std::string_view kRegisterOrgSigningKeyOperationName = "RegisterOrgSigningKey";
+inline constexpr std::string_view kRevokeOrgSigningKeyIsolatedDocument = R"gql(mutation RevokeOrgSigningKey($orgId: BigInt!, $keyId: BigInt!) {
+  revokeOrgSigningKey(orgId: $orgId, keyId: $keyId)
+})gql";
+inline constexpr std::string_view kRevokeOrgSigningKeyOperationName = "RevokeOrgSigningKey";
+inline constexpr std::string_view kAppManagedPlayerModsIsolatedDocument = R"gql(query AppManagedPlayerMods($appId: BigInt!) {
+  app(appId: $appId) {
+    appId
+    managedPlayerModsEnabled
+  }
+})gql";
+inline constexpr std::string_view kAppManagedPlayerModsOperationName = "AppManagedPlayerMods";
+inline constexpr std::string_view kSetAppManagedPlayerModsIsolatedDocument = R"gql(mutation SetAppManagedPlayerMods($appId: BigInt!, $enabled: Boolean!) {
+  setAppManagedPlayerMods(appId: $appId, enabled: $enabled)
+})gql";
+inline constexpr std::string_view kSetAppManagedPlayerModsOperationName = "SetAppManagedPlayerMods";
+
+inline constexpr std::string_view documentFor(std::string_view operationName) {
+  if (operationName == "ManagedPlayers") return kManagedPlayersIsolatedDocument;
+  if (operationName == "ManagedPlayer") return kManagedPlayerIsolatedDocument;
+  if (operationName == "ProvisionManagedPlayers") return kProvisionManagedPlayersIsolatedDocument;
+  if (operationName == "UpdateManagedPlayer") return kUpdateManagedPlayerIsolatedDocument;
+  if (operationName == "EndManagedPlayerSessions") return kEndManagedPlayerSessionsIsolatedDocument;
+  if (operationName == "DeleteManagedPlayer") return kDeleteManagedPlayerIsolatedDocument;
+  if (operationName == "OrgManagedPlayerSettings") return kOrgManagedPlayerSettingsIsolatedDocument;
+  if (operationName == "OrgSigningKeys") return kOrgSigningKeysIsolatedDocument;
+  if (operationName == "RegisterOrgSigningKey") return kRegisterOrgSigningKeyIsolatedDocument;
+  if (operationName == "RevokeOrgSigningKey") return kRevokeOrgSigningKeyIsolatedDocument;
+  if (operationName == "AppManagedPlayerMods") return kAppManagedPlayerModsIsolatedDocument;
+  if (operationName == "SetAppManagedPlayerMods") return kSetAppManagedPlayerModsIsolatedDocument;
+  return {};
+}
+
+}  // namespace managedPlayers
+
 namespace marketplace {
 
 /// marketplace/Marketplace.graphql
@@ -6929,6 +7198,8 @@ inline constexpr std::string_view kCreateOrgTokenDocument = R"gql(mutation Creat
     orgId
     token
     label
+    scopes
+    appIds
     isActive
     expiresAt
     createdAt
@@ -6940,6 +7211,8 @@ inline constexpr std::string_view kCreateOrgTokenIsolatedDocument = R"gql(mutati
     orgId
     token
     label
+    scopes
+    appIds
     isActive
     expiresAt
     createdAt
@@ -7143,6 +7416,8 @@ inline constexpr std::string_view kOrgTokensDocument = R"gql(query OrgTokens($or
     orgTokenId
     orgId
     label
+    scopes
+    appIds
     isActive
     lastUsedAt
     revokedAt
@@ -7156,6 +7431,8 @@ inline constexpr std::string_view kOrgTokensIsolatedDocument = R"gql(query OrgTo
     orgTokenId
     orgId
     label
+    scopes
+    appIds
     isActive
     lastUsedAt
     revokedAt
@@ -7226,11 +7503,11 @@ inline constexpr std::string_view kRemoveOrgMemberIsolatedDocument = R"gql(mutat
 inline constexpr std::string_view kRemoveOrgMemberOperationName = "RemoveOrgMember";
 
 /// organizations/RevokeOrgToken.graphql
-inline constexpr std::string_view kRevokeOrgTokenDocument = R"gql(mutation RevokeOrgToken($orgTokenId: BigInt!) {
-  revokeOrgToken(orgTokenId: $orgTokenId)
+inline constexpr std::string_view kRevokeOrgTokenDocument = R"gql(mutation RevokeOrgToken($orgTokenId: BigInt!, $endSessions: Boolean) {
+  revokeOrgToken(orgTokenId: $orgTokenId, endSessions: $endSessions)
 })gql";
-inline constexpr std::string_view kRevokeOrgTokenIsolatedDocument = R"gql(mutation RevokeOrgToken($orgTokenId: BigInt!) {
-  revokeOrgToken(orgTokenId: $orgTokenId)
+inline constexpr std::string_view kRevokeOrgTokenIsolatedDocument = R"gql(mutation RevokeOrgToken($orgTokenId: BigInt!, $endSessions: Boolean) {
+  revokeOrgToken(orgTokenId: $orgTokenId, endSessions: $endSessions)
 })gql";
 inline constexpr std::string_view kRevokeOrgTokenOperationName = "RevokeOrgToken";
 
@@ -7285,6 +7562,8 @@ inline constexpr std::string_view kUpdateOrgTokenDocument = R"gql(mutation Updat
   updateOrgToken(orgTokenId: $orgTokenId, input: $input) {
     orgTokenId
     label
+    scopes
+    appIds
     isActive
     expiresAt
     revokedAt
@@ -7295,6 +7574,8 @@ inline constexpr std::string_view kUpdateOrgTokenIsolatedDocument = R"gql(mutati
   updateOrgToken(orgTokenId: $orgTokenId, input: $input) {
     orgTokenId
     label
+    scopes
+    appIds
     isActive
     expiresAt
     revokedAt
