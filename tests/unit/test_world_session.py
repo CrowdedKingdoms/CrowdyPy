@@ -417,6 +417,27 @@ def test_the_echo_of_your_own_edit_is_applied_once(chunk: Any) -> None:
     assert session.chunks.voxel_type_at(at, 1, 2, 3) == 8
 
 
+def test_an_edit_that_is_not_optimistic_waits_for_its_echo(chunk: Any) -> None:
+    server, connection, session, seen = chunk
+    at = (0, 0, 0)
+    session.chunks.seed(at, bytes(4096), write_back=False)
+    changed: list[Any] = []
+    session.chunks.on_chunk_changed(changed.append)
+    sequence = session.chunks.set_voxel(at, 1, 2, 3, 9, optimistic=False)
+    sent = server.recv()
+    assert wire.parse_voxel_payload(sent.payload) == (1, 2, 3, 9, b"")
+    session.tick()
+    assert changed == [], "nothing changes before the echo"
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 0
+    assert session.chunks.pending_write_backs == 0
+
+    voxel(server, ME, (1, 2, 3), 9, sequence)
+    pump_until(session, connection, lambda: len(seen) == 1)
+    tick_until(session, lambda: len(changed) == 1)
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 9
+    assert session.chunks.pending_write_backs == 0, "the echo is the server's, not a local edit"
+
+
 def test_a_wide_local_edit_is_kept_in_the_overlay_and_sent_as_it_is(chunk: Any) -> None:
     server, connection, session, seen = chunk
     at = (0, 0, 0)

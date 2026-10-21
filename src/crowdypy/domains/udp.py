@@ -371,6 +371,23 @@ class UdpAPI:
         connection.flush_sends()
         return await connection.wait_for_sequence(sequence, uuid, timeout)
 
+    async def send_generic_spatial(
+        self,
+        chunk: Sequence[int],
+        uuid: str,
+        payload: Any,
+        *,
+        distance: int = 8,
+        decay: int = DecayRate.NONE,
+    ) -> int:
+        """An app-defined spatial message (opcode 140): the server fans it out to the actors
+        near ``chunk`` without reading ``payload`` (at most ``wire.MAX_LONG_SPATIAL_PAYLOAD``,
+        1,123 bytes), and they receive it as ``generic_spatial``. CrowdyJS's
+        ``udp.sendGenericSpatial`` (18.15.0) and CrowdyCPP's ``Connection::sendGenericSpatial``."""
+        return self._live().send_generic_spatial(
+            chunk, uuid, payload, distance=distance, decay=decay
+        )
+
     async def send_single_actor_message(self, chunk: Sequence[int], uuid: str, payload: Any) -> int:
         """A direct message to one actor: ``chunk`` and ``uuid`` address the TARGET. Not echoed."""
         return self._live().send_single_actor_message(chunk, uuid, payload)
