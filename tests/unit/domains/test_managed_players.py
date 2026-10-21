@@ -17,6 +17,7 @@ import pytest
 from conftest import MockApi
 from crowdypy import AsyncCrowdyClient
 from crowdypy.auth_state import AuthState
+from crowdypy.domains import portal as portal_module
 from crowdypy.domains.managed_players import ManagedPlayersAPI, private_jwk_member
 from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.portal import AppTokenResponse, PortalAPI
@@ -168,5 +169,6 @@ def test_no_operation_mints_with_an_org_token() -> None:
     operations = "".join(p.read_text() for p in (ROOT / "operations").rglob("*.graphql"))
     assert "managedPlayers(" in operations
     assert "mintManagedPlayerToken" not in operations
-    portal = (ROOT / "src/crowdypy/domains/portal.py").read_text()
+    # The installed module: a wheel test run has no src/ tree.
+    portal = Path(portal_module.__file__).read_text()
     assert re.search(r"mintManagedPlayerToken\s*\(", portal) is None
