@@ -106,12 +106,17 @@ class OrganizationsAPI(Domain):
         )
         return result
 
-    def revoke_token(self, org_token_id: str | int) -> bool:
+    def revoke_token(self, org_token_id: str | int, *, end_sessions: bool = False) -> bool:
         """Permanently deactivate an org token. Needs ``manage_tokens``.
 
-        Irreversible. ``False`` when there is no such token.
+        Irreversible. ``False`` when there is no such token. ``end_sessions`` also ends every
+        session the token signed org-managed players in with, so their devices stop now rather
+        than at their sessions' end.
         """
-        return bool(self._request(ops.REVOKE_ORG_TOKEN, {"orgTokenId": bigint(org_token_id)}))
+        variables: dict[str, Any] = {"orgTokenId": bigint(org_token_id)}
+        if end_sessions:
+            variables["endSessions"] = True
+        return bool(self._request(ops.REVOKE_ORG_TOKEN, variables))
 
     def invite_member(
         self, input: inputs.InviteOrgMemberInput | Mapping[str, Any]
