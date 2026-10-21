@@ -19,6 +19,7 @@ and :meth:`PortalAPI.complete_entry` exchanges the code your redirect receives.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -189,7 +190,8 @@ def is_legal_acceptance_required_error(error: object) -> bool:
     for entry in getattr(error, "graphql_errors", None) or ():
         if (entry.get("extensions") or {}).get("code") == "LEGAL_ACCEPTANCE_REQUIRED":
             return True
-    return "LEGAL_ACCEPTANCE_REQUIRED" in str(error)
+    # Not the organization's ORG_LEGAL_ACCEPTANCE_REQUIRED: no player clickwrap answers that.
+    return re.search(r"(^|[^A-Z_])LEGAL_ACCEPTANCE_REQUIRED", str(error)) is not None
 
 
 _APP_TOKEN_FIELDS = (
@@ -235,6 +237,15 @@ REFRESH_APP_TOKEN_ON_SERVER = inline_operation(
     + _APP_TOKEN_FIELDS
     + " authorizedServer { ip4 clientPort } } }",
 )
+EXCHANGE_MANAGED_PLAYER_ASSERTION = inline_operation(
+    "ExchangeManagedPlayerAssertion",
+    "mutation",
+    "exchangeManagedPlayerAssertion",
+    "mutation ExchangeManagedPlayerAssertion($input: ExchangeManagedPlayerAssertionInput!) { "
+    "exchangeManagedPlayerAssertion(input: $input) { " + _APP_TOKEN_FIELDS + " } }",
+)
+#: What every org token starts with: an organization's server credential, never a device's.
+ORG_TOKEN_PREFIX = "cko_"
 PORTAL_CONSENT = inline_operation(
     "PortalConsent",
     "query",
@@ -340,6 +351,59 @@ class PortalAPI(Domain):
         payload = await self._request(
             EXCHANGE_PORTAL_CODE,
             {"input": omit_none({"code": code, "codeVerifier": code_verifier})},
+        )
+        token = msgspec.convert(payload, AppTokenResponse)
+        self._session.set_token(token.token)
+        return token
+
+    def adopt_app_token(self, response: AppTokenResponse | Mapping[str, Any]) -> AppTokenResponse:
+        """Hold an app token the player's organization minted for it (org-managed players), so
+        this client plays with it and :meth:`refresh` rotates it.
+
+        The organization's server calls ``mintManagedPlayerToken`` with its org token and sends
+        the response to the player's device, which passes it here. On a game client, give the
+        returned token to ``client.set_app_token`` too, so native UDP signs with it. It
+        refreshes until the sign-in's lifetime (the organization's setting) ends; then the
+        device asks its organization again. A refresh is also refused with
+        ``ORG_LEGAL_ACCEPTANCE_REQUIRED`` (:func:`crowdypy.errors.org_legal_acceptance_required_of`)
+        while the organization has not accepted the current Org-Managed Players Addendum.
+
+        Raises :class:`ValueError` and holds nothing for a response without a token or with an
+        org token (``cko_...``): an org token signs in any of the organization's players, so a
+        device must never hold one.
+        """
+        token = (
+            response
+            if isinstance(response, AppTokenResponse)
+            else msgspec.convert(response, AppTokenResponse)
+            if isinstance(response, Mapping) and response.get("token")
+            else None
+        )
+        if token is None or not token.token:
+            raise ValueError("adopt_app_token: the response has no token")
+        if token.token.startswith(ORG_TOKEN_PREFIX):
+            raise ValueError(
+                "adopt_app_token: that is an org token, your organization's server credential. "
+                "Give the device the app token mintManagedPlayerToken returns, never the org token."
+            )
+        self._session.set_token(token.token)
+        return token
+
+    async def exchange_managed_player_assertion(
+        self, app_id: str | int, assertion: str
+    ) -> AppTokenResponse:
+        """Trade an assertion the player's organization signed for the player's app token, and
+        hold it (as :meth:`adopt_app_token` does). Public: needs no session and no org token.
+
+        Each assertion works once. A refusal is ``ASSERTION_REJECTED``, with the failed check in
+        ``extensions.reason`` (:func:`crowdypy.errors.assertion_rejected_of`); resending the same
+        assertion cannot succeed. A valid assertion is refused with
+        ``ORG_LEGAL_ACCEPTANCE_REQUIRED`` while the organization has not accepted the current
+        Org-Managed Players Addendum.
+        """
+        payload = await self._request(
+            EXCHANGE_MANAGED_PLAYER_ASSERTION,
+            {"input": {"appId": bigint(app_id), "assertion": assertion}},
         )
         token = msgspec.convert(payload, AppTokenResponse)
         self._session.set_token(token.token)

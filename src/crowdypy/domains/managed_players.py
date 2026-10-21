@@ -1,0 +1,193 @@
+"""Org-managed players: an organization's own players, signed in by the organization instead
+of with a Crowded Kingdoms password.
+
+The organization vouches for a player in one of two ways, and either ends in the player's own
+app token: its server mints it with an org token (the ``mintManagedPlayerToken`` mutation,
+scope ``players:mint``) and hands the response to the player's device, which stores it with
+``client.portal.adopt_app_token``; or its sign-in service signs a short assertion that the
+device trades with ``client.portal.exchange_managed_player_assertion``. This SDK has no wrapper
+for the org-token mint, on purpose: an org token signs in any of the organization's players, so
+it stays on the organization's server.
+
+The methods here are the organization's administration: an org admin's session with
+``manage_players`` (from the organization's server, an org token with ``players:manage`` also
+works for the six player operations).
+
+The Org-Managed Players Addendum (ck-api v2.53.0): before any of the organization's players is
+created or signed in, an admin of the organization accepts it in Studio. Until then sign-ins
+(both ways), refreshes and :meth:`ManagedPlayersAPI.provision` answer
+``ORG_LEGAL_ACCEPTANCE_REQUIRED`` (:func:`crowdypy.errors.org_legal_acceptance_required_of`);
+:meth:`ManagedPlayersAPI.settings` says where the organization stands. This SDK has no wrapper
+for the acceptance, on purpose: it binds the organization, so a person makes it, in Studio. A
+tier that does not serve org-managed players answers ``FEATURE_DISABLED`` to every field.
+"""
+
+from __future__ import annotations
+
+import builtins
+import json
+from collections.abc import Mapping
+from typing import Any
+
+import msgspec
+
+from crowdypy._generated import inputs
+from crowdypy._generated import operations as ops
+from crowdypy.domains._base import Domain, omit_none
+from crowdypy.utils import bigint
+
+#: The JWK members only a private key has (RFC 7518); the API refuses a key with any.
+PRIVATE_JWK_MEMBERS = ("d", "p", "q", "dp", "dq", "qi", "oth", "k")
+
+
+def private_jwk_member(jwk: str | Mapping[str, Any]) -> str | None:
+    """The first private member of a JWK (an object or its JSON), or ``None``, including for
+    text that is not JSON (the API refuses that with its own message)."""
+    parsed: object = jwk
+    if isinstance(jwk, str):
+        try:
+            parsed = json.loads(jwk)
+        except ValueError:
+            return None
+    if not isinstance(parsed, Mapping):
+        return None
+    return next((member for member in PRIVATE_JWK_MEMBERS if member in parsed), None)
+
+
+class ManagedPlayersAPI(Domain):
+    async def list(
+        self,
+        org_id: str | int,
+        *,
+        search: str | None = None,
+        first: int | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        """The organization's players in the order they were created, a page at a time
+        (``first`` defaults to 50, at most 200). ``search`` matches the start of an external id
+        (exactly) or of a gamertag (any case). Pass ``nextCursor`` back as ``after``; it is
+        ``None`` on the last page."""
+        result: dict[str, Any] = await self._request(
+            ops.MANAGED_PLAYERS,
+            omit_none({"orgId": bigint(org_id), "search": search, "first": first, "after": after}),
+        )
+        return result
+
+    async def get(self, org_id: str | int, external_id: str) -> dict[str, Any] | None:
+        """One player by the id the organization knows it by, or ``None``."""
+        result: dict[str, Any] | None = await self._request(
+            ops.MANAGED_PLAYER, {"orgId": bigint(org_id), "externalId": external_id}
+        )
+        return result
+
+    async def provision(
+        self, input: inputs.ProvisionManagedPlayersInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Create players ahead of their first sign-in, up to 500 a call (much faster than first
+        sign-ins one at a time: pre-provision before a launch). A player that already exists is
+        left as it is and counted in ``existing``. Refused with ``ORG_LEGAL_ACCEPTANCE_REQUIRED``
+        until the organization has accepted the current Org-Managed Players Addendum."""
+        result: dict[str, Any] = await self._request(
+            ops.PROVISION_MANAGED_PLAYERS, {"input": input}
+        )
+        return result
+
+    async def update(
+        self, input: inputs.UpdateManagedPlayerInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Rename a player, or disable or enable it. Disabling ends every session the player
+        has and refuses its sign-ins until enabled again; a block a platform operator set also
+        reads as disabled, and only an operator lifts it."""
+        result: dict[str, Any] = await self._request(ops.UPDATE_MANAGED_PLAYER, {"input": input})
+        return result
+
+    async def end_sessions(self, org_id: str | int, external_id: str) -> bool:
+        """End every session of a player now (sign it out everywhere); it can sign in again."""
+        return bool(
+            await self._request(
+                ops.END_MANAGED_PLAYER_SESSIONS,
+                {"orgId": bigint(org_id), "externalId": external_id},
+            )
+        )
+
+    async def delete(self, org_id: str | int, external_id: str) -> bool:
+        """Delete a player: its sessions end and its account is scrubbed. The external id is
+        free again, so a later sign-in with it creates a new player."""
+        return bool(
+            await self._request(
+                ops.DELETE_MANAGED_PLAYER, {"orgId": bigint(org_id), "externalId": external_id}
+            )
+        )
+
+    async def settings(self, org_id: str | int) -> dict[str, Any]:
+        """Whether an operator turned managed players on for the organization, and its limits:
+        the player cap, sign-ins per minute and the session lengths. Also where it stands on
+        the Org-Managed Players Addendum: ``termsVersion``, ``termsUrl``, ``termsAccepted``,
+        the latest acceptance, and ``viewerMayAcceptTerms`` (whether the signed-in user is an
+        admin of the organization who may accept it, in Studio). Read-only here."""
+        result: dict[str, Any] = await self._request(
+            ops.ORG_MANAGED_PLAYER_SETTINGS, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def signing_keys(self, org_id: str | int) -> builtins.list[dict[str, Any]]:
+        """The organization's assertion signing keys, revoked ones included."""
+        result: builtins.list[dict[str, Any]] = await self._request(
+            ops.ORG_SIGNING_KEYS, {"orgId": bigint(org_id)}
+        )
+        return result
+
+    async def register_signing_key(
+        self, input: inputs.RegisterOrgSigningKeyInput | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Register a PUBLIC key the organization's sign-in service signs player assertions
+        with: ``EdDSA`` (Ed25519), ``ES256`` (P-256) or ``RS256`` (RSA, 2048 bits or more).
+
+        ``publicJwk`` may be the JWK object or its JSON. A JWK with private members raises
+        :class:`ValueError` before any request (the API refuses it too), so the private key
+        never leaves the machine that holds it. ``appIds`` limits the key to some of the
+        organization's apps; ``audience`` replaces the default ``ck:app:<appId>``.
+        """
+        payload: dict[str, Any] = (
+            dict(input) if isinstance(input, Mapping) else msgspec.to_builtins(input)
+        )
+        jwk = payload.get("publicJwk")
+        if isinstance(jwk, Mapping):
+            jwk = json.dumps(dict(jwk), separators=(",", ":"))
+            payload["publicJwk"] = jwk
+        member = private_jwk_member(jwk) if isinstance(jwk, str) else None
+        if member is not None:
+            raise ValueError(
+                f"register_signing_key: the JWK carries the private member {member!r}; "
+                "register the PUBLIC key only"
+            )
+        result: dict[str, Any] = await self._request(
+            ops.REGISTER_ORG_SIGNING_KEY, {"input": payload}
+        )
+        return result
+
+    async def revoke_signing_key(self, org_id: str | int, key_id: str | int) -> bool:
+        """Revoke a signing key: assertions it signed are refused from now on."""
+        return bool(
+            await self._request(
+                ops.REVOKE_ORG_SIGNING_KEY, {"orgId": bigint(org_id), "keyId": bigint(key_id)}
+            )
+        )
+
+    async def app_mods_enabled(self, app_id: str | int) -> bool:
+        """Whether the organization pays for its managed players' mods in this app. Off, their
+        mods, Crowdy Studio writes and Studio agent use are refused with
+        ``MANAGED_PLAYER_NOT_ALLOWED``. ``False`` for an app the caller cannot see."""
+        app: dict[str, Any] | None = await self._request(
+            ops.APP_MANAGED_PLAYER_MODS, {"appId": bigint(app_id)}
+        )
+        return bool(app and app.get("managedPlayerModsEnabled"))
+
+    async def set_app_mods(self, app_id: str | int, enabled: bool) -> bool:
+        """Switch the organization paying for its managed players' mods in this app on or off
+        (``manage_billing`` on the app)."""
+        return bool(
+            await self._request(
+                ops.SET_APP_MANAGED_PLAYER_MODS, {"appId": bigint(app_id), "enabled": enabled}
+            )
+        )

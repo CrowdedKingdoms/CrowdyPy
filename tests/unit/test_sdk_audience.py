@@ -51,6 +51,9 @@ PLATFORM_ONLY = {
     "userTierAccess", "setUserTierAccess", "grantTierAccessByPattern", "endTierAccessSessions",
     "tierAccessProvisioningTokens", "createTierAccessProvisioningToken",
     "revokeTierAccessProvisioningToken", "tierAccessInventory", "setTierAccessMode",
+    # org-managed players (cks-game-api #557): an operator turns them on for an
+    # org; orgManagedPlayerSettings is an org admin's read and is wrapped.
+    "setOrgManagedPlayerSettings",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",

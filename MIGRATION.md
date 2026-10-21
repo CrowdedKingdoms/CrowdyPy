@@ -3,6 +3,46 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.17.0
+
+CrowdyJS 18.17.0 and CrowdyCPP 0.69.0. Additive. ck-api v2.53.0 serves org-managed players on
+dev, test and prod, and refuses an organization's managed sign-ins (both ways), refreshes and
+provisioning with `ORG_LEGAL_ACCEPTANCE_REQUIRED` until an admin of the organization accepts
+the Org-Managed Players Addendum in Studio.
+
+- **`crowdypy.errors.org_legal_acceptance_required_of`** reads that refusal
+  (`ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE`). Neither the player nor the organization's server can
+  fix it, so do not retry.
+- **`client.managed_players.settings(org_id)`** also returns `termsVersion`, `termsUrl`,
+  `termsAccepted`, `termsAcceptedVersion`, `termsAcceptedAt`, `termsAcceptedByUserId` and
+  `viewerMayAcceptTerms`.
+- **Fix:** `crowdypy.domains.portal.is_legal_acceptance_required_error` no longer matches the
+  organization's code by its message: a managed player has no clickwrap to show.
+- No wrapper for `acceptManagedPlayerTerms`, as in CrowdyJS and CrowdyCPP: it binds the
+  organization, so a person accepts it in Studio.
+
+## 0.16.0
+
+CrowdyJS 18.16.0 and CrowdyCPP 0.68.0. Additive, and served on the dev tier only at the time
+(every other tier answered `FEATURE_DISABLED` until ck-api v2.53.0): org-managed players, an
+organization's own players that it signs in itself.
+
+- **`client.portal.adopt_app_token(response)`** holds the app token the organization's server
+  minted with its org token (`mintManagedPlayerToken`) and returns it as an
+  `AppTokenResponse`; on a game client pass that to `client.set_app_token` so native UDP signs
+  with it. It raises `ValueError` and holds nothing for a response without a token or with an
+  org token (`cko_...`). There is no org-token mint wrapper, on purpose.
+- **`client.portal.exchange_managed_player_assertion(app_id, assertion)`** trades an assertion
+  the organization's sign-in service signed; public, and each assertion works once.
+  `crowdypy.errors.assertion_rejected_of` reads the refusal's `reason`.
+- **`client.managed_players`** (also `client.admin.managed_players`): `list`, `get`,
+  `provision` (up to 500 a call), `update`, `end_sessions`, `delete`, `settings`,
+  `signing_keys`, `register_signing_key` (a JWK with private members raises `ValueError` before
+  any request; `publicJwk` may be a mapping), `revoke_signing_key`, `app_mods_enabled` and
+  `set_app_mods`.
+- `client.organizations.revoke_token(id, end_sessions=True)` also ends the sessions a token
+  signed in. `crowdypy.errors.managed_player_not_allowed_of` reads `MANAGED_PLAYER_NOT_ALLOWED`.
+
 ## 0.15.0
 
 CrowdyJS 18.15.0 and CrowdyCPP 0.67.4. Additive.

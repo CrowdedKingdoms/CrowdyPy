@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 90d407b44d95416f23384023451b54edf73e18881dcad9ad9f06b20d8bd3fdfd
+schema.gql sha256: 261902653e100cc5701c32580d07b5ae401e28fa547a0712fa71429fb24df188
 """
 
 from __future__ import annotations
@@ -299,10 +299,12 @@ class CreateOrgRoleInput(msgspec.Struct, kw_only=True, omit_defaults=True, renam
     permissions: list[str]
 
 
-class CreateOrgTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'expires_at': 'expiresAt'}):
+class CreateOrgTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'expires_at': 'expiresAt', 'app_ids': 'appIds'}):
     org_id: str
     label: str | None | UnsetType = UNSET
     expires_at: str | None | UnsetType = UNSET
+    scopes: list[str] | None | UnsetType = UNSET
+    app_ids: list[str] | None | UnsetType = UNSET
 
 
 class CreateOrganizationInput(msgspec.Struct, kw_only=True, omit_defaults=True):
@@ -469,6 +471,11 @@ class DeleteGridInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     grid_id: str
 
 
+class ExchangeManagedPlayerAssertionInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
+    app_id: str
+    assertion: str
+
+
 class ExchangePortalCodeInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'code_verifier': 'codeVerifier'}):
     'Input for exchangePortalCode: the destination game (public client) trades a one-time portal code for an app-scoped gameplay token. Public (the code + PKCE verifier authorize the call).'
     code: str
@@ -629,6 +636,11 @@ class LoginUserInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     password: str
 
 
+class ManagedPlayerSpecInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'external_id': 'externalId'}):
+    external_id: str
+    gamertag: str | None | UnsetType = UNSET
+
+
 class MintAppTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
     'Input for mintAppToken: directly mint an app-scoped gameplay token for the calling user (native/direct path, no browser redirect).'
     app_id: str
@@ -639,6 +651,13 @@ class MintGridTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, renam
     app_id: str
     grid_id: str
     ttl_seconds: int | None | UnsetType = UNSET
+
+
+class MintManagedPlayerTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'external_id': 'externalId', 'session_ttl_seconds': 'sessionTtlSeconds'}):
+    app_id: str
+    external_id: str
+    gamertag: str | None | UnsetType = UNSET
+    session_ttl_seconds: int | None | UnsetType = UNSET
 
 
 class NearbyGridPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'user_id': 'userId', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
@@ -654,6 +673,11 @@ class NearbyGridsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
     app_id: str
     low_chunk: ChunkCoordinatesInput
     high_chunk: ChunkCoordinatesInput
+
+
+class ProvisionManagedPlayersInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
+    org_id: str
+    players: list[ManagedPlayerSpecInput]
 
 
 class PublishCrowdyStudioCommonFileInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'common_file_id': 'commonFileId', 'idempotency_key': 'idempotencyKey'}):
@@ -691,6 +715,17 @@ class RangedChannelMessageInput(msgspec.Struct, kw_only=True, omit_defaults=True
 class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'up_to_units': 'upToUnits', 'price_cents': 'priceCents'}):
     up_to_units: str | None | UnsetType = UNSET
     price_cents: float
+
+
+class RegisterOrgSigningKeyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'public_jwk': 'publicJwk', 'app_ids': 'appIds'}):
+    org_id: str
+    kid: str
+    algorithm: str
+    public_jwk: str
+    issuer: str
+    audience: str | None | UnsetType = UNSET
+    app_ids: list[str] | None | UnsetType = UNSET
+    label: str | None | UnsetType = UNSET
 
 
 class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'accept_legal': 'acceptLegal', 'attest_age_of_majority': 'attestAgeOfMajority'}):
@@ -942,6 +977,15 @@ class SetMemberRolesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rena
     role_ids: list[str]
 
 
+class SetOrgManagedPlayerSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'max_players': 'maxPlayers', 'mints_per_minute': 'mintsPerMinute', 'default_session_ttl_seconds': 'defaultSessionTtlSeconds', 'max_session_ttl_seconds': 'maxSessionTtlSeconds'}):
+    org_id: str
+    enabled: bool
+    max_players: str | None | UnsetType = UNSET
+    mints_per_minute: int | None | UnsetType = UNSET
+    default_session_ttl_seconds: int | None | UnsetType = UNSET
+    max_session_ttl_seconds: int | None | UnsetType = UNSET
+
+
 class SetQuotaInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'app_id': 'appId', 'tier_id': 'tierId', 'limit_value': 'limitValue', 'action_on_exceed': 'actionOnExceed', 'idempotency_key': 'idempotencyKey'}):
     org_id: str | None | UnsetType = UNSET
     app_id: str | None | UnsetType = UNSET
@@ -1112,16 +1156,26 @@ class UpdateGroupRoleInput(msgspec.Struct, kw_only=True, omit_defaults=True, ren
     rank: int | None | UnsetType = UNSET
 
 
+class UpdateManagedPlayerInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'external_id': 'externalId'}):
+    org_id: str
+    external_id: str
+    gamertag: str | None | UnsetType = UNSET
+    disambiguation: str | None | UnsetType = UNSET
+    disabled: bool | None | UnsetType = UNSET
+
+
 class UpdateOrgRoleInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'role_name': 'roleName'}):
     role_name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
     permissions: list[str] | None | UnsetType = UNSET
 
 
-class UpdateOrgTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'expires_at': 'expiresAt', 'is_active': 'isActive'}):
+class UpdateOrgTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'expires_at': 'expiresAt', 'is_active': 'isActive', 'app_ids': 'appIds'}):
     label: str | None | UnsetType = UNSET
     expires_at: str | None | UnsetType = UNSET
     is_active: bool | None | UnsetType = UNSET
+    scopes: list[str] | None | UnsetType = UNSET
+    app_ids: list[str] | None | UnsetType = UNSET
 
 
 class UpdateTeamInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'group_id': 'groupId', 'membership_policy': 'membershipPolicy'}):
@@ -1228,6 +1282,7 @@ __all__ = [
     'CurrentServerInput',
     'DefineAppFeatureInput',
     'DeleteGridInput',
+    'ExchangeManagedPlayerAssertionInput',
     'ExchangePortalCodeInput',
     'ExecArtifactInput',
     'ExecBuildCrateInput',
@@ -1250,14 +1305,18 @@ __all__ = [
     'ListVoxelsInput',
     'LodDataInput',
     'LoginUserInput',
+    'ManagedPlayerSpecInput',
     'MintAppTokenInput',
     'MintGridTokenInput',
+    'MintManagedPlayerTokenInput',
     'NearbyGridPermissionsInput',
     'NearbyGridsInput',
+    'ProvisionManagedPlayersInput',
     'PublishCrowdyStudioCommonFileInput',
     'PublishFileInput',
     'RangedChannelMessageInput',
     'RateCardBandInput',
+    'RegisterOrgSigningKeyInput',
     'RegisterUserInput',
     'ReinstateOrganizationInput',
     'RequestLoginLinkInput',
@@ -1284,6 +1343,7 @@ __all__ = [
     'SetHostedGameEnabledInput',
     'SetHostedGameListingInput',
     'SetMemberRolesInput',
+    'SetOrgManagedPlayerSettingsInput',
     'SetQuotaInput',
     'SetRateCardInput',
     'SetTeamPolicyInput',
@@ -1305,6 +1365,7 @@ __all__ = [
     'UpdateChunkStateInput',
     'UpdateGamertagInput',
     'UpdateGroupRoleInput',
+    'UpdateManagedPlayerInput',
     'UpdateOrgRoleInput',
     'UpdateOrgTokenInput',
     'UpdateTeamInput',
