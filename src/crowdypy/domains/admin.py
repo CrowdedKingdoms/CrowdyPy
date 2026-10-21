@@ -29,7 +29,7 @@ class AdminAPI:
 
     #: Organizations, members, RBAC roles and org API tokens.
     organizations: OrganizationsAPI
-    #: Org-managed players (dev only): the organization's own players and signing keys.
+    #: Org-managed players: the organization's own players and signing keys.
     managed_players: ManagedPlayersAPI
     #: The app registry, routing and player-code admission policy.
     apps: AppsAPI

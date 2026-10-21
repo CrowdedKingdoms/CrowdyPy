@@ -223,11 +223,13 @@ class PortalAPI : public DomainBase {
         });
   }
 
-  /// Org-managed players (dev only): store an app token the player's organization minted for
+  /// Org-managed players: store an app token the player's organization minted for
   /// it, so this client plays with it and refresh() rotates it. The organization's server
   /// calls mintManagedPlayerToken with its org token and hands the response to the player's
   /// device, which passes it here. The token refreshes until the sign-in's lifetime (the
-  /// organization's setting) ends; then the device asks its organization again.
+  /// organization's setting) ends; then the device asks its organization again. A refresh is
+  /// also refused with ORG_LEGAL_ACCEPTANCE_REQUIRED (graphql::orgLegalAcceptanceRequiredOf())
+  /// while the organization has not accepted the current Org-Managed Players Addendum.
   ///
   /// Refuses an empty token and an org token (`cko_...`) with Errc::InvalidArgument, storing
   /// nothing: an org token is the organization's server credential and signs in any of its
@@ -240,11 +242,12 @@ class PortalAPI : public DomainBase {
     return {};
   }
 
-  /// Org-managed players (dev only): trade an assertion the player's organization signed for
+  /// Org-managed players: trade an assertion the player's organization signed for
   /// the player's app token, and store it as adoptAppToken() does. Public: needs no session
   /// and no org token. Each assertion works once; a refusal is ASSERTION_REJECTED with the
   /// failed check in extensions.reason (graphql::assertionRejectedOf()). Resending the same
-  /// assertion cannot succeed.
+  /// assertion cannot succeed. A valid assertion is refused with ORG_LEGAL_ACCEPTANCE_REQUIRED
+  /// while the organization has not accepted the current Org-Managed Players Addendum.
   AppTokenResponse exchangeManagedPlayerAssertion(std::string_view appId,
                                                   std::string_view assertion) const {
     graphql::JVal vars;

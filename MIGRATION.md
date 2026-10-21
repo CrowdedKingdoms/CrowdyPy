@@ -3,11 +3,29 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.17.0
+
+CrowdyJS 18.17.0 and CrowdyCPP 0.69.0. Additive. ck-api v2.53.0 serves org-managed players on
+dev, test and prod, and refuses an organization's managed sign-ins (both ways), refreshes and
+provisioning with `ORG_LEGAL_ACCEPTANCE_REQUIRED` until an admin of the organization accepts
+the Org-Managed Players Addendum in Studio.
+
+- **`crowdypy.errors.org_legal_acceptance_required_of`** reads that refusal
+  (`ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE`). Neither the player nor the organization's server can
+  fix it, so do not retry.
+- **`client.managed_players.settings(org_id)`** also returns `termsVersion`, `termsUrl`,
+  `termsAccepted`, `termsAcceptedVersion`, `termsAcceptedAt`, `termsAcceptedByUserId` and
+  `viewerMayAcceptTerms`.
+- **Fix:** `crowdypy.domains.portal.is_legal_acceptance_required_error` no longer matches the
+  organization's code by its message: a managed player has no clickwrap to show.
+- No wrapper for `acceptManagedPlayerTerms`, as in CrowdyJS and CrowdyCPP: it binds the
+  organization, so a person accepts it in Studio.
+
 ## 0.16.0
 
-CrowdyJS 18.16.0 and CrowdyCPP 0.68.0. Additive, and served on the dev tier only (every other
-tier answers `FEATURE_DISABLED`): org-managed players, an organization's own players that it
-signs in itself.
+CrowdyJS 18.16.0 and CrowdyCPP 0.68.0. Additive, and served on the dev tier only at the time
+(every other tier answered `FEATURE_DISABLED` until ck-api v2.53.0): org-managed players, an
+organization's own players that it signs in itself.
 
 - **`client.portal.adopt_app_token(response)`** holds the app token the organization's server
   minted with its org token (`mintManagedPlayerToken`) and returns it as an
