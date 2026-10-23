@@ -314,6 +314,8 @@ class UdpAPI:
         distance: int = 8,
         decay: int = DecayRate.NONE,
     ) -> int:
+        """Proximity text. Needs the player's ``use_text_chat`` for the app (Game API v2.55.0);
+        without it the server answers ``UNAUTHORIZED`` for the returned sequence."""
         return self._live().send_text_packet(chunk, uuid, text, distance=distance, decay=decay)
 
     def send_text_packet_and_wait(
@@ -326,7 +328,8 @@ class UdpAPI:
         decay: int = DecayRate.NONE,
         timeout: float = 5.0,
     ) -> Notification:
-        """Text is never echoed: see :meth:`send_audio_packet_and_wait`."""
+        """Text is never echoed: see :meth:`send_audio_packet_and_wait`. Needs
+        ``use_text_chat``, as :meth:`send_text_packet` does."""
         connection = self._live()
         sequence = connection.send_text_packet(chunk, uuid, text, distance=distance, decay=decay)
         connection.flush_sends()
@@ -383,11 +386,15 @@ class UdpAPI:
         )
 
     def send_single_actor_message(self, chunk: Sequence[int], uuid: str, payload: Any) -> int:
-        """A direct message to one actor: ``chunk`` and ``uuid`` address the TARGET. Not echoed."""
+        """A direct message to one actor: ``chunk`` and ``uuid`` address the TARGET. Not echoed.
+        Needs the player's ``use_direct_messages`` for the app (Game API v2.55.0); without it
+        the server answers ``UNAUTHORIZED`` for the returned sequence."""
         return self._live().send_single_actor_message(chunk, uuid, payload)
 
     def send_channel_message(self, channel_id: str | int, uuid: str, payload: Any) -> int:
-        """Publish to a channel (needs membership and ``send_messages``)."""
+        """Publish to a channel (needs membership and ``send_messages``, and from Game API
+        v2.55.0 the player's ``use_text_chat`` for the channel's app; ``UNAUTHORIZED``
+        otherwise)."""
         return self._live().send_channel_message(channel_id, uuid, payload)
 
     def send_channel_audio(self, channel_id: str | int, uuid: str, payload: Any) -> int:
@@ -412,7 +419,8 @@ class UdpAPI:
         """Publish to a channel, delivered only to members whose own actor is within
         ``max_distance`` chunks of ``chunk``: straight-line distance between chunk
         coordinates, inclusive (``max_distance`` 0 reaches only the origin chunk). The same
-        right as :meth:`send_channel_message`; members receive an ordinary
+        rights as :meth:`send_channel_message` (``send_messages`` and ``use_text_chat``);
+        members receive an ordinary
         ``channel_message``. Members with no actor of their own, and the sender, are never
         reached."""
         return self._live().send_ranged_channel_message(

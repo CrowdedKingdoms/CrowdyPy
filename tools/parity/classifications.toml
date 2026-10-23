@@ -53,6 +53,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.mintManagedPlayerToken" = { kind = "browser-exclusion", reason = "an organization's server call with its org token; no SDK wraps it, and a device adopts the token it returns (portal.adopt_app_token)" }
 "mutation.acceptManagedPlayerTerms" = { kind = "browser-exclusion", reason = "an organization admin's acceptance of the Org-Managed Players Addendum, a clickwrap made in Studio; no SDK wraps it" }
 "mutation.reinstateOrganization" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle; not a game-client surface" }
+"mutation.releaseLegalHold" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.requestAccountErasure" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.retireOrganization" = { kind = "browser-exclusion", reason = "operator-only organization lifecycle; not a game-client surface" }
 "mutation.revokeTierAccessProvisioningToken" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.revokeTierAccessRule" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -63,6 +65,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.setEarlyAccessOverride" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setHostedGameEnabled" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.setHostedGameListing" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.setLegalHold" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOperator" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOrgBillingExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setOrgManagedPlayerSettings" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -74,6 +77,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.takeDownHostedGame" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
 "mutation.updateUserType" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.accountBlock" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"query.accountErasure" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.agentRateCards" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.allHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.billingCharges" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
@@ -92,6 +96,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.hostedGame" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.hostedGamePublishes" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.hostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.legalHolds" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.meteredRateCard" = { kind = "browser-exclusion", reason = "public price list for the pricing page and dashboard; a game client has no use for it" }
 "query.myHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
 "query.myTierAccess" = { kind = "browser-exclusion", reason = "the dev/test staff-only gate as sign-in pages show it; CrowdyJS wraps neither" }
