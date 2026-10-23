@@ -268,7 +268,10 @@ class ManagedPlayersAPI : public detail::AdminDomain {
                     playerVars(orgId, externalId), {}, std::move(cb));
   }
   /// Delete a player (CrowdyJS `delete`): its sessions end and its account is scrubbed; the
-  /// external id is free again, so a later sign-in with it creates a new player.
+  /// external id is free again, so a later sign-in with it creates a new player. Since Game
+  /// API v2.54.0 its player-side content is erased within minutes (usage and billing records
+  /// and world edits stay), and a legal hold on the player or its organization refuses the
+  /// delete with LEGAL_HOLD; the player stays as it was.
   graphql::Json remove(std::string_view orgId, std::string_view externalId) const {
     return execUnwrap(gen::managedPlayers::kDeleteManagedPlayerIsolatedDocument,
                       playerVars(orgId, externalId));

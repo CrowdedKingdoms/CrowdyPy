@@ -255,6 +255,8 @@ class AppsAPI(Domain):
         ``replayLoggingEnabled`` true raises ``INPUT_LOG_FUNDS_NEEDED`` unless the org wallet
         can spend the projected cost of keeping one retention period of the app's recent
         traffic; ``extensions["requiredMicrousd"]`` and ``["spendableMicrousd"]`` say how much.
+        ``replayLoggingRecordsMedia`` false leaves voice and video out of the app's recording
+        and keeps everything else (default true; Game API v2.55.0).
         """
         result: dict[str, Any] = await self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}
