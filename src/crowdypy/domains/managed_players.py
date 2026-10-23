@@ -112,7 +112,10 @@ class ManagedPlayersAPI(Domain):
 
     async def delete(self, org_id: str | int, external_id: str) -> bool:
         """Delete a player: its sessions end and its account is scrubbed. The external id is
-        free again, so a later sign-in with it creates a new player."""
+        free again, so a later sign-in with it creates a new player. Since Game API v2.54.0
+        its player-side content is erased within minutes (usage and billing records and world
+        edits stay), and a legal hold on the player or its organization refuses the delete
+        with ``LEGAL_HOLD``; the player stays as it was."""
         return bool(
             await self._request(
                 ops.DELETE_MANAGED_PLAYER, {"orgId": bigint(org_id), "externalId": external_id}
