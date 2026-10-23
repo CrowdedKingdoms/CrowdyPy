@@ -3,6 +3,31 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.18.0
+
+CrowdyJS 18.18.0 and CrowdyCPP 0.70.0. No API change. ck-api v2.55.0 adds two app-level
+permission keys, and the realtime servers enforce them:
+
+- **`use_text_chat`** for proximity text (`client.udp.send_text_packet`, `World.send_text`,
+  the replication connection's `send_text_packet`) and for text on a channel
+  (`send_channel_message`, `send_ranged_channel_message`).
+- **`use_direct_messages`** for `send_single_actor_message` and `World.send_to_actor`.
+
+Without the key the server answers `UNAUTHORIZED` for the send's sequence number. Every
+access tier that grants `access` has both: ck-api adds them when a tier is created or updated
+(`client.app_access.create_tier` / `update_tier`) unless `applyCommunicationDefaults` is false,
+and an operator backfilled the existing tiers. An app that wants some players without chat
+removes a key from their tier.
+
+Also from ck-api v2.54.0 and v2.55.0:
+
+- `client.managed_players.delete` now erases the player's content within minutes; a legal hold
+  on the player or its organization refuses it with `LEGAL_HOLD`.
+- `client.apps.update(app_id, {"replayLoggingRecordsMedia": False})` leaves voice and video out
+  of the app's recording (default true).
+- The operator fields for account erasure and legal holds are not wrapped, as in CrowdyJS and
+  CrowdyCPP: the SDK is for players, developers and org-admins.
+
 ## 0.17.0
 
 CrowdyJS 18.17.0 and CrowdyCPP 0.69.0. Additive. ck-api v2.53.0 serves org-managed players on

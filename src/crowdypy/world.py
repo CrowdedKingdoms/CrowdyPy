@@ -131,6 +131,8 @@ class ActorClient:
         distance: int = 8,
         decay: int = DecayRate.NONE,
     ) -> Notification:
+        """Proximity text to everyone nearby. Needs ``use_text_chat``; ``UNAUTHORIZED``
+        otherwise."""
         target = self._target(chunk, "text")
         return await self._udp.send_text_packet_and_wait(
             target, self.uuid, text, distance=distance, decay=decay
@@ -153,7 +155,8 @@ class ActorClient:
     async def send_to_actor(
         self, target_uuid: str, payload: Any, target_chunk: Sequence[int | str]
     ) -> int:
-        """A direct message to one actor (fire-and-forget); returns its sequence number."""
+        """A direct message to one actor (fire-and-forget); returns its sequence number. Needs
+        ``use_direct_messages``; ``UNAUTHORIZED`` otherwise."""
         validate_crowdy_uuid(target_uuid)
         coords = (int(target_chunk[0]), int(target_chunk[1]), int(target_chunk[2]))
         validate_chunk_coordinates({"x": coords[0], "y": coords[1], "z": coords[2]})

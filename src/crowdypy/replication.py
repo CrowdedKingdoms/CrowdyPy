@@ -577,6 +577,8 @@ class _ConnectionCore:
         distance: int = 8,
         decay: int = DecayRate.NONE,
     ) -> int:
+        """Proximity text. Needs the player's ``use_text_chat`` for the app (Game API v2.55.0);
+        without it the server answers ``UNAUTHORIZED`` for the returned sequence."""
         body = text.encode("utf-8") if isinstance(text, str) else text
         return self._spatial(MessageType.CLIENT_TEXT_PACKET, chunk, uuid, body, distance, decay)
 
@@ -642,7 +644,9 @@ class _ConnectionCore:
     def send_single_actor_message(
         self, chunk: Sequence[int], uuid: str | bytes, payload: Any
     ) -> int:
-        """A direct message to one actor: ``chunk`` and ``uuid`` address the TARGET."""
+        """A direct message to one actor: ``chunk`` and ``uuid`` address the TARGET. Needs the
+        player's ``use_direct_messages`` for the app (Game API v2.55.0); ``UNAUTHORIZED``
+        otherwise."""
         try:
             result: int = self._native.send_single_actor_message(
                 chunk[0], chunk[1], chunk[2], uuid, payload
@@ -652,6 +656,8 @@ class _ConnectionCore:
         return result
 
     def send_channel_message(self, channel_id: int | str, uuid: str | bytes, payload: Any) -> int:
+        """Publish to a channel: needs membership, ``send_messages`` and, from Game API v2.55.0,
+        the player's ``use_text_chat`` for the channel's app; ``UNAUTHORIZED`` otherwise."""
         try:
             result: int = self._native.send_channel_message(int(channel_id), uuid, payload)
         except ValueError as exc:
@@ -680,7 +686,8 @@ class _ConnectionCore:
     ) -> int:
         """A channel publish that reaches only the members whose own actor is within
         ``max_distance`` chunks of ``chunk`` (straight-line distance, inclusive). The origin
-        is the connection's app; members receive an ordinary channel message."""
+        is the connection's app; members receive an ordinary channel message. The same rights
+        as :meth:`send_channel_message`."""
         if not 0 <= int(max_distance) <= CHANNEL_RANGED_MAX_DISTANCE:
             raise CrowdyReplicationError(
                 f"max_distance must be 0..{CHANNEL_RANGED_MAX_DISTANCE}", code="InvalidArgument"
