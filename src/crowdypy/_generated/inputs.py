@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 261902653e100cc5701c32580d07b5ae401e28fa547a0712fa71429fb24df188
+schema.gql sha256: aa15686351b9ce9a99a1127678a86e4c2c7e92b0d06b55655c99a1407b1a681d
 """
 
 from __future__ import annotations
@@ -191,7 +191,7 @@ class CompleteLoginLinkInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     token: str
 
 
-class CreateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'tier_order': 'tierOrder', 'is_free': 'isFree', 'is_default': 'isDefault', 'permission_keys': 'permissionKeys'}):
+class CreateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'tier_order': 'tierOrder', 'is_free': 'isFree', 'is_default': 'isDefault', 'permission_keys': 'permissionKeys', 'apply_communication_defaults': 'applyCommunicationDefaults'}):
     'Input for creating a new app access tier.'
     app_id: str
     name: str
@@ -200,6 +200,7 @@ class CreateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     is_default: bool | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
     permission_keys: list[str] | None | UnsetType = UNSET
+    apply_communication_defaults: bool | None | UnsetType = UNSET
 
 
 class CreateActorInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId', 'private_state': 'privateState', 'public_state': 'publicState'}):
@@ -970,6 +971,13 @@ class SetHostedGameListingInput(msgspec.Struct, kw_only=True, omit_defaults=True
     listed: bool
 
 
+class SetLegalHoldInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'user_id': 'userId'}):
+    'A legal hold to set: exactly one of orgId (an organization and its managed players) and userId (one account), and why.'
+    org_id: str | None | UnsetType = UNSET
+    user_id: str | None | UnsetType = UNSET
+    reason: str
+
+
 class SetMemberRolesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'group_id': 'groupId', 'user_id': 'userId', 'role_ids': 'roleIds'}):
     "Replace a member's roles in a group (the listed roles become their full set)."
     group_id: str
@@ -1066,7 +1074,7 @@ class TransferPlayerCodeListingInput(msgspec.Struct, kw_only=True, omit_defaults
     to_owner_ref: str
 
 
-class UpdateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'tier_order': 'tierOrder', 'is_free': 'isFree', 'is_default': 'isDefault', 'price_cents': 'priceCents', 'billing_period': 'billingPeriod', 'stripe_price_id': 'stripePriceId', 'paypal_plan_id': 'paypalPlanId', 'permission_keys': 'permissionKeys'}):
+class UpdateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'tier_order': 'tierOrder', 'is_free': 'isFree', 'is_default': 'isDefault', 'price_cents': 'priceCents', 'billing_period': 'billingPeriod', 'stripe_price_id': 'stripePriceId', 'paypal_plan_id': 'paypalPlanId', 'permission_keys': 'permissionKeys', 'apply_communication_defaults': 'applyCommunicationDefaults'}):
     'Fields to update on an access tier. All fields are optional; omitted fields are left unchanged.'
     name: str | None | UnsetType = UNSET
     tier_order: int | None | UnsetType = UNSET
@@ -1079,6 +1087,7 @@ class UpdateAccessTierInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     stripe_price_id: str | None | UnsetType = UNSET
     paypal_plan_id: str | None | UnsetType = UNSET
     permission_keys: list[str] | None | UnsetType = UNSET
+    apply_communication_defaults: bool | None | UnsetType = UNSET
 
 
 class UpdateActorInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId', 'private_state': 'privateState', 'public_state': 'publicState'}):
@@ -1094,7 +1103,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'claim_owner_keys': 'claimOwnerKeys'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'claim_owner_keys': 'claimOwnerKeys'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1103,6 +1112,7 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     metadata: str | None | UnsetType = UNSET
     wilderness_writes_open: bool | None | UnsetType = UNSET
     replay_logging_enabled: bool | None | UnsetType = UNSET
+    replay_logging_records_media: bool | None | UnsetType = UNSET
     claim_owner_keys: list[str] | None | UnsetType = UNSET
 
 
@@ -1342,6 +1352,7 @@ __all__ = [
     'SetGridPermissionLimitsInput',
     'SetHostedGameEnabledInput',
     'SetHostedGameListingInput',
+    'SetLegalHoldInput',
     'SetMemberRolesInput',
     'SetOrgManagedPlayerSettingsInput',
     'SetQuotaInput',

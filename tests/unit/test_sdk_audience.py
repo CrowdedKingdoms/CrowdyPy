@@ -54,6 +54,13 @@ PLATFORM_ONLY = {
     # org-managed players (cks-game-api #557): an operator turns them on for an
     # org; orgManagedPlayerSettings is an org admin's read and is wrapped.
     "setOrgManagedPlayerSettings",
+    # account erasure and legal holds (ck-api v2.54.0): an operator reads and retries an
+    # erasure and places or releases a hold.
+    "accountErasure",
+    "requestAccountErasure",
+    "legalHolds",
+    "setLegalHold",
+    "releaseLegalHold",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",

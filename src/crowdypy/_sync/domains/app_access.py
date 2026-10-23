@@ -130,7 +130,10 @@ class AppAccessAPI(Domain):
         """Create an access tier for an app. Needs ``manage_access_tiers``.
 
         Its permission keys must be :meth:`runtime_permissions`. Creating a tier grants it
-        to nobody.
+        to nobody. A tier that grants ``access`` also gets ``use_text_chat`` and
+        ``use_direct_messages`` unless ``applyCommunicationDefaults`` is false (Game API
+        v2.55.0); without them the realtime servers refuse its players' text and direct
+        messages.
         """
         result: dict[str, Any] = self._request(ops.CREATE_ACCESS_TIER, {"input": input})
         return result
@@ -140,7 +143,9 @@ class AppAccessAPI(Domain):
     ) -> dict[str, Any]:
         """Change an access tier; fields left out stay as they are.
 
-        Needs ``manage_access_tiers``.
+        Needs ``manage_access_tiers``. ``permissionKeys`` that include ``access`` keep or gain
+        ``use_text_chat`` and ``use_direct_messages`` unless ``applyCommunicationDefaults`` is
+        false; send false to take them away.
         """
         result: dict[str, Any] = self._request(
             ops.UPDATE_ACCESS_TIER, {"tierId": bigint(tier_id), "input": input}
