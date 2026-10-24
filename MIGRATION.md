@@ -3,6 +3,15 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.19.0
+
+CrowdyJS 18.19.0 and CrowdyCPP 0.71.0. No API change. ck-api v2.56.0 makes a draining
+instance easy to leave: it answers with the balancer's affinity cookie (`cks_ga`) expired,
+so the next request is placed on an instance that is staying. `LbCookieStore` now forgets a
+`cks_ga` that a response expires (an empty value, `Max-Age` of zero or less, or an `Expires`
+in the past) instead of sending it again, and gains `clear()`, CrowdyJS's way of dropping
+the affinity on a move.
+
 ## 0.18.0
 
 CrowdyJS 18.18.0 and CrowdyCPP 0.70.0. No API change. ck-api v2.55.0 adds two app-level
