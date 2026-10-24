@@ -190,6 +190,15 @@ class Connection {
   WaitOutcome waitForSequence(std::uint8_t sequence, const core::ActorUuid& uuid, int timeoutMs);
 
   /// Send an actor update and wait for its echo or error.
+  ///
+  /// Every `*AndWait` times its wait from when the send has left, and retries
+  /// the first awaited send of a session (the first connect, and each
+  /// reassignment: COMMAND_RECONNECT, a drain move, the watchdog) once, with a
+  /// fresh sequence, when it is refused `Unauthorized` or, for the actor and
+  /// voxel updates the server echoes, when its echo times out. That is how a
+  /// realtime server older than v0.42.0 answers a session's first message;
+  /// v0.42.0 holds it until the session's permissions load instead. Text has
+  /// no echo and succeeds by timing out, so its timeout is never retried.
   WaitOutcome sendActorUpdateAndWait(const SpatialSend& p, int timeoutMs = 5000);
   /// Send a voxel update and wait for its echo or error.
   WaitOutcome sendVoxelUpdateAndWait(const wire::ChunkCoord& chunk, const core::ActorUuid& uuid,
@@ -201,6 +210,11 @@ class Connection {
   /// Send a text packet and wait for a correlated error (no echo exists; a
   /// clean timeout means accepted).
   WaitOutcome sendTextAndWait(const SpatialSend& p, int timeoutMs = 1500);
+
+  /// How many sessions this connection has started: the first connect and every
+  /// reassignment count one. An awaited send compares it with the epoch of its
+  /// last answered send to know it is the first of a session.
+  std::uint64_t sessionEpoch() const { return sessionEpoch_.load(std::memory_order_acquire); }
 
   // ----- Receive-side --------------------------------------------------------
 
@@ -388,6 +402,15 @@ class Connection {
   /// Set when onEventsReady fired; poll() clears it before draining, so an
   /// event queued during or after a drain signals again.
   std::atomic<bool> eventsSignalled_{false};
+
+  /// Send once, wait, and retry a session's first awaited send once (see
+  /// sendActorUpdateAndWait). `send` allocates a fresh sequence per call.
+  template <class Send>
+  WaitOutcome sendAndWait(Send&& send, const core::ActorUuid& uuid, int timeoutMs, bool echoed);
+
+  std::atomic<std::uint64_t> sessionEpoch_{0};
+  /// The session epoch of the last awaited send that was answered (poll-thread only).
+  std::uint64_t confirmedEpoch_ = ~std::uint64_t{0};
 
   // One in-flight AndWait at a time (poll-thread only).
   struct PendingWait {
