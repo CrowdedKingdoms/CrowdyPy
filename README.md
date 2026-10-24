@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.19.0: a draining instance is left at once.** Game API v2.56.0 expires the balancer's affinity cookie on a draining instance's responses; CrowdyPy forgets the expired cookie, so the next request lands on an instance that is staying. CrowdyJS 18.19.0 and CrowdyCPP 0.71.0; no API change. See [MIGRATION.md](MIGRATION.md).
+
 **v0.18.0: text chat and direct-message keys, and the recording switch.** Game API v2.55.0 adds the app-level `use_text_chat` and `use_direct_messages` keys: without them the realtime servers refuse a player's text, channel text and direct messages with `UNAUTHORIZED`. A tier that grants `access` gets both unless `applyCommunicationDefaults` is false, and `replayLoggingRecordsMedia` leaves voice and video out of an app's recording. Deleting a managed player now erases its content, and a legal hold refuses it with `LEGAL_HOLD`. See [MIGRATION.md](MIGRATION.md).
 
 **v0.17.0: the Org-Managed Players Addendum.** ck-api v2.53.0 serves org-managed players on every tier, once an admin of the organization has accepted the addendum in Studio; until then its sign-ins and refreshes answer `ORG_LEGAL_ACCEPTANCE_REQUIRED`, which `crowdypy.errors.org_legal_acceptance_required_of` reads, and `client.managed_players.settings(org_id)` says where the organization stands. CrowdyJS 18.17.0 and CrowdyCPP 0.69.0. See [MIGRATION.md](MIGRATION.md).

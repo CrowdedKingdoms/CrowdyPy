@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: aa15686351b9ce9a99a1127678a86e4c2c7e92b0d06b55655c99a1407b1a681d
+schema.gql sha256: a022b170f64e8c3bd1a532fbc447c9ee0f0a9c91495cb54dfb77cf175453903a
 """
 
 from __future__ import annotations
