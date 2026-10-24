@@ -9,7 +9,12 @@ exponential decay, voxel, text and event messages 8 chunks with none, audio and 
 
 Payloads are bytes, not base64. Sends return the message's sequence number (0-255); the
 ``*_and_wait`` forms wait for its echo (only actor and voxel updates echo) or a server error
-naming it, as in CrowdyJS.
+naming it, as in CrowdyJS. As there, the first awaited send of a session (the first connect,
+and every reassignment: a move, ``COMMAND_RECONNECT``, the watchdog) is retried once with a
+fresh sequence when it is refused ``UNAUTHORIZED`` or, for the actor and voxel updates the
+server echoes, when it times out: how a realtime server older than v0.42.0 answers a session's
+first message. Audio, text and events have no echo and succeed by timing out, so their
+timeout is never retried.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from crowdypy._sync.domains.portal import AppTokenResponse, CurrentServer
-from crowdypy.errors import CrowdyError, CrowdyReplicationError
+from crowdypy.errors import CrowdyError, CrowdyRealtimeError, CrowdyReplicationError
 from crowdypy.replication import (
     HANDLER_NAMES,
     Assignment,
@@ -88,6 +93,11 @@ class UdpAPI:
         self._client = client
         self._connection: ReplicationConnection | None = None
         self._subscriptions: list[Mapping[str, Callable[[Notification], Any]]] = []
+        #: How many times :meth:`connect` opened a connection; with the connection's own
+        #: reassignment count it names the current session.
+        self._generation = 0
+        #: The session of the last awaited send that was answered.
+        self._confirmed: tuple[int, int] | None = None
 
     @property
     def connection(self) -> ReplicationConnection | None:
@@ -126,6 +136,7 @@ class UdpAPI:
             )
         else:
             self._connection.set_token(token_material(token))
+        self._generation += 1
         self._connection.connect()
         return self.connection_status()
 
@@ -179,6 +190,48 @@ class UdpAPI:
 
         return unsubscribe
 
+    def _session(self, connection: ReplicationConnection) -> tuple[int, int]:
+        return (self._generation, int(connection.stats().get("reconnects", 0)))
+
+    def _send_and_wait(
+        self,
+        send: Callable[[ReplicationConnection], int],
+        uuid: str,
+        timeout: float,
+        *,
+        echoed: bool,
+    ) -> Notification:
+        """Send, wait, and retry a session's first awaited send once (see the module doc).
+        ``send`` allocates a fresh sequence each time it is called."""
+        connection = self._live()
+        session = self._session(connection)
+        try:
+            try:
+                answer = self._send_once(connection, send, uuid, timeout)
+            except CrowdyRealtimeError as error:
+                if session == self._confirmed or not _first_send_failure(error, echoed):
+                    raise
+                answer = self._send_once(connection, send, uuid, timeout)
+        except CrowdyRealtimeError as error:
+            # A send the server does not echo succeeds by timing out, and that answers
+            # for the session as well as an echo would.
+            if not echoed and error.code == "UDP_SEQUENCE_TIMEOUT":
+                self._confirmed = session
+            raise
+        self._confirmed = session
+        return answer
+
+    def _send_once(
+        self,
+        connection: ReplicationConnection,
+        send: Callable[[ReplicationConnection], int],
+        uuid: str,
+        timeout: float,
+    ) -> Notification:
+        sequence = send(connection)
+        connection.flush_sends()
+        return connection.wait_for_sequence(sequence, uuid, timeout)
+
     def _live(self) -> ReplicationConnection:
         connection = self._connection
         if connection is None:
@@ -208,10 +261,12 @@ class UdpAPI:
         decay: int = DecayRate.EXPONENTIAL,
         timeout: float = 5.0,
     ) -> Notification:
-        connection = self._live()
-        sequence = connection.send_actor_update(chunk, uuid, state, distance=distance, decay=decay)
-        connection.flush_sends()
-        return connection.wait_for_sequence(sequence, uuid, timeout)
+        return self._send_and_wait(
+            lambda c: c.send_actor_update(chunk, uuid, state, distance=distance, decay=decay),
+            uuid,
+            timeout,
+            echoed=True,
+        )
 
     def send_voxel_update(
         self,
@@ -243,12 +298,14 @@ class UdpAPI:
         decay: int = DecayRate.NONE,
         timeout: float = 5.0,
     ) -> Notification:
-        connection = self._live()
-        sequence = connection.send_voxel_update(
-            chunk, uuid, voxel, voxel_type, voxel_state, distance=distance, decay=decay
+        return self._send_and_wait(
+            lambda c: c.send_voxel_update(
+                chunk, uuid, voxel, voxel_type, voxel_state, distance=distance, decay=decay
+            ),
+            uuid,
+            timeout,
+            echoed=True,
         )
-        connection.flush_sends()
-        return connection.wait_for_sequence(sequence, uuid, timeout)
 
     def send_audio_packet(
         self,
@@ -273,10 +330,12 @@ class UdpAPI:
     ) -> Notification:
         """Audio is never echoed: this surfaces a server error inline, and otherwise times out
         (``UDP_SEQUENCE_TIMEOUT``), as in CrowdyJS."""
-        connection = self._live()
-        sequence = connection.send_audio_packet(chunk, uuid, audio, distance=distance, decay=decay)
-        connection.flush_sends()
-        return connection.wait_for_sequence(sequence, uuid, timeout)
+        return self._send_and_wait(
+            lambda c: c.send_audio_packet(chunk, uuid, audio, distance=distance, decay=decay),
+            uuid,
+            timeout,
+            echoed=False,
+        )
 
     def send_video_packet(
         self,
@@ -330,10 +389,12 @@ class UdpAPI:
     ) -> Notification:
         """Text is never echoed: see :meth:`send_audio_packet_and_wait`. Needs
         ``use_text_chat``, as :meth:`send_text_packet` does."""
-        connection = self._live()
-        sequence = connection.send_text_packet(chunk, uuid, text, distance=distance, decay=decay)
-        connection.flush_sends()
-        return connection.wait_for_sequence(sequence, uuid, timeout)
+        return self._send_and_wait(
+            lambda c: c.send_text_packet(chunk, uuid, text, distance=distance, decay=decay),
+            uuid,
+            timeout,
+            echoed=False,
+        )
 
     def send_client_event(
         self,
@@ -361,12 +422,14 @@ class UdpAPI:
         timeout: float = 5.0,
     ) -> Notification:
         """Events are never echoed: see :meth:`send_audio_packet_and_wait`."""
-        connection = self._live()
-        sequence = connection.send_client_event(
-            chunk, uuid, event_type, state, distance=distance, decay=decay
+        return self._send_and_wait(
+            lambda c: c.send_client_event(
+                chunk, uuid, event_type, state, distance=distance, decay=decay
+            ),
+            uuid,
+            timeout,
+            echoed=False,
         )
-        connection.flush_sends()
-        return connection.wait_for_sequence(sequence, uuid, timeout)
 
     def send_generic_spatial(
         self,
@@ -426,3 +489,8 @@ class UdpAPI:
         return self._live().send_ranged_channel_message(
             channel_id, uuid, payload, chunk, max_distance
         )
+
+
+def _first_send_failure(error: CrowdyRealtimeError, echoed: bool) -> bool:
+    """How a session's first message fails on a realtime server that does not hold it."""
+    return error.code == "UNAUTHORIZED" or (echoed and error.code == "UDP_SEQUENCE_TIMEOUT")
