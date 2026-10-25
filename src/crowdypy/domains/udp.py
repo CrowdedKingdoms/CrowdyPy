@@ -13,7 +13,9 @@ and every reassignment: a move, ``COMMAND_RECONNECT``, the watchdog) is retried 
 fresh sequence when it is refused ``UNAUTHORIZED`` or, for the actor and voxel updates the
 server echoes, when it times out: how a realtime server older than v0.42.0 answers a session's
 first message. Audio, text and events have no echo and succeed by timing out, so their
-timeout is never retried.
+timeout is never retried. An actor or voxel update still waiting when the connection is
+reassigned is resent as soon as the new session is connected, rather than at its timeout: its
+echo went to the session it left. That is the send's one retry.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from crowdypy.replication import (
     ConnState,
     Notification,
     TokenMaterial,
+    _SessionChanged,
     token_material,
 )
 from crowdypy.wire import DecayRate
@@ -207,24 +210,32 @@ class UdpAPI:
         *,
         echoed: bool,
     ) -> Notification:
-        """Send, wait, and retry a session's first awaited send once (see the module doc).
-        ``send`` allocates a fresh sequence each time it is called."""
+        """Send, wait, and retry once: a session's first awaited send, or an echoed send that
+        waited across a reassignment (see the module doc). ``send`` allocates a fresh
+        sequence each time it is called."""
         connection = self._live()
         session = self._session(connection)
+        sent = session  # the session the answered attempt went to
         try:
             try:
+                answer = await self._send_once(
+                    connection, send, uuid, timeout, end_on_new_session=echoed
+                )
+            except _SessionChanged:
+                sent = self._session(connection)
                 answer = await self._send_once(connection, send, uuid, timeout)
             except CrowdyRealtimeError as error:
                 if session == self._confirmed or not _first_send_failure(error, echoed):
                     raise
+                sent = self._session(connection)
                 answer = await self._send_once(connection, send, uuid, timeout)
         except CrowdyRealtimeError as error:
             # A send the server does not echo succeeds by timing out, and that answers
             # for the session as well as an echo would.
             if not echoed and error.code == "UDP_SEQUENCE_TIMEOUT":
-                self._confirmed = session
+                self._confirmed = sent
             raise
-        self._confirmed = session
+        self._confirmed = sent
         return answer
 
     async def _send_once(
@@ -233,10 +244,14 @@ class UdpAPI:
         send: Callable[[AsyncReplicationConnection], int],
         uuid: str,
         timeout: float,
+        *,
+        end_on_new_session: bool = False,
     ) -> Notification:
         sequence = send(connection)
         connection.flush_sends()
-        return await connection.wait_for_sequence(sequence, uuid, timeout)
+        return await connection._await_sequence(
+            sequence, uuid, timeout, end_on_new_session=end_on_new_session
+        )
 
     def _live(self) -> AsyncReplicationConnection:
         connection = self._connection
