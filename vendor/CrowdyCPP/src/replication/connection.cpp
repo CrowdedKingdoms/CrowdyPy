@@ -722,6 +722,12 @@ std::size_t Connection::pump(int timeoutMs) {
 
 Connection::WaitOutcome Connection::waitForSequence(std::uint8_t sequence,
                                                     const core::ActorUuid& uuid, int timeoutMs) {
+  return awaitSequence(sequence, uuid, timeoutMs, /*endOnNewSession=*/false);
+}
+
+Connection::WaitOutcome Connection::awaitSequence(std::uint8_t sequence,
+                                                  const core::ActorUuid& uuid, int timeoutMs,
+                                                  bool endOnNewSession) {
   // Nothing can be echoed that has not left; the wait starts with the wire
   // caught up to the sends made so far.
   (void)flushSends();
@@ -730,11 +736,19 @@ Connection::WaitOutcome Connection::waitForSequence(std::uint8_t sequence,
   pendingWait_.sequence = sequence;
   pendingWait_.uuid = uuid;
 
+  const std::uint64_t epoch = sessionEpoch();
   const std::int64_t deadline = clock_.monotonicMillis() + timeoutMs;
   while (!pendingWait_.done && clock_.monotonicMillis() < deadline) {
     if (config_.manualPump) pump(5);
     if (poll() == 0 && !config_.manualPump) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // A reassignment's session, once connected, will not carry this echo: it
+    // went to the session the connection left.
+    if (endOnNewSession && !pendingWait_.done && sessionEpoch() != epoch &&
+        state() == ConnState::Connected) {
+      pendingWait_.outcome.sessionChanged = true;
+      break;
     }
   }
   pendingWait_.active = false;
@@ -755,16 +769,19 @@ template <class Send>
 Connection::WaitOutcome Connection::sendAndWait(Send&& send, const core::ActorUuid& uuid,
                                                 int timeoutMs, bool echoed) {
   const std::uint64_t epoch = sessionEpoch_.load(std::memory_order_acquire);
+  std::uint64_t sentEpoch = epoch;  // the session the answered attempt went to
   auto seq = send();
   if (!seq.ok()) return WaitOutcome{};
-  WaitOutcome outcome = waitForSequence(seq.value(), uuid, timeoutMs);
-  if (epoch != confirmedEpoch_ && isFirstSendFailure(outcome, echoed)) {
+  WaitOutcome outcome = awaitSequence(seq.value(), uuid, timeoutMs, /*endOnNewSession=*/echoed);
+  if (outcome.sessionChanged ||
+      (epoch != confirmedEpoch_ && isFirstSendFailure(outcome, echoed))) {
+    sentEpoch = sessionEpoch_.load(std::memory_order_acquire);
     auto retry = send();
-    if (retry.ok()) outcome = waitForSequence(retry.value(), uuid, timeoutMs);
+    if (retry.ok()) outcome = awaitSequence(retry.value(), uuid, timeoutMs, false);
   }
   // A send the server does not echo succeeds by timing out, and that answers for
   // the session as well as an echo would.
-  if (outcome.acknowledged || (!echoed && !outcome.error)) confirmedEpoch_ = epoch;
+  if (outcome.acknowledged || (!echoed && !outcome.error)) confirmedEpoch_ = sentEpoch;
   return outcome;
 }
 

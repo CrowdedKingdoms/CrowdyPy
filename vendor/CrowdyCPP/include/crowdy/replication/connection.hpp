@@ -180,6 +180,10 @@ class Connection {
     std::optional<wire::ErrorCode> error;
     /// Server epoch millis from the echo (when acknowledged).
     std::int64_t serverEpochMs = 0;
+    /// Set when an echoed send's wait ended because a new session was established
+    /// (a reassignment) before the echo came: the echo went to the session the
+    /// connection left. `*AndWait` resends then; waitForSequence never sets it.
+    bool sessionChanged = false;
   };
 
   /// Wait (pumping/polling internally; handlers still fire normally) until a
@@ -199,6 +203,11 @@ class Connection {
   /// realtime server older than v0.42.0 answers a session's first message;
   /// v0.42.0 holds it until the session's permissions load instead. Text has
   /// no echo and succeeds by timing out, so its timeout is never retried.
+  ///
+  /// An actor or voxel update still waiting when the connection is reassigned is
+  /// resent, with a fresh sequence, as soon as the new session is connected,
+  /// rather than at its timeout: its echo went to the session it left. That is
+  /// the send's one retry.
   WaitOutcome sendActorUpdateAndWait(const SpatialSend& p, int timeoutMs = 5000);
   /// Send a voxel update and wait for its echo or error.
   WaitOutcome sendVoxelUpdateAndWait(const wire::ChunkCoord& chunk, const core::ActorUuid& uuid,
@@ -403,10 +412,16 @@ class Connection {
   /// event queued during or after a drain signals again.
   std::atomic<bool> eventsSignalled_{false};
 
-  /// Send once, wait, and retry a session's first awaited send once (see
-  /// sendActorUpdateAndWait). `send` allocates a fresh sequence per call.
+  /// Send once, wait, and retry once: a session's first awaited send, or an echoed
+  /// send that waited across a reassignment (see sendActorUpdateAndWait). `send`
+  /// allocates a fresh sequence per call.
   template <class Send>
   WaitOutcome sendAndWait(Send&& send, const core::ActorUuid& uuid, int timeoutMs, bool echoed);
+
+  /// waitForSequence, ending early with `sessionChanged` when `endOnNewSession` and
+  /// a new session is connected while it waits.
+  WaitOutcome awaitSequence(std::uint8_t sequence, const core::ActorUuid& uuid, int timeoutMs,
+                            bool endOnNewSession);
 
   std::atomic<std::uint64_t> sessionEpoch_{0};
   /// The session epoch of the last awaited send that was answered (poll-thread only).
