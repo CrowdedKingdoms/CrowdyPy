@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.21.0
+
+CrowdyJS 18.21.0 and CrowdyCPP 0.73.0. No API change. An actor or voxel update still waiting
+for its echo when the connection was reassigned (a move, `COMMAND_RECONNECT`, the watchdog)
+had its echo sent to the session it left, and waited out its whole timeout. It is now resent
+once, with a fresh sequence, as soon as the new session is connected. That is the send's one
+retry, as the first-send retry is; audio, text and events are never resent.
+`wait_for_sequence` is unchanged.
+
+The Game API on the same tier refuses a gamertag or disambiguation with a control,
+line-break or bidirectional-formatting character (`BAD_REQUEST`).
+
 ## 0.20.0
 
 CrowdyJS 18.20.0 and CrowdyCPP 0.72.0. No API change. A replication server older than

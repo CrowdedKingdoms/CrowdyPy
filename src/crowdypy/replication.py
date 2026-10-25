@@ -413,6 +413,15 @@ def _sequence_timeout(timeout: float) -> CrowdyRealtimeError:
     )
 
 
+#: How often a wait that ends on a new session looks for one.
+_SESSION_CHECK_S = 0.05
+
+
+class _SessionChanged(Exception):
+    """A reassignment's session connected while an echoed send waited: the echo went to the
+    session the connection left (see ``_await_sequence``)."""
+
+
 def _answered(event: Notification) -> Notification:
     if event.type != MessageType.GENERIC_ERROR:
         return event
@@ -512,6 +521,13 @@ class _ConnectionCore:
         billed, measured at the platform's interface)."""
         result: dict[str, Any] = self._native.stats()
         return result
+
+    def _reassignments(self) -> int:
+        return int(self.stats().get("reconnects", 0))
+
+    def _new_session_since(self, reassignments: int) -> bool:
+        """Whether a session started after ``reassignments`` reassignments is connected."""
+        return self._reassignments() != reassignments and self.state == ConnState.CONNECTED
 
     def set_token(self, token: TokenMaterial) -> None:
         """Rotate the token material after a refresh made outside the connection."""
@@ -961,6 +977,36 @@ class AsyncReplicationConnection(_ConnectionCore):
         future = self._register(sequence, uuid)
         return await self._settle(future, timeout)
 
+    async def _await_sequence(
+        self, sequence: int, uuid: str | bytes, timeout: float, *, end_on_new_session: bool
+    ) -> Notification:
+        """:meth:`wait_for_sequence`; with ``end_on_new_session``, ``_SessionChanged`` once a
+        reassignment's session is connected, since the echo went to the session it left."""
+        if not end_on_new_session:
+            return await self.wait_for_sequence(sequence, uuid, timeout)
+        start = self._reassignments()
+        future = self._register(sequence, uuid)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        try:
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise _sequence_timeout(timeout)
+                try:
+                    event = await asyncio.wait_for(
+                        asyncio.shield(future), min(remaining, _SESSION_CHECK_S)
+                    )
+                except TimeoutError:
+                    if self._new_session_since(start):
+                        raise _SessionChanged from None
+                    continue
+                return _answered(event)
+        finally:
+            self._waiters = [w for w in self._waiters if w[2] is not future]
+            if not future.done():
+                future.cancel()
+
     def _register(self, sequence: int, uuid: str | bytes) -> asyncio.Future[Notification]:
         loop = self._loop or asyncio.get_running_loop()
         future: asyncio.Future[Notification] = loop.create_future()
@@ -1078,3 +1124,26 @@ class ReplicationConnection(_ConnectionCore):
             if row < 0:
                 continue
             return _answered(batch[row])
+
+    def _await_sequence(
+        self, sequence: int, uuid: str | bytes, timeout: float, *, end_on_new_session: bool
+    ) -> Notification:
+        """See the async connection."""
+        if not end_on_new_session:
+            return self.wait_for_sequence(sequence, uuid, timeout)
+        start = self._reassignments()
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _sequence_timeout(timeout)
+            self.wait(min(remaining, _SESSION_CHECK_S))
+            self._clear_wake()
+            batch = self._drain(None)
+            if batch:
+                self._backlog.append(batch)
+                row = batch.match(sequence, uuid)
+                if row >= 0:
+                    return _answered(batch[row])
+            if self._new_session_since(start):
+                raise _SessionChanged
