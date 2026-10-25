@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.20.0
+
+CrowdyJS 18.20.0 and CrowdyCPP 0.72.0. No API change. A replication server older than
+v0.42.0 drops or refuses a session's first message while the session's permissions load, so
+the first awaited send after `client.udp.connect()` or a reassignment (a move,
+`COMMAND_RECONNECT`, the watchdog) used to fail or time out. Every `*_and_wait` now retries
+the first awaited send of a session once, with a fresh sequence, when it is refused
+`UNAUTHORIZED` or, for the actor and voxel updates the server echoes, when it times out
+(`UDP_SEQUENCE_TIMEOUT`). Audio, text and events have no echo and succeed by timing out, so
+their timeout is never retried. From v0.42.0 the server holds that first message until the
+session is ready, so the retry does not fire; a warm-up send is no longer needed.
+
 ## 0.19.0
 
 CrowdyJS 18.19.0 and CrowdyCPP 0.71.0. No API change. ck-api v2.56.0 makes a draining
