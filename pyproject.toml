@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "crowdypy"
-version = "0.20.0"
+version = "0.21.0"
 description = "Official Python SDK for Crowded Kingdoms: typed GraphQL clients and a native UDP replication core"
 readme = "README.md"
 license = "MIT AND Apache-2.0"
@@ -119,19 +119,19 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 # --------------------------------------------------------------------------------------
 
 [tool.crowdypy.crowdyjs]
-version = "18.20.0"
-commit = "41138ebd24c2c7439b680fd448dc65a751f137a7"
+version = "18.21.0"
+commit = "fa42eddab7780c019b1e265c25be9420315f4edd"
 
 [tool.crowdypy.crowdycpp]
-version = "0.72.0"
-tag = "test/v0.72.0"
-commit = "6c72e3b383d98f7e7989b4a6e78871b447888b30"
-tree-sha256 = "db9d16c1b20c0e73e7f55a7abe21fcd2e7c627665225789ae675f6bc856fea9f"
+version = "0.73.0"
+tag = "dev/v0.73.0"
+commit = "17c4c5fec78ee152c90878d2f307706b67d0a62b"
+tree-sha256 = "2e4dd2dda1558b8cfe9e345763e2c496e4a6b77fe3f00b85e120a8c0cdb90fa7"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
 [tool.crowdypy.graphql]
-schema-sha256 = "14ce52b99a6c8c4ec5e6e3aca9505ce14bae4eb3c5559107c9caf0ac58d85e33"
+schema-sha256 = "73c301b1d2c7c28a821f8d812a96e582c0063d97e9aed0e6664140bebe73feaf"
 operations-sha256 = "32e2c43ac1bd00ec9c05902d524e82727cf560a88330f207704059a7a8a96189"
 
 # The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it

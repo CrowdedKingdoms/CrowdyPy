@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.21.0: a send waiting across a reassignment is resent then.** An actor or voxel update still waiting for its echo when the connection is reassigned is resent as soon as the new session is connected, rather than at its timeout, since its echo went to the session it left. That is its one retry; audio, text and events are never resent. CrowdyJS 18.21.0 and CrowdyCPP 0.73.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.20.0: a session's first awaited send is not lost.** Every `*_and_wait` retries the first awaited send of a session once, with a fresh sequence, when it is refused `UNAUTHORIZED` or, for the echoed actor and voxel updates, when it times out: how a replication server older than v0.42.0 answers a session's first message (v0.42.0 holds it until the session is ready). CrowdyJS 18.20.0 and CrowdyCPP 0.72.0; no API change. See [MIGRATION.md](MIGRATION.md).
 
 **v0.19.0: a draining instance is left at once.** Game API v2.56.0 expires the balancer's affinity cookie on a draining instance's responses; CrowdyPy forgets the expired cookie, so the next request lands on an instance that is staying. CrowdyJS 18.19.0 and CrowdyCPP 0.71.0; no API change. See [MIGRATION.md](MIGRATION.md).
