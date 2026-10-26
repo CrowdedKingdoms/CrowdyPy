@@ -41,7 +41,7 @@ jobs:
         if: inputs.version != ''
         shell: bash
         run: python scripts/ci/stamp_version.py "${{ inputs.version }}"
-      - uses: pypa/cibuildwheel@v4.3.1
+      - uses: pypa/cibuildwheel@v4.3.4
         with:
           output-dir: wheelhouse
           extras: uv
