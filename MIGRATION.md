@@ -3,6 +3,17 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.22.0
+
+CrowdyJS 18.22.0 and CrowdyCPP 0.74.0. No breaking change, but `exec.instances` now selects
+`orphaned`, so it needs Game API v2.58.0 on the tier (an older API refuses the field).
+
+`ExecInstance.orphaned` is true when the instance's node type is not in the app's active
+version. ck-exec 0.19 stops such an instance at once when a deploy or a rollback drops its
+type, keeps its saved state for a version that deploys the type again, and drops the type
+from `disabled_types`. It is `None` from a manager older than 0.19. The docstrings of
+`deploy`, `activate_version`, `set_enabled` and `restart_type` say so.
+
 ## 0.21.0
 
 CrowdyJS 18.21.0 and CrowdyCPP 0.73.0. No API change. An actor or voxel update still waiting
