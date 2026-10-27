@@ -208,7 +208,13 @@ class ExecLogLine(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
 
 
 class ExecInstance(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """An instance the execution manager has placed."""
+    """An instance the execution manager has placed.
+
+    ``orphaned`` is true when its node type is not in the app's active version: a deploy
+    or a rollback dropped the type and stopped the instance, which keeps its saved state
+    for a version that deploys the type again. It is ``None`` from a manager older than
+    ck-exec 0.19.
+    """
 
     instance_id: str
     node_type: str
@@ -219,6 +225,7 @@ class ExecInstance(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     epoch: int
     since_ms: float
     held_back: str | None = None
+    orphaned: bool | None = None
 
 
 class ExecVersion(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -744,7 +751,8 @@ class ExecAPI(Domain):
     async def instances(self, app_id: str | int) -> list[ExecInstance]:
         """What the execution manager has placed for the app.
 
-        Requires ``view_compute_diagnostics``.
+        Each instance says whether it is ``orphaned`` (its type no longer deployed), which
+        needs Game API v2.58.0. Requires ``view_compute_diagnostics``.
         """
         rows = await self._request(ops.EXEC_INSTANCES, {"appId": bigint(app_id)})
         return msgspec.convert(rows, list[ExecInstance])
@@ -792,7 +800,9 @@ class ExecAPI(Domain):
     async def activate_version(self, app_id: str | int, version: int) -> ExecAppStatus:
         """Make an earlier version active again, a rollback.
 
-        Instances pick it up when they next start. Requires ``manage_compute``.
+        As after a deploy, instances of the types it keeps pick it up when they next start,
+        and those of a type it lacks are persisted and stopped at once; a type it lacks
+        leaves the switched-off list. Requires ``manage_compute``.
         """
         payload = await self._request(
             ops.EXEC_ACTIVATE_VERSION, {"appId": bigint(app_id), "version": version}
@@ -805,7 +815,9 @@ class ExecAPI(Domain):
         """The kill switch, for the whole app or one node type.
 
         Off: nothing of it is placed, what runs is persisted and stopped, and calls are
-        refused with ``Denied``. Requires ``manage_compute``.
+        refused with ``Denied``. A type's switch lasts while the active version deploys the
+        type: a deploy or a rollback that drops the type drops its switch. Requires
+        ``manage_compute``.
         """
         payload = await self._request(
             ops.EXEC_SET_ENABLED,
@@ -817,8 +829,9 @@ class ExecAPI(Domain):
         """Move one node type's running instances to the app's active version: each is
         persisted and stopped, and starts again on the active version at its next call.
 
-        A deploy changes what new instances run and leaves running ones on their version;
-        this moves them without switching the type off. Requires ``manage_compute``.
+        A deploy changes what new instances run and leaves the running ones of the types it
+        keeps on their version (it stops those of a type it drops itself); this moves them
+        without switching the type off. Requires ``manage_compute``.
         """
         payload = await self._request(
             ops.EXEC_RESTART_TYPE, {"appId": bigint(app_id), "nodeType": node_type}
@@ -1406,8 +1419,9 @@ class ExecAPI(Domain):
         (``kind``, ``parent``, ``client``, ``calls``, ``persist_every_ms``, ...). A type gives
         its compiled module as ``wasm`` (bytes), or names a ``crate`` of ``build_id``, whose
         modules the platform already holds; each distinct module is uploaded once, by its
-        SHA-256. Running instances pick the version up when they next start. Requires the
-        org ``manage_compute`` permission.
+        SHA-256. Running instances of the types it keeps pick the version up when they next
+        start; those of a type it drops are persisted and stopped at once, and the type leaves
+        the switched-off list. Requires the org ``manage_compute`` permission.
         """
         manifest_types: dict[str, Any] = {}
         artifacts: dict[str, str] = {}
