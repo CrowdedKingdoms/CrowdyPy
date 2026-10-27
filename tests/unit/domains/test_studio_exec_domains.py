@@ -1333,7 +1333,10 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
         "epoch": 3,
         "sinceMs": 5,
         "heldBack": None,
+        "orphaned": True,
     }
+    # A manager older than ck-exec 0.19 leaves `orphaned` out.
+    older = {key: value for key, value in instance.items() if key != "orphaned"}
     versions = [
         {
             "version": 2,
@@ -1371,7 +1374,7 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
         api,
         {
             "ExecLogs": [LINE],
-            "ExecInstances": [instance],
+            "ExecInstances": [instance, older],
             "ExecVersions": versions,
             "ExecEndpointStats": [stat],
             "ExecAppStatus": APP_STATUS,
@@ -1385,7 +1388,10 @@ async def test_operating_an_app_passes_arguments_and_maps_results(
     [line] = await exec_api.logs(77, node_type="arena", max_level=1, limit=10, flow=FLOW)
     assert msgspec.to_builtins(line) == LINE
     await exec_api.logs("77", key="m1", before="8")
-    assert msgspec.to_builtins(await exec_api.instances("77")) == [instance]
+    assert msgspec.to_builtins(await exec_api.instances("77")) == [
+        instance,
+        {**older, "orphaned": None},
+    ]
     active, gone = await exec_api.versions("77")
     assert active.manifest_json == json.dumps(manifest)
     assert active.manifest == manifest
