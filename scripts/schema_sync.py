@@ -10,9 +10,9 @@
 
 The operations are the flagship's, unedited, so a CrowdyPy method sends the same
 document CrowdyJS does. Two directories are not copied, each for a reason the parity
-matrix also records: `hosting` publishes a browser bundle to Crowdy Games (a browser
-exclusion) and `udp` is the GraphQL UDP proxy, which CrowdyPy replaces with native UDP
-through CrowdyCPP (a native equivalent).
+matrix also records: `hosting` published a browser bundle to Crowdy Games, which was
+retired on 2026-10-29 (a browser exclusion), and `udp` is the GraphQL UDP proxy, which
+CrowdyPy replaces with native UDP through CrowdyCPP (a native equivalent).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ OPERATIONS = ROOT / "operations"
 JS_OPERATIONS = "src/operations/"
 
 EXCLUDED = {
-    "hosting": "browser exclusion: publishes a browser bundle to Crowdy Games",
+    "hosting": "browser exclusion: published a browser bundle to Crowdy Games (retired 2026-10-29)",
     "udp": "native equivalent: the GraphQL UDP proxy; CrowdyPy sends native UDP through CrowdyCPP",
 }
 

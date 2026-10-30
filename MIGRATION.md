@@ -677,6 +677,9 @@ The first release. CrowdyPy follows CrowdyJS 18.0.4 (the pinned commit in
   (`portal.signIn`, `handleSignInCallback`, `handleAuthorizeRequest`), the Crowdy Games
   shell bridge and bundle hosting, the Studio browser UI, the in-browser agent pane and the
   Web Worker player runtime. `docs/parity-matrix.md` lists every exclusion with its reason.
+  Crowdy Games was retired on 2026-10-29. Its shell bridge and bundle hosting were
+  browser-only, no Python wrapper is planned, and developers now host their games on their
+  own origins.
 
 Not in 0.1.0, and listed as portable gaps in `docs/parity-matrix.md` until they landed:
 the native replication connection, video frames and traffic metrics (0.2.0); the World
