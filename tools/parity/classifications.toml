@@ -35,11 +35,11 @@ GraphQLClient = "AsyncGraphQLClient"
 "subscription.udpNotifications" = { kind = "native-equivalent", reason = "client.udp sends and receives this over CrowdyCPP's native UDP connection; the GraphQL UDP proxy exists because a page cannot open a UDP socket" }
 
 # --- browser-exclusion
-"mutation.abandonGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.abandonGamePublish" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.addTierAccessRule" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
-"mutation.beginGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
-"mutation.claimGameHosting" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
-"mutation.completeGamePublish" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.beginGamePublish" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
+"mutation.claimGameHosting" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
+"mutation.completeGamePublish" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.cpBillingCreditOverbill" = { kind = "browser-exclusion", reason = "operator-only ledger control (credit an over-billed charge); not a game-client surface" }
 "mutation.cpSetCrowdyStudioAgentAppKill" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.cpSetCrowdyStudioAgentPlatformPolicy" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -63,8 +63,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.setAppVisibility" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setBillingRate" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setEarlyAccessOverride" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
-"mutation.setHostedGameEnabled" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
-"mutation.setHostedGameListing" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.setHostedGameEnabled" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
+"mutation.setHostedGameListing" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.setLegalHold" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOperator" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOrgBillingExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
@@ -74,12 +74,12 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.unblockAccount" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setTierAccessMode" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setUserTierAccess" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
-"mutation.takeDownHostedGame" = { kind = "browser-exclusion", reason = "publishes and administers browser game bundles on the Crowdy Games web host; a Python client has no bundle to publish" }
+"mutation.takeDownHostedGame" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.updateUserType" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.accountBlock" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.accountErasure" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.agentRateCards" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
-"query.allHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.allHostedGames" = { kind = "browser-exclusion", reason = "Crowdy Games catalog, retired 2026-10-29; it listed browser games only, no Python wrapper is planned, and developers host their own games" }
 "query.billingCharges" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
 "query.billingExemptOrgs" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.billingRateCard" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
@@ -93,12 +93,12 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.cpCrowdyStudioAgentPlatformPolicy" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.emailDeliverability" = { kind = "browser-exclusion", reason = "operator-only email deliverability reads; not a game-client surface" }
 "query.emailDeliveryConfig" = { kind = "browser-exclusion", reason = "operator-only email deliverability reads; not a game-client surface" }
-"query.hostedGame" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
-"query.hostedGamePublishes" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
-"query.hostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.hostedGame" = { kind = "browser-exclusion", reason = "Crowdy Games catalog, retired 2026-10-29; it listed browser games only, no Python wrapper is planned, and developers host their own games" }
+"query.hostedGamePublishes" = { kind = "browser-exclusion", reason = "Crowdy Games catalog, retired 2026-10-29; it listed browser games only, no Python wrapper is planned, and developers host their own games" }
+"query.hostedGames" = { kind = "browser-exclusion", reason = "Crowdy Games catalog, retired 2026-10-29; it listed browser games only, no Python wrapper is planned, and developers host their own games" }
 "query.legalHolds" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "query.meteredRateCard" = { kind = "browser-exclusion", reason = "public price list for the pricing page and dashboard; a game client has no use for it" }
-"query.myHostedGames" = { kind = "browser-exclusion", reason = "catalog of browser games hosted on Crowdy Games; a Python client is not one of them" }
+"query.myHostedGames" = { kind = "browser-exclusion", reason = "Crowdy Games catalog, retired 2026-10-29; it listed browser games only, no Python wrapper is planned, and developers host their own games" }
 "query.myTierAccess" = { kind = "browser-exclusion", reason = "the dev/test staff-only gate as sign-in pages show it; CrowdyJS wraps neither" }
 "query.paymentEvents" = { kind = "browser-exclusion", reason = "super-admin only (cross-tenant audit); the SDK wraps nothing for platform roles (tooling calls it directly). CrowdyCPP waives it as deprecated offset pagination" }
 "query.paymentEventsConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -121,8 +121,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "CrowdyStudioEmbed" = { kind = "browser-exclusion", reason = "embed panel owns responsive DOM chrome, focus trapping and browser input suppression" }
 "CrowdyStudioEmbedDock" = { kind = "browser-exclusion", reason = "embed panel owns responsive DOM chrome, focus trapping and browser input suppression" }
 "CrowdyStudioTextHud" = { kind = "browser-exclusion", reason = "HUD layer renders text-only player presentation into game-owned DOM" }
-"EmbeddedHost" = { kind = "browser-exclusion", reason = "iframe/postMessage bridge to the first-party shell page; there is no frame around a Python client" }
-"HostingAPI" = { kind = "browser-exclusion", reason = "wrapper over the Crowdy Games hosting roots, which publish browser bundles; no Python client publishes one (CrowdyCPP classifies it the same way)" }
+"EmbeddedHost" = { kind = "browser-exclusion", reason = "iframe/postMessage bridge to the Crowdy Games shell page, retired 2026-10-29; there was never a frame around a Python client, and no Python wrapper is planned" }
+"HostingAPI" = { kind = "browser-exclusion", reason = "wrapper over the Crowdy Games hosting roots, retired 2026-10-29; browser bundles only, no Python wrapper is planned, and developers host their own games (CrowdyCPP classifies it the same way)" }
 "VfsLimitError" = { kind = "browser-exclusion", reason = "the bounded Monaco / browser-language-worker document workspace" }
 "VirtualFileSystem" = { kind = "browser-exclusion", reason = "the bounded Monaco / browser-language-worker document workspace" }
 "WorkerLanguageClient" = { kind = "browser-exclusion", reason = "binds vscode-jsonrpc to browser Web Worker messaging" }
@@ -137,7 +137,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "KitError.from" = { kind = "native-equivalent", reason = "KitError.from_error(error): `from` is a Python keyword" }
 
 # --- browser-exclusion
-"PortalAPI.embeddedHostInfo" = { kind = "browser-exclusion", reason = "answers whether the page runs inside the Crowdy Games shell iframe; a a Python client client never does" }
+"PortalAPI.embeddedHostInfo" = { kind = "browser-exclusion", reason = "answers whether the page runs inside the Crowdy Games shell iframe, retired 2026-10-29; a Python client never did" }
 "PortalAPI.handleAuthorizeRequest" = { kind = "browser-exclusion", reason = "Studio /authorize browser-page redirect handler; a Python client uses authorization-code APIs" }
 "PortalAPI.handleSignInCallback" = { kind = "browser-exclusion", reason = "the browser return leg of hosted sign-in (reads location.search, rewrites history); a Python client uses exchangeCode with the code it received" }
 "PortalAPI.signIn" = { kind = "browser-exclusion", reason = "hosted sign-in navigates the browser to Studio /authorize (ck-api v1.88.0); a a Python client client sends no Origin header, signs in with auth().login and mints directly" }
@@ -181,7 +181,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "BinaryRelayTransport" = { kind = "browser-exclusion", reason = "the raw-WebSocket relay exists because a page cannot open a UDP socket; CrowdyPy replicates over native UDP (CrowdyCPP's core)" }
 "CLIENT_GRID_EVENT_MAX_CASCADE" = { kind = "browser-exclusion", reason = "page-local event bus between CLIENT mods running in this browser's glue workers" }
 "ClientGridEventBus" = { kind = "browser-exclusion", reason = "page-local event bus between CLIENT mods running in this browser's glue workers" }
-"EMBEDDED_HOST_PROTOCOL_VERSION" = { kind = "browser-exclusion", reason = "iframe/postMessage bridge to the first-party shell page; there is no frame around a Python client" }
+"EMBEDDED_HOST_PROTOCOL_VERSION" = { kind = "browser-exclusion", reason = "iframe/postMessage bridge to the Crowdy Games shell page, retired 2026-10-29; there was never a frame around a Python client, and no Python wrapper is planned" }
 "EXEC_CLIENT_HOST_CALLS" = { kind = "browser-exclusion", reason = "page-side broker for player WASM in the browser glue Web Worker (worker lifecycle, host-call allowlists, rate caps, watchdogs)" }
 "GLUE_HOST_CALL_REQUEST_MAX_BYTES" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }
 "GLUE_HOST_FUNCTIONS" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }
@@ -202,7 +202,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "parseFuelBudget" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }
 "runWithWatchdog" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }
 "startGlueWorker" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }
-"uploadPublishFiles" = { kind = "browser-exclusion", reason = "wrapper over the Crowdy Games hosting roots, which publish browser bundles; no Python client publishes one (CrowdyCPP classifies it the same way)" }
+"uploadPublishFiles" = { kind = "browser-exclusion", reason = "wrapper over the Crowdy Games hosting roots, retired 2026-10-29; browser bundles only, no Python wrapper is planned, and developers host their own games (CrowdyCPP classifies it the same way)" }
 "waitAndReadGlueReply" = { kind = "browser-exclusion", reason = "SharedArrayBuffer + Atomics bridge between the page and the glue Web Worker" }
 "wrapGlueSab" = { kind = "browser-exclusion", reason = "SharedArrayBuffer + Atomics bridge between the page and the glue Web Worker" }
 "writeGlueReply" = { kind = "browser-exclusion", reason = "SharedArrayBuffer + Atomics bridge between the page and the glue Web Worker" }
