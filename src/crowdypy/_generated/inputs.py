@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 0b1588d5d290692a5e4da2b53d7f86047e2ee42df34622ce85a97d0ff400d72b
+schema.gql sha256: bdaf7879cff4b03d365ce265ebd3cf87e6ab12b0af2dc3a796758a39c7269adf
 """
 
 from __future__ import annotations
@@ -14,7 +14,13 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+
+
+class AcceptedDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
+    'A document the player accepted: its id and the version they saw.'
+    document_id: str
+    version: str
 
 
 class ActorFilterInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -53,6 +59,14 @@ class AppMarketplaceFilterInput(msgspec.Struct, kw_only=True, omit_defaults=True
     'Optional filters for the public marketplace apps listing.'
     query: str | None | UnsetType = UNSET
     org_slug: str | None | UnsetType = UNSET
+
+
+class AppRequiredDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
+    'One document an app requires its players to accept.'
+    document_id: str
+    version: str
+    title: str
+    url: str
 
 
 class AssignGridOwnershipInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'grid_id': 'gridId', 'owner_user_id': 'ownerUserId', 'expires_at': 'expiresAt'}):
@@ -409,6 +423,20 @@ class CrowdyStudioGitHubAtCommitInput(msgspec.Struct, kw_only=True, omit_default
     commit_sha: str | None | UnsetType = UNSET
 
 
+class CrowdyStudioGitHubCommitChangeInput(msgspec.Struct, kw_only=True, omit_defaults=True):
+    path: str
+    content: str | None | UnsetType = UNSET
+    delete: bool | None | UnsetType = UNSET
+
+
+class CrowdyStudioGitHubCommitFilesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'project_id': 'projectId', 'expected_commit_sha': 'expectedCommitSha'}):
+    app_id: str
+    project_id: str
+    message: str
+    expected_commit_sha: str
+    changes: list[CrowdyStudioGitHubCommitChangeInput]
+
+
 class CrowdyStudioGitHubDeleteFileInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'project_id': 'projectId', 'expected_commit_sha': 'expectedCommitSha'}):
     app_id: str
     project_id: str
@@ -423,6 +451,13 @@ class CrowdyStudioGitHubFileInput(msgspec.Struct, kw_only=True, omit_defaults=Tr
     project_id: str
     commit_sha: str | None | UnsetType = UNSET
     path: str
+
+
+class CrowdyStudioGitHubFilesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'project_id': 'projectId', 'commit_sha': 'commitSha'}):
+    app_id: str
+    project_id: str
+    commit_sha: str | None | UnsetType = UNSET
+    paths: list[str]
 
 
 class CrowdyStudioGitHubProjectInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'project_id': 'projectId'}):
@@ -513,6 +548,16 @@ class ExecDeployInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     manifest_json: str
     artifacts: list[ExecArtifactInput] | None | UnsetType = UNSET
     build_id: str | None | UnsetType = UNSET
+
+
+class FileSafetyReportInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'reported_user_id': 'reportedUserId', 'reported_actor_uuid': 'reportedActorUuid', 'occurred_at': 'occurredAt'}):
+    'A report about another player of the app.'
+    app_id: str
+    reported_user_id: str
+    reported_actor_uuid: str | None | UnsetType = UNSET
+    reason: SafetyReportReason
+    details: str | None | UnsetType = UNSET
+    occurred_at: str
 
 
 class GetChunkInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'requested_lod_levels': 'requestedLodLevels', 'include_all_lods': 'includeAllLods'}):
@@ -654,11 +699,13 @@ class MintGridTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, renam
     ttl_seconds: int | None | UnsetType = UNSET
 
 
-class MintManagedPlayerTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'external_id': 'externalId', 'session_ttl_seconds': 'sessionTtlSeconds'}):
+class MintManagedPlayerTokenInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'external_id': 'externalId', 'session_ttl_seconds': 'sessionTtlSeconds', 'age_years': 'ageYears'}):
     app_id: str
     external_id: str
     gamertag: str | None | UnsetType = UNSET
     session_ttl_seconds: int | None | UnsetType = UNSET
+    age_years: int | None | UnsetType = UNSET
+    country: str | None | UnsetType = UNSET
 
 
 class NearbyGridPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'user_id': 'userId', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
@@ -718,6 +765,13 @@ class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename
     price_cents: float
 
 
+class RecordPlayerAgeInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'birth_date': 'birthDate', 'parental_confirmation': 'parentalConfirmation'}):
+    'A player’s birth date, country and (under 18) parental agreement. Kept as the year and month only.'
+    birth_date: str
+    country: str
+    parental_confirmation: bool | None | UnsetType = UNSET
+
+
 class RegisterOrgSigningKeyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'public_jwk': 'publicJwk', 'app_ids': 'appIds'}):
     org_id: str
     kid: str
@@ -729,12 +783,15 @@ class RegisterOrgSigningKeyInput(msgspec.Struct, kw_only=True, omit_defaults=Tru
     label: str | None | UnsetType = UNSET
 
 
-class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'accept_legal': 'acceptLegal', 'attest_age_of_majority': 'attestAgeOfMajority'}):
+class RegisterUserInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'accept_legal': 'acceptLegal', 'attest_age_of_majority': 'attestAgeOfMajority', 'birth_date': 'birthDate', 'parental_confirmation': 'parentalConfirmation'}):
     email: str
     password: str
     gamertag: str | None | UnsetType = UNSET
     accept_legal: bool | None | UnsetType = UNSET
     attest_age_of_majority: bool | None | UnsetType = UNSET
+    birth_date: str | None | UnsetType = UNSET
+    country: str | None | UnsetType = UNSET
+    parental_confirmation: bool | None | UnsetType = UNSET
 
 
 class ReinstateOrganizationInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
@@ -870,6 +927,14 @@ class SetChannelPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     default_membership_policy: str | None | UnsetType = UNSET
     max_members: int | None | UnsetType = UNSET
     max_groups_per_user: int | None | UnsetType = UNSET
+
+
+class SetCommSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'voice_send': 'voiceSend', 'voice_receive': 'voiceReceive', 'video_send': 'videoSend', 'video_receive': 'videoReceive'}):
+    'The player’s choices; a field left out keeps its current choice. A choice above what policy allows is kept and takes effect only up to the cap (see CommSettings.voiceAllowed), so a player can only ever lower what it sends and receives.'
+    voice_send: CommScope | None | UnsetType = UNSET
+    voice_receive: CommScope | None | UnsetType = UNSET
+    video_send: CommScope | None | UnsetType = UNSET
+    video_receive: CommScope | None | UnsetType = UNSET
 
 
 class SetCrowdyStudioAgentAppPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'kill_switch': 'killSwitch', 'allowed_model_ids': 'allowedModelIds', 'allowed_tool_names': 'allowedToolNames', 'allowed_modes': 'allowedModes', 'allowed_risk_classes': 'allowedRiskClasses', 'turn_limits': 'turnLimits', 'session_limits': 'sessionLimits', 'player_day_limits': 'playerDayLimits', 'app_id': 'appId', 'expected_revision': 'expectedRevision', 'idempotency_key': 'idempotencyKey'}):
@@ -1030,6 +1095,25 @@ class SetTeamPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, renam
     max_groups_per_user: int | None | UnsetType = UNSET
 
 
+class SetTerritoryPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'country_code': 'countryCode', 'min_age': 'minAge'}):
+    'An operator’s change to one country’s policy.'
+    country_code: str
+    status: str
+    min_age: int | None | UnsetType = UNSET
+    reason: str
+
+
+class SignInWithMinecraftInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'server_id': 'serverId', 'birth_date': 'birthDate', 'parental_confirmation': 'parentalConfirmation', 'accepted_documents': 'acceptedDocuments'}):
+    'A Minecraft player signing in to one of Crowded Kingdoms’ own apps (signInWithMinecraft).'
+    app_id: str
+    username: str
+    server_id: str
+    birth_date: str
+    country: str
+    parental_confirmation: bool | None | UnsetType = UNSET
+    accepted_documents: list[AcceptedDocumentInput]
+
+
 class SingleActorMessageInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'target_uuid': 'targetUuid', 'sequence_number': 'sequenceNumber'}):
     'Input for sending an actor-to-actor message: a message delivered only to the single actor identified by targetUuid. It is spatially routed (the sender must know the destination actor’s chunk), but unlike normal spatial messages it is NOT broadcast to other nearby actors and has no distance/decay.'
     app_id: str
@@ -1103,7 +1187,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'claim_owner_keys': 'claimOwnerKeys'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'replay_logging_records_voice': 'replayLoggingRecordsVoice', 'replay_logging_records_video': 'replayLoggingRecordsVideo', 'claim_owner_keys': 'claimOwnerKeys', 'min_player_age': 'minPlayerAge'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1113,7 +1197,10 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     wilderness_writes_open: bool | None | UnsetType = UNSET
     replay_logging_enabled: bool | None | UnsetType = UNSET
     replay_logging_records_media: bool | None | UnsetType = UNSET
+    replay_logging_records_voice: bool | None | UnsetType = UNSET
+    replay_logging_records_video: bool | None | UnsetType = UNSET
     claim_owner_keys: list[str] | None | UnsetType = UNSET
+    min_player_age: int | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
@@ -1237,11 +1324,13 @@ class VoxelUpdateRequestInput(msgspec.Struct, kw_only=True, omit_defaults=True, 
 
 
 __all__ = [
+    'AcceptedDocumentInput',
     'ActorFilterInput',
     'ActorUpdateRequestInput',
     'AddTierAccessRuleInput',
     'AdmitAppCodeInput',
     'AppMarketplaceFilterInput',
+    'AppRequiredDocumentInput',
     'AssignGridOwnershipInput',
     'AssignGroupToGridInput',
     'AuthorizeAppInput',
@@ -1283,8 +1372,11 @@ __all__ = [
     'CrowdyStudioAgentSessionLimitsInput',
     'CrowdyStudioAgentTurnLimitsInput',
     'CrowdyStudioGitHubAtCommitInput',
+    'CrowdyStudioGitHubCommitChangeInput',
+    'CrowdyStudioGitHubCommitFilesInput',
     'CrowdyStudioGitHubDeleteFileInput',
     'CrowdyStudioGitHubFileInput',
+    'CrowdyStudioGitHubFilesInput',
     'CrowdyStudioGitHubProjectInput',
     'CrowdyStudioGitHubPutFileInput',
     'CrowdyStudioProjectFileDeleteInput',
@@ -1299,6 +1391,7 @@ __all__ = [
     'ExecBuildFileInput',
     'ExecBuildInput',
     'ExecDeployInput',
+    'FileSafetyReportInput',
     'GetChunkInput',
     'GetChunkLodsInput',
     'GetChunksByDistanceInput',
@@ -1326,6 +1419,7 @@ __all__ = [
     'PublishFileInput',
     'RangedChannelMessageInput',
     'RateCardBandInput',
+    'RecordPlayerAgeInput',
     'RegisterOrgSigningKeyInput',
     'RegisterUserInput',
     'ReinstateOrganizationInput',
@@ -1342,6 +1436,7 @@ __all__ = [
     'SetAppClientSettingsInput',
     'SetAppReservedThroughputInput',
     'SetChannelPolicyInput',
+    'SetCommSettingsInput',
     'SetCrowdyStudioAgentAppPolicyInput',
     'SetCrowdyStudioAgentOperatorAppKillInput',
     'SetCrowdyStudioAgentPlatformPolicyInput',
@@ -1358,6 +1453,8 @@ __all__ = [
     'SetQuotaInput',
     'SetRateCardInput',
     'SetTeamPolicyInput',
+    'SetTerritoryPolicyInput',
+    'SignInWithMinecraftInput',
     'SingleActorMessageInput',
     'SocialLoginCompleteInput',
     'SocialLoginStartInput',

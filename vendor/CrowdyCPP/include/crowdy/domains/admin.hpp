@@ -1,10 +1,14 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <utility>
+#include <vector>
 
 #include "crowdy/domains/domain_base.hpp"
 #include "crowdy/domains/game_apps.hpp"
+#include "crowdy/domains/types.hpp"
+#include "crowdy/generated/enums.hpp"
 #include "crowdy/generated/operations.hpp"
 
 /// Studio-admin surface — client.admin().*. Privileged organization/app
@@ -581,6 +585,144 @@ class AppsAPI : public detail::AdminDomain {
   void archiveAsync(std::string_view appId, graphql::GraphQLCallback cb) const {
     execUnwrapAsync(gen::apps::kArchiveAppDocument, one("appId", graphql::JVal(appId)), {},
                     std::move(cb));
+  }
+
+  /// What the app's safety log (replay logging) records now, for the notice and the recording
+  /// indicator a game shows its players; unset for an unknown app. Readable with the app's own
+  /// app token, so a game reads it on its gameplay client when the player enters the app; an
+  /// admin's change applies within about 15 seconds. ck-api v2.60.0.
+  std::optional<AppRecording> recording(std::string_view appId) const {
+    const graphql::Json app =
+        execUnwrap(gen::apps::kAppRecordingDocument, one("appId", graphql::JVal(appId)));
+    if (!app.isObject()) return std::nullopt;
+    return AppRecording::fromJson(app["recording"]);
+  }
+  void recordingAsync(
+      std::string_view appId,
+      std::function<void(graphql::GraphQLOutcome, std::optional<AppRecording>)> cb) const {
+    execUnwrapAsync(gen::apps::kAppRecordingDocument, one("appId", graphql::JVal(appId)), {},
+                    [cb = std::move(cb)](graphql::GraphQLOutcome out) mutable {
+                      std::optional<AppRecording> value;
+                      if (out.ok() && out.data.isObject()) {
+                        value = AppRecording::fromJson(out.data["recording"]);
+                      }
+                      cb(std::move(out), value);
+                    });
+  }
+
+  /// Set the documents the app's players accept before playing (its rules, an addendum),
+  /// replacing the list: documents not named stop being required, and a new version of one asks
+  /// every player of the app again at their next mint or refresh. At most 10; ids may not reuse
+  /// the platform's. An empty list requires none. Returns the list as stored. Requires
+  /// manage_apps on the app.
+  std::vector<LegalDocument> setRequiredDocuments(
+      std::string_view appId, const std::vector<LegalDocument>& documents) const {
+    return LegalDocument::listFromJson(
+        execUnwrap(gen::apps::kSetAppRequiredDocumentsDocument, documentsVars(appId, documents)));
+  }
+  void setRequiredDocumentsAsync(
+      std::string_view appId, const std::vector<LegalDocument>& documents,
+      std::function<void(graphql::GraphQLOutcome, std::vector<LegalDocument>)> cb) const {
+    execUnwrapAsync(gen::apps::kSetAppRequiredDocumentsDocument, documentsVars(appId, documents),
+                    {}, [cb = std::move(cb)](graphql::GraphQLOutcome out) mutable {
+                      std::vector<LegalDocument> value;
+                      if (out.ok()) value = LegalDocument::listFromJson(out.data);
+                      cb(std::move(out), std::move(value));
+                    });
+  }
+
+ private:
+  static graphql::JVal documentsVars(std::string_view appId,
+                                     const std::vector<LegalDocument>& documents) {
+    graphql::JArray list;
+    list.reserve(documents.size());
+    for (const auto& document : documents) {
+      list.push_back(graphql::JVal::object({{"documentId", graphql::JVal(document.documentId)},
+                                            {"version", graphql::JVal(document.version)},
+                                            {"title", graphql::JVal(document.title)},
+                                            {"url", graphql::JVal(document.url)}}));
+    }
+    graphql::JVal vars;
+    vars["appId"] = appId;
+    vars["documents"] = graphql::JVal(std::move(list));
+    return vars;
+  }
+};
+
+/// client.moderation() (also client.admin().moderation()) — an app's safety reports, for its
+/// moderators: members of the
+/// app's organization holding moderate_safety (the org's admins hold it). Identity session, sent
+/// to the app's datacenter. Resolving a report deletes its preserved copy and releases the
+/// legal hold its reported account got on deletion, if any; escalating it records the
+/// CyberTipline submission and keeps the copy and the hold for a year.
+class ModerationAPI : public detail::AdminDomain {
+ public:
+  using AdminDomain::AdminDomain;
+
+  /// The app's reports, newest first, with open CHILD_SAFETY reports ahead of the rest; only
+  /// those with `status` if given. At most `first` (default 50, at most 200).
+  graphql::Json reports(std::string_view appId,
+                        std::optional<gen::SafetyReportStatus> status = std::nullopt,
+                        std::optional<int> first = std::nullopt) const {
+    return run(gen::moderation::kSafetyReportsOperationName, reportsVars(appId, status, first));
+  }
+  void reportsAsync(std::string_view appId, std::optional<gen::SafetyReportStatus> status,
+                    std::optional<int> first, graphql::GraphQLCallback cb) const {
+    runAsync(gen::moderation::kSafetyReportsOperationName, reportsVars(appId, status, first),
+             std::move(cb));
+  }
+
+  /// Resolve an open report with what was decided and done (at most 1,000 characters).
+  /// Resolving again changes nothing; an escalated report cannot be resolved (BAD_REQUEST).
+  graphql::Json resolveReport(std::string_view appId, std::string_view reportId,
+                              std::string_view outcome) const {
+    return run(gen::moderation::kResolveSafetyReportOperationName,
+               reportVars(appId, reportId, "outcome", outcome));
+  }
+  void resolveReportAsync(std::string_view appId, std::string_view reportId,
+                          std::string_view outcome, graphql::GraphQLCallback cb) const {
+    runAsync(gen::moderation::kResolveSafetyReportOperationName,
+             reportVars(appId, reportId, "outcome", outcome), std::move(cb));
+  }
+
+  /// Record that an open report was submitted to NCMEC's CyberTipline under `ncmecReportId`.
+  /// Again under the same id changes nothing; under another id is CONFLICT; a resolved report
+  /// cannot be escalated (BAD_REQUEST).
+  graphql::Json escalateReport(std::string_view appId, std::string_view reportId,
+                               std::string_view ncmecReportId) const {
+    return run(gen::moderation::kEscalateSafetyReportOperationName,
+               reportVars(appId, reportId, "ncmecReportId", ncmecReportId));
+  }
+  void escalateReportAsync(std::string_view appId, std::string_view reportId,
+                         std::string_view ncmecReportId, graphql::GraphQLCallback cb) const {
+    runAsync(gen::moderation::kEscalateSafetyReportOperationName,
+             reportVars(appId, reportId, "ncmecReportId", ncmecReportId), std::move(cb));
+  }
+
+ private:
+  graphql::Json run(std::string_view op, const graphql::JVal& vars) const {
+    return execUnwrap(gen::moderation::documentFor(op), vars, op);
+  }
+  void runAsync(std::string_view op, const graphql::JVal& vars,
+                graphql::GraphQLCallback cb) const {
+    execUnwrapAsync(gen::moderation::documentFor(op), vars, op, std::move(cb));
+  }
+  static graphql::JVal reportsVars(std::string_view appId,
+                                   std::optional<gen::SafetyReportStatus> status,
+                                   std::optional<int> first) {
+    graphql::JVal vars;
+    vars["appId"] = appId;
+    if (status) vars["status"] = gen::toString(*status);
+    if (first) vars["first"] = *first;
+    return vars;
+  }
+  static graphql::JVal reportVars(std::string_view appId, std::string_view reportId,
+                                  std::string_view key, std::string_view value) {
+    graphql::JVal vars;
+    vars["appId"] = appId;
+    vars["reportId"] = reportId;
+    vars[key] = value;
+    return vars;
   }
 };
 
@@ -1294,6 +1436,7 @@ class AdminAPI {
         quotas_(management),
         usage_(management),
         sharedEnvironment_(management),
+        moderation_(management),
         grids_(gameApps) {}
 
   OrganizationsAPI& organizations() { return organizations_; }
@@ -1306,6 +1449,8 @@ class AdminAPI {
   QuotasAPI& quotas() { return quotas_; }
   UsageAPI& usage() { return usage_; }
   SharedEnvironmentAPI& sharedEnvironment() { return sharedEnvironment_; }
+  /// An app's safety reports, for its moderators (moderate_safety).
+  ModerationAPI& moderation() { return moderation_; }
   /// App grids + grid runtime-permission administration (same instance as
   /// client.gameApps(); requires a per-game client / app token).
   GameAppsAPI& grids() { return *grids_; }
@@ -1320,6 +1465,7 @@ class AdminAPI {
   QuotasAPI quotas_;
   UsageAPI usage_;
   SharedEnvironmentAPI sharedEnvironment_;
+  ModerationAPI moderation_;
   GameAppsAPI* grids_;
 };
 

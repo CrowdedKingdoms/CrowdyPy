@@ -3,6 +3,72 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.23.0
+
+CrowdyJS 18.24.0 and CrowdyCPP 0.75.0. Additive, but `users.me()`, `apps.app()` and
+`apps.update()` now select the teen safety fields, so they need ck-api v2.60.0 on the tier
+(an older API refuses the fields with a GraphQL validation error).
+
+**The teen safety program (ck-api v2.60.0).** Every tier admits adults only until the
+platform admits players from 13; the calls below work today and carry the rest.
+
+- **Age and country.** `auth.register(..., birth_date=, country=, parental_confirmation=)`
+  takes the answers of a neutral age screen (the date of birth and the country, no age shown,
+  the parental line only for a player under 18). An account with no age
+  (`users.me()["ageBracket"] == "unknown"`) gives it once with
+  `auth.record_player_age(birth_date=, country=, parental_confirmation=)`; asking again is
+  `CONFLICT`. Only the year and month are kept. `users.me()` reads `ageBracket` and `country`.
+- **Documents.** `auth.player_legal_documents()` and `auth.app_required_documents(app_id)` are
+  public; `auth.record_player_consents(accept_legal=True, app_id=..., method=...)` records the
+  platform's and the app's documents (`attest_age_of_majority` is optional now), and
+  `auth.player_legal_acceptance(app_id=...)` counts the app's. The call with both flags and
+  nothing else sends the v2.35.0 document, so it still works against an older API. An app's
+  admins set its own documents with `apps.set_required_documents(app_id, documents)`; the
+  developer set is `auth.developer_legal_documents()`, `developer_legal_acceptance()` and
+  `record_developer_consents(accept_developer_terms=True)`.
+- **The gate's refusals,** in `crowdypy.errors` and on the package root, each with its
+  `*_CODE`: `legal_acceptance_required_of` (its `missing_documents`), `age_required_of`,
+  `age_requirement_not_met_of`, `territory_not_supported_of` (its `country`),
+  `safety_log_required_of`, `parental_consent_unavailable_of`, `social_limit_reached_of`,
+  `minecraft_verification_failed_of` (its `reason`) and `minecraft_verification_unavailable_of`.
+  `age_requirement_not_met_of` is a boolean on purpose: it does not surface the `minimumAge` or
+  `ageBracket` an older API sent, and a game must not show an age.
+- **`client.safety`** (the app token, on the game client): `comm_settings`,
+  `set_comm_settings`, `request_parental_consent`, `contacts`, `contact_requests`,
+  `request_contact`, `accept_contact`, `remove_contact`, `blocks`, `block`, `unblock` and
+  `file_report`. The platform enforces all of it; a player can only lower its scopes.
+- **`client.moderation`** (also `client.admin.moderation`; `moderate_safety`, an identity
+  session at the app's datacenter): `reports`, `resolve_report` and `escalate_report`. A
+  moderator reads a reported session with `input_log.messages` on an app token.
+- **The safety log.** `apps.recording(app_id)` (the app token works) says what is recorded, for
+  the notice and the indicator. `apps.update` takes `replayLoggingRecordsVoice`,
+  `replayLoggingRecordsVideo` and `minPlayerAge`; turning the log off in an app that admits
+  players under 18 is `SAFETY_LOG_REQUIRED`.
+- `platform.territory_policies()` (public) lists the countries the platform does not serve and
+  the ones with a higher minimum age.
+- **Org-managed players.** The organization's server passes `ageYears` and `country` to
+  `mintManagedPlayerToken` (`crowdypy.inputs.MintManagedPlayerTokenInput`) or as the assertion's
+  claims (`ManagedPlayerAssertionClaims`); both become required once players under 18 are
+  admitted.
+- `portal.minecraft_challenge(app_id)` and `portal.sign_in_with_minecraft(...)` serve Crowded
+  Kingdoms' own apps only; any other app is `FORBIDDEN`.
+- The operator fields (`setTerritoryPolicy`, `exportPlayerData`) are not wrapped.
+
+**The Studio game editor (CrowdyJS 18.23.0).** A GitHub project the API classifies as a
+Construct game (`CrowdyStudioGitHubLayout.kind == "CONSTRUCT_GAME"`) opens its repository
+draft when the host passes `CrowdyStudioController(draft_store=factory)`, a factory that
+returns the project's `crowdypy.studio.DraftStore`: `draft_store`, `when_editor_known`,
+`refresh_repository_mode`, `reload_repository`, `open_repository_file`,
+`update_repository_file`, `commit_repository`, `discard_repository_files`,
+`resolve_repository_conflict`, the `repository_*` state fields and `REPOSITORY` file refs.
+`crowdypy.studio.GitHubDraftStore` is the hosted backend, over `client.crowdy_studio_github`:
+an overlay over the bound branch, published as one commit, which carries what does not
+collide onto a moved branch and lists the rest as conflicts. It keeps the overlay in a
+`DraftOverlayStorage` (`MemoryDraftOverlayStorage` by default; CrowdyJS's IndexedDB storage is
+the browser's). Without a factory, or for a mod, nothing changes.
+`client.crowdy_studio_github.get_files` reads up to 100 files at one commit and `commit_files`
+writes up to 100 changes as one commit.
+
 ## 0.22.0
 
 CrowdyJS 18.22.0 and CrowdyCPP 0.74.0. No breaking change, but `exec.instances` now selects

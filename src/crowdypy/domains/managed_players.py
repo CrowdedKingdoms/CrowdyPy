@@ -20,6 +20,17 @@ created or signed in, an admin of the organization accepts it in Studio. Until t
 :meth:`ManagedPlayersAPI.settings` says where the organization stands. This SDK has no wrapper
 for the acceptance, on purpose: it binds the organization, so a person makes it, in Studio. A
 tier that does not serve org-managed players answers ``FEATURE_DISABLED`` to every field.
+
+Age and country (ck-api v2.60.0): either way the organization says how old the player is and
+where it lives: ``ageYears`` and ``country`` on the mint's input
+(``crowdypy.inputs.MintManagedPlayerTokenInput``) or as the assertion's claims
+(:class:`ManagedPlayerAssertionClaims`). Crowded Kingdoms stores an age bracket and the country
+on the player, applies a minor's defaults itself, and refuses the sign-in with
+``TERRITORY_NOT_SUPPORTED`` in a country it does not serve and ``AGE_REQUIREMENT_NOT_MET`` under
+the app's, the country's or the platform's youngest age, before the player is created. Both are
+optional while every managed player is 18 or older under the Org-Managed Players Addendum (left
+out, the player counts as an adult), and required once the platform admits players under 18
+(``AGE_REQUIRED`` without an age).
 """
 
 from __future__ import annotations
@@ -27,7 +38,7 @@ from __future__ import annotations
 import builtins
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 import msgspec
 
@@ -35,6 +46,13 @@ from crowdypy._generated import inputs
 from crowdypy._generated import operations as ops
 from crowdypy.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
+
+__all__ = [
+    "PRIVATE_JWK_MEMBERS",
+    "ManagedPlayerAssertionClaims",
+    "ManagedPlayersAPI",
+    "private_jwk_member",
+]
 
 #: The JWK members only a private key has (RFC 7518); the API refuses a key with any.
 PRIVATE_JWK_MEMBERS = ("d", "p", "q", "dp", "dq", "qi", "oth", "k")
@@ -52,6 +70,39 @@ def private_jwk_member(jwk: str | Mapping[str, Any]) -> str | None:
     if not isinstance(parsed, Mapping):
         return None
     return next((member for member in PRIVATE_JWK_MEMBERS if member in parsed), None)
+
+
+class ManagedPlayerAssertionClaims(TypedDict):
+    """The claims of a player assertion, as the organization's sign-in service signs them (a
+    compact JWS whose header names ``alg``, ``EdDSA``, ``ES256`` or ``RS256``, and the registered
+    key's ``kid``). The device trades the assertion with
+    ``portal.exchange_managed_player_assertion``. This SDK does not sign assertions: the private
+    key stays with the sign-in service."""
+
+    #: The issuer registered with the key.
+    iss: str
+    #: The key's audience, or ``ck:app:<appId>`` when it has none.
+    aud: str | list[str]
+    #: The organization's own id for the player: 1-256 characters, no control characters.
+    sub: str
+    #: Issued at, in seconds since the epoch.
+    iat: int
+    #: Expiry, in seconds since the epoch: at most 300 seconds after ``iat``.
+    exp: int
+    #: Not before, in seconds since the epoch.
+    nbf: NotRequired[int]
+    #: A fresh id (1-128 characters), accepted once per app.
+    jti: str
+    #: Display name, at most 64 characters.
+    gamertag: NotRequired[str]
+    #: The player's age in whole years, as the organization knows it (ck-api v2.60.0): stored as
+    #: an age bracket that sets a minor's defaults. Optional while every managed player is 18
+    #: or older under the Addendum (left out, the player counts as an adult); required once the
+    #: platform admits players under 18.
+    ageYears: NotRequired[int]
+    #: The country the player lives in, ISO 3166-1 alpha-2 (ck-api v2.60.0). Optional until the
+    #: platform admits players under 18, required after.
+    country: NotRequired[str]
 
 
 class ManagedPlayersAPI(Domain):
@@ -115,7 +166,9 @@ class ManagedPlayersAPI(Domain):
         free again, so a later sign-in with it creates a new player. Since Game API v2.54.0
         its player-side content is erased within minutes (usage and billing records and world
         edits stay), and a legal hold on the player or its organization refuses the delete
-        with ``LEGAL_HOLD``; the player stays as it was."""
+        with ``LEGAL_HOLD``; the player stays as it was. Since v2.60.0 an open or escalated
+        safety report about the player sets such a hold first: disable the player instead
+        (:meth:`update`), which keeps everything."""
         return bool(
             await self._request(
                 ops.DELETE_MANAGED_PLAYER, {"orgId": bigint(org_id), "externalId": external_id}

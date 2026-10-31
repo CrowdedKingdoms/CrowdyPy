@@ -162,6 +162,24 @@ ck-exec's golden record, `tests/fixtures/kit-protocol.json`, copied from CrowdyJ
 `tests/unit/test_kit_protocol.py` replays each starter's script through a gateway that answers
 only the next recorded step, with both clients.
 
+## Teen safety (0.23.0)
+
+ck-api v2.60.0's gate and controls, ported from CrowdyJS 18.24.0: `client.safety` (the app
+token), `client.moderation` (also `admin.moderation`; `moderate_safety`), the age, document and
+Minecraft calls in `auth`, `apps`, `platform` and `portal`, and the refusal readers in
+`errors.py`. Keep `age_requirement_not_met_of` a boolean: no refusal may name an age (decision
+35 of the program), so it never surfaces `minimumAge` or `ageBracket`, as in CrowdyJS. The
+operator-only roots (`setTerritoryPolicy`, `exportPlayerData`) stay unwrapped and on
+`tests/unit/test_sdk_audience.py`'s list. `tests/e2e/test_e2e_teen_safety.py` covers what a tier
+admitting adults only can answer; its org-managed scenarios need an org token
+(`docs/e2e-coverage.md`).
+
+The Studio game editor (CrowdyJS 18.23.0) drives any `crowdypy.studio.DraftStore` the host's
+`draft_store` factory returns. `GitHubDraftStore` (`studio/github_draft_store.py`) is CrowdyJS's
+hosted backend ported, with its tests, over CrowdyPy's GitHub transport and a
+`DraftOverlayStorage` (memory by default; the IndexedDB one is the browser's). CrowdyJS's
+`crowdy-studio/draft/` is outside the parity gate's surface, so keep it in step by hand.
+
 ## Performance rules for the native binding
 
 The replication system saturates the local network stack, so the binding

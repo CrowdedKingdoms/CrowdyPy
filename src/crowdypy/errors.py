@@ -21,12 +21,21 @@ __all__ = [
     "ACCESS_SUSPENDED_CODE",
     "ACCOUNT_BLOCKED_CODE",
     "ACTOR_EXISTS_CODE",
+    "AGE_REQUIRED_CODE",
+    "AGE_REQUIREMENT_NOT_MET_CODE",
     "APP_PAUSED_CODE",
     "APP_UNAVAILABLE_CODE",
     "ASSERTION_REJECTED_CODE",
     "GROUP_MEMBER_BANNED_CODE",
+    "LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE",
+    "MINECRAFT_VERIFICATION_FAILED_CODE",
+    "MINECRAFT_VERIFICATION_UNAVAILABLE_CODE",
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE",
+    "PARENTAL_CONSENT_UNAVAILABLE_CODE",
+    "SAFETY_LOG_REQUIRED_CODE",
+    "SOCIAL_LIMIT_REACHED_CODE",
+    "TERRITORY_NOT_SUPPORTED_CODE",
     "WRONG_DATACENTER_CODE",
     "CrowdyAccessRefusal",
     "CrowdyAccountBlocked",
@@ -38,24 +47,37 @@ __all__ = [
     "CrowdyFaultBlame",
     "CrowdyGraphQLError",
     "CrowdyHttpError",
+    "CrowdyLegalAcceptanceRequired",
+    "CrowdyMinecraftVerificationFailed",
+    "CrowdyMissingLegalDocument",
     "CrowdyNetworkError",
     "CrowdyPlayerFault",
     "CrowdyProtocolError",
     "CrowdyRealtimeError",
     "CrowdyReplicationError",
+    "CrowdyTerritoryNotSupported",
     "CrowdyTimeoutError",
     "CrowdyUserCodeFaultError",
     "GridScopeError",
     "access_refusal_of",
     "account_blocked_of",
     "actor_exists_of",
+    "age_required_of",
+    "age_requirement_not_met_of",
     "app_paused_of",
     "assertion_rejected_of",
     "group_member_banned_of",
     "is_app_paused",
+    "legal_acceptance_required_of",
     "managed_player_not_allowed_of",
+    "minecraft_verification_failed_of",
+    "minecraft_verification_unavailable_of",
     "org_legal_acceptance_required_of",
+    "parental_consent_unavailable_of",
     "player_fault_of",
+    "safety_log_required_of",
+    "social_limit_reached_of",
+    "territory_not_supported_of",
 ]
 
 #: The app's datacenter is not serving clients. Carries no endpoint, on purpose.
@@ -87,6 +109,33 @@ ASSERTION_REJECTED_CODE = "ASSERTION_REJECTED"
 #: (HTTP 403), on an org-managed player's sign-in and refresh and on provisioning; see
 #: :func:`org_legal_acceptance_required_of`.
 ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE = "ORG_LEGAL_ACCEPTANCE_REQUIRED"
+#: The player has not accepted the current required documents (HTTP 403): the platform's
+#: player documents or the app's own, listed in ``extensions.missingDocuments``; see
+#: :func:`legal_acceptance_required_of`.
+LEGAL_ACCEPTANCE_REQUIRED_CODE = "LEGAL_ACCEPTANCE_REQUIRED"
+#: The player's age is not known (HTTP 403), at a token's mint or refresh, or the developer
+#: documents for an account with no age; see :func:`age_required_of`.
+AGE_REQUIRED_CODE = "AGE_REQUIRED"
+#: By age, the player may not play this (HTTP 403); see :func:`age_requirement_not_met_of`.
+AGE_REQUIREMENT_NOT_MET_CODE = "AGE_REQUIREMENT_NOT_MET"
+#: Crowded Kingdoms does not serve the player's country (HTTP 403); see
+#: :func:`territory_not_supported_of`.
+TERRITORY_NOT_SUPPORTED_CODE = "TERRITORY_NOT_SUPPORTED"
+#: The app does not keep the safety log where it must (HTTP 403); see
+#: :func:`safety_log_required_of`.
+SAFETY_LOG_REQUIRED_CODE = "SAFETY_LOG_REQUIRED"
+#: Parental consent cannot be requested on this deployment (HTTP 503); see
+#: :func:`parental_consent_unavailable_of`.
+PARENTAL_CONSENT_UNAVAILABLE_CODE = "PARENTAL_CONSENT_UNAVAILABLE"
+#: The player has as many contacts, waiting requests or blocks in the app as the platform
+#: allows (HTTP 409); see :func:`social_limit_reached_of`.
+SOCIAL_LIMIT_REACHED_CODE = "SOCIAL_LIMIT_REACHED"
+#: The Minecraft account could not be confirmed (HTTP 401), with the failed check in
+#: ``extensions.reason``; see :func:`minecraft_verification_failed_of`.
+MINECRAFT_VERIFICATION_FAILED_CODE = "MINECRAFT_VERIFICATION_FAILED"
+#: Mojang's session service did not answer (HTTP 503, retryable); see
+#: :func:`minecraft_verification_unavailable_of`.
+MINECRAFT_VERIFICATION_UNAVAILABLE_CODE = "MINECRAFT_VERIFICATION_UNAVAILABLE"
 
 CrowdyFaultBlame = Literal["PLATFORM", "AUTHOR", "BUDGET"]
 
@@ -288,6 +337,45 @@ class CrowdyAssertionRejected:
     reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CrowdyMissingLegalDocument:
+    """One document a refused player still has to accept."""
+
+    #: The document's stable id, such as ``player-terms`` or an app's own ``rules``.
+    document_id: str
+    #: The version the player has to accept.
+    version: str
+    #: The app whose own document it is; ``None`` for a platform document.
+    app_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CrowdyLegalAcceptanceRequired:
+    """A ``LEGAL_ACCEPTANCE_REQUIRED`` refusal and what the player still has to accept."""
+
+    #: Empty when the server did not list them (an older API, or a refused ``register`` or
+    #: ``record_player_consents``).
+    missing_documents: tuple[CrowdyMissingLegalDocument, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CrowdyTerritoryNotSupported:
+    """A ``TERRITORY_NOT_SUPPORTED`` refusal: Crowded Kingdoms does not serve the player's
+    country."""
+
+    #: ``extensions.country`` (ISO 3166-1 alpha-2), or ``None`` when the server did not say.
+    country: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CrowdyMinecraftVerificationFailed:
+    """A ``MINECRAFT_VERIFICATION_FAILED`` refusal: the Minecraft account was not confirmed."""
+
+    #: ``malformed``, ``forged``, ``expired``, ``not_joined`` or ``replayed`` (an open set), or
+    #: ``None`` when the server did not say.
+    reason: str | None
+
+
 def _extensions_with_code(value: object, code: str) -> Mapping[str, Any] | None:
     """The extensions of the first error entry carrying ``code``, from a raised
     :class:`CrowdyGraphQLError` or one raw GraphQL error entry."""
@@ -374,6 +462,114 @@ def org_legal_acceptance_required_of(value: object) -> bool:
     fixed by retrying. Distinct from the player's own ``LEGAL_ACCEPTANCE_REQUIRED``, which a
     managed player never gets."""
     return _extensions_with_code(value, ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE) is not None
+
+
+def legal_acceptance_required_of(value: object) -> CrowdyLegalAcceptanceRequired | None:
+    """A ``LEGAL_ACCEPTANCE_REQUIRED`` refusal (HTTP 403), or ``None``. ``missing_documents``
+    is what the player still has to accept: the platform's player documents (``app_id``
+    ``None``) and the app's own (``app_id`` set). Show those documents, then record the
+    player's agreement (``auth.record_player_consents``, with the app's ``app_id`` for its
+    own). Not fixed by retrying. Distinct from the organization's
+    ``ORG_LEGAL_ACCEPTANCE_REQUIRED`` (:func:`org_legal_acceptance_required_of`)."""
+    extensions = _extensions_with_code(value, LEGAL_ACCEPTANCE_REQUIRED_CODE)
+    if extensions is None:
+        return None
+    listed = extensions.get("missingDocuments")
+    documents: list[CrowdyMissingLegalDocument] = []
+    if isinstance(listed, Sequence) and not isinstance(listed, (str, bytes)):
+        for item in listed:
+            if not isinstance(item, Mapping):
+                continue
+            document_id, version = item.get("documentId"), item.get("version")
+            if not isinstance(document_id, str) or not isinstance(version, str):
+                continue
+            app_id = item.get("appId")
+            documents.append(
+                CrowdyMissingLegalDocument(
+                    document_id,
+                    version,
+                    app_id
+                    if isinstance(app_id, str) and app_id
+                    else str(app_id)
+                    if isinstance(app_id, int) and not isinstance(app_id, bool)
+                    else None,
+                )
+            )
+    return CrowdyLegalAcceptanceRequired(tuple(documents))
+
+
+def age_required_of(value: object) -> bool:
+    """Whether an error is an ``AGE_REQUIRED`` refusal (HTTP 403): the player's age is not
+    known. For an account, ask the player's birth date and country on your own neutral screen
+    and call ``auth.record_player_age``, then mint again. For an org-managed player, the
+    organization sends ``ageYears`` and ``country`` when it signs the player in. Not fixed by
+    retrying as is."""
+    return _extensions_with_code(value, AGE_REQUIRED_CODE) is not None
+
+
+def age_requirement_not_met_of(value: object) -> bool:
+    """Whether an error is an ``AGE_REQUIREMENT_NOT_MET`` refusal (HTTP 403): by age, the
+    player may not play this app, or create or administer an organization. Not retryable, and
+    asking for the age again changes nothing: an account keeps the answer it gave.
+
+    Deliberately a boolean. No refusal names an age: tell the player they cannot play this,
+    without naming an age or a minimum, and do not offer to enter the date again. Older APIs
+    put ``minimumAge`` and ``ageBracket`` in the extensions; this reader does not surface them,
+    and a game must not show them."""
+    return _extensions_with_code(value, AGE_REQUIREMENT_NOT_MET_CODE) is not None
+
+
+def territory_not_supported_of(value: object) -> CrowdyTerritoryNotSupported | None:
+    """A ``TERRITORY_NOT_SUPPORTED`` refusal (HTTP 403), or ``None``: Crowded Kingdoms does not
+    serve the player's country (the one they connect from, the one they declared, or the one
+    their organization asserted). Not retryable; tell the player it is not available where
+    they are."""
+    extensions = _extensions_with_code(value, TERRITORY_NOT_SUPPORTED_CODE)
+    if extensions is None:
+        return None
+    country = extensions.get("country")
+    return CrowdyTerritoryNotSupported(country if isinstance(country, str) and country else None)
+
+
+def safety_log_required_of(value: object) -> bool:
+    """Whether an error is a ``SAFETY_LOG_REQUIRED`` refusal (HTTP 403): the app does not keep
+    the safety log (replay logging) where it must. A player under 18 gets it at the mint of an
+    app without one, and an app admitting players under 18 cannot turn its log off. The player
+    cannot fix it: the app's admins turn the log on (``apps.update``) or raise its minimum
+    age."""
+    return _extensions_with_code(value, SAFETY_LOG_REQUIRED_CODE) is not None
+
+
+def parental_consent_unavailable_of(value: object) -> bool:
+    """Whether an error is a ``PARENTAL_CONSENT_UNAVAILABLE`` refusal (HTTP 503) from
+    ``safety.request_parental_consent``: the deployment's consent service is not configured.
+    Not fixed by retrying soon; voice and video stay off for the player meanwhile."""
+    return _extensions_with_code(value, PARENTAL_CONSENT_UNAVAILABLE_CODE) is not None
+
+
+def social_limit_reached_of(value: object) -> bool:
+    """Whether an error is a ``SOCIAL_LIMIT_REACHED`` refusal (HTTP 409): the player already
+    has as many contacts, waiting contact requests or blocks in the app as the platform allows
+    (the message says which). Remove some first; not fixed by retrying."""
+    return _extensions_with_code(value, SOCIAL_LIMIT_REACHED_CODE) is not None
+
+
+def minecraft_verification_failed_of(value: object) -> CrowdyMinecraftVerificationFailed | None:
+    """A ``MINECRAFT_VERIFICATION_FAILED`` refusal (HTTP 401) from
+    ``portal.sign_in_with_minecraft``, or ``None``. Never resend the same server id: ask for a
+    new challenge (``portal.minecraft_challenge``) and join it again."""
+    extensions = _extensions_with_code(value, MINECRAFT_VERIFICATION_FAILED_CODE)
+    if extensions is None:
+        return None
+    reason = extensions.get("reason")
+    return CrowdyMinecraftVerificationFailed(reason if isinstance(reason, str) and reason else None)
+
+
+def minecraft_verification_unavailable_of(value: object) -> bool:
+    """Whether an error is a ``MINECRAFT_VERIFICATION_UNAVAILABLE`` refusal (HTTP 503):
+    Mojang's session service did not answer, so the account was not confirmed. Retryable
+    shortly, with a new challenge."""
+    return _extensions_with_code(value, MINECRAFT_VERIFICATION_UNAVAILABLE_CODE) is not None
 
 
 def app_paused_of(value: object) -> CrowdyAppPaused | None:

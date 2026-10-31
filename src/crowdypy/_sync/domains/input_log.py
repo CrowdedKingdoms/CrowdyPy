@@ -7,7 +7,10 @@ keeping one retention period of the app's recent traffic; ``extensions["required
 ``["spendableMicrousd"]`` say how much) has every client input the realtime servers accept
 recorded. These calls read them back on the app-scoped client for the app; an identity session
 token is refused. A player reads only the sessions and inputs they sent; a holder of
-``manage_apps`` on the app reads every session. Inputs are kept for the input log's published
+``manage_apps`` on the app reads every session. A moderator (``moderate_safety``, ck-api
+v2.60.0) reads with :meth:`InputLogAPI.messages` only the sessions an open or escalated safety
+report covers (``client.moderation.reports(app_id)``, each report's ``sessions``), and every
+read of another player's session is audited. Inputs are kept for the input log's published
 retention (up to about an hour longer), so an old session can still be listed after its inputs
 are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without input logging.
 

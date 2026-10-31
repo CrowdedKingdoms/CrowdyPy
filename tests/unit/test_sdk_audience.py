@@ -61,6 +61,10 @@ PLATFORM_ONLY = {
     "legalHolds",
     "setLegalHold",
     "releaseLegalHold",
+    # teen safety (ck-api v2.60.0): an operator sets a country's policy and exports a
+    # player's data.
+    "setTerritoryPolicy",
+    "exportPlayerData",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",

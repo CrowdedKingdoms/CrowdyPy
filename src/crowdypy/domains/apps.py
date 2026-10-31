@@ -4,14 +4,15 @@ An app may be served by its own game-api endpoint. The catalog carries each app'
 ``gameApiUrl`` so a per-app client can be pointed at it: :meth:`AppsAPI.route_for`
 reduces an app to just that decision.
 
-:meth:`AppsAPI.app_by_slug` and the marketplace listings are public. Everything else
-needs an identity session, and the methods that change an app name the permission they
-need. ``BigInt`` ids take an ``int`` or a decimal string.
+:meth:`AppsAPI.app_by_slug` and the marketplace listings are public, and
+:meth:`AppsAPI.recording` also answers the app's own app token. Everything else needs an
+identity session, and the methods that change an app name the permission they need.
+``BigInt`` ids take an ``int`` or a decimal string.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import msgspec
@@ -150,6 +151,44 @@ class AppsAPI(Domain):
         result: dict[str, Any] | None = await self._request(ops.APP, {"appId": bigint(app_id)})
         return result
 
+    async def recording(self, app_id: str | int) -> dict[str, Any] | None:
+        """What the app's safety log (replay logging) records right now, for the notice and the
+        recording indicator a game shows its players: ``enabled`` (the log is on: text chat and
+        direct messages are recorded), ``voice`` (voice and channel audio) and ``video``
+        (webcam video). Readable with the app's own app token, so a game reads it on its
+        gameplay client. ck-api v2.60.0.
+
+        While ``voice`` or ``video`` is true, show the player a notice before they first speak
+        or appear on camera, and an indicator while it stays true. Read it when the player
+        enters the app; an admin's change applies within about 15 seconds. ``None`` for an
+        unknown app.
+        """
+        app: dict[str, Any] | None = await self._request(
+            ops.APP_RECORDING, {"appId": bigint(app_id)}
+        )
+        recording: dict[str, Any] | None = app.get("recording") if app else None
+        return recording
+
+    async def set_required_documents(
+        self,
+        app_id: str | int,
+        documents: Sequence[inputs.AppRequiredDocumentInput | Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Set the documents the app's players accept before playing, replacing the list:
+        documents left out stop being required, and a new ``version`` of one asks every player
+        of the app again at their next mint or refresh (``LEGAL_ACCEPTANCE_REQUIRED`` until they
+        accept it). At most 10; ``documentId`` is 1-64 lower-case letters, digits and hyphens
+        and may not reuse a platform document's id; ``url`` is https. An empty list requires
+        none. Players read the list with ``auth.app_required_documents(app_id)`` and accept it
+        with ``auth.record_player_consents(accept_legal=True, app_id=app_id)``. Requires
+        ``manage_apps`` on the app. ck-api v2.60.0.
+        """
+        result: list[dict[str, Any]] = await self._request(
+            ops.SET_APP_REQUIRED_DOCUMENTS,
+            {"appId": bigint(app_id), "documents": list(documents)},
+        )
+        return result
+
     async def app_by_slug(self, org_slug: str, app_slug: str) -> dict[str, Any] | None:
         """One app by its marketplace path (``/<org_slug>/<app_slug>``), or ``None``.
 
@@ -257,6 +296,15 @@ class AppsAPI(Domain):
         traffic; ``extensions["requiredMicrousd"]`` and ``["spendableMicrousd"]`` say how much.
         ``replayLoggingRecordsMedia`` false leaves voice and video out of the app's recording
         and keeps everything else (default true; Game API v2.55.0).
+
+        The replay log is the app's safety log: an app that admits players under 18 must keep
+        it on, so turning it off there is refused ``SAFETY_LOG_REQUIRED`` (ck-api v2.60.0).
+        ``replayLoggingRecordsVoice`` / ``replayLoggingRecordsVideo`` (both true by default)
+        keep voice and channel audio, or webcam video, in or out of the log while it is on;
+        :meth:`recording` is what players are told. ``minPlayerAge`` (13 to 18) raises the
+        youngest age the app admits above the platform's, never below it; ``None`` returns it
+        to the platform's, and ``effectiveMinPlayerAge`` reads the result. Younger players are
+        refused ``AGE_REQUIREMENT_NOT_MET`` at their next mint or refresh.
         """
         result: dict[str, Any] = await self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}

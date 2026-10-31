@@ -33,15 +33,17 @@ from crowdypy._sync.graphql import GraphQLClient
 from crowdypy.pkce import generate_pkce_pair, generate_state
 from crowdypy.session import SessionStore
 from crowdypy.utils import bigint
-from crowdypy.domains.portal import AppAuthorizationGrant, AppRuntimeGate, AppTokenResponse, AuthorizedServer, CurrentServer, MemoryPkceStore, PkceStore, PortalConsentRequiredError  # one class in both clients
+from crowdypy.domains.portal import AcceptedLegalDocument, AppAuthorizationGrant, AppRuntimeGate, AppTokenResponse, AuthorizedServer, CurrentServer, MemoryPkceStore, MinecraftChallenge, PkceStore, PortalConsentRequiredError  # one class in both clients
 
 __all__ = [
+    "AcceptedLegalDocument",
     "AppAuthorizationGrant",
     "AppRuntimeGate",
     "AppTokenResponse",
     "AuthorizedServer",
     "CurrentServer",
     "MemoryPkceStore",
+    "MinecraftChallenge",
     "PkceStore",
     "PortalAPI",
     "PortalConsentRequiredError",
@@ -49,6 +51,10 @@ __all__ = [
     "is_hosted_sign_in_required_error",
     "is_legal_acceptance_required_error",
 ]
+
+
+
+
 
 
 
@@ -100,11 +106,13 @@ def is_hosted_sign_in_required_error(error: object) -> bool:
 
 
 def is_legal_acceptance_required_error(error: object) -> bool:
-    """``LEGAL_ACCEPTANCE_REQUIRED``: the player has not stored the current required legal
-    documents and the age-of-majority attestation, so no gameplay token is issued
+    """``LEGAL_ACCEPTANCE_REQUIRED``: the player has not stored the current required documents
+    (the platform's player documents, the app's own since ck-api v2.60.0, and the
+    age-of-majority attestation while the platform asks for it), so no gameplay token is issued
     (:meth:`PortalAPI.mint_app_token`, :meth:`PortalAPI.create_authorization_code`,
     :meth:`PortalAPI.refresh`). Show your own clickwrap, then call
-    ``auth.record_player_consents``."""
+    ``auth.record_player_consents``; :func:`crowdypy.errors.legal_acceptance_required_of`
+    reads which documents are missing."""
     code = getattr(error, "code", None)
     if code == "LEGAL_ACCEPTANCE_REQUIRED":
         return True
@@ -168,6 +176,20 @@ EXCHANGE_MANAGED_PLAYER_ASSERTION = inline_operation(
     "mutation ExchangeManagedPlayerAssertion($input: ExchangeManagedPlayerAssertionInput!) { "
     "exchangeManagedPlayerAssertion(input: $input) { " + _APP_TOKEN_FIELDS + " } }",
 )
+MINECRAFT_CHALLENGE = inline_operation(
+    "MinecraftChallenge",
+    "mutation",
+    "minecraftChallenge",
+    "mutation MinecraftChallenge($appId: BigInt!) { minecraftChallenge(appId: $appId) "
+    "{ serverId expiresAt } }",
+)
+SIGN_IN_WITH_MINECRAFT = inline_operation(
+    "SignInWithMinecraft",
+    "mutation",
+    "signInWithMinecraft",
+    "mutation SignInWithMinecraft($input: SignInWithMinecraftInput!) { "
+    "signInWithMinecraft(input: $input) { " + _APP_TOKEN_FIELDS + " } }",
+)
 #: What every org token starts with: an organization's server credential, never a device's.
 ORG_TOKEN_PREFIX = "cko_"
 PORTAL_CONSENT = inline_operation(
@@ -211,6 +233,9 @@ INLINE_OPERATIONS = (
     EXCHANGE_PORTAL_CODE,
     REFRESH_APP_TOKEN,
     REFRESH_APP_TOKEN_ON_SERVER,
+    EXCHANGE_MANAGED_PLAYER_ASSERTION,
+    MINECRAFT_CHALLENGE,
+    SIGN_IN_WITH_MINECRAFT,
     PORTAL_CONSENT,
     AUTHORIZE_APP,
     REVOKE_APP_AUTHORIZATION,
@@ -246,6 +271,17 @@ class PortalAPI(Domain):
         """Mint an app-scoped token on the identity client. It is NOT stored here.
 
         Give it to the per-game client (``game.set_token(minted.token)``).
+
+        **The player gate (ck-api v2.60.0)** runs at every mint and refresh, in this order:
+        ``TERRITORY_NOT_SUPPORTED`` (:func:`crowdypy.errors.territory_not_supported_of`) for a
+        country Crowded Kingdoms does not serve; ``AGE_REQUIRED``
+        (:func:`crowdypy.errors.age_required_of`) while the player's age is unknown
+        (``auth.record_player_age``); ``AGE_REQUIREMENT_NOT_MET``
+        (:func:`crowdypy.errors.age_requirement_not_met_of`) under the app's, the country's or
+        the platform's youngest age; then the documents (``LEGAL_ACCEPTANCE_REQUIRED``). A
+        player under 18 is also refused ``SAFETY_LOG_REQUIRED``
+        (:func:`crowdypy.errors.safety_log_required_of`) in an app without the safety log.
+        None of them is fixed by retrying.
         """
         payload = self._request(MINT_APP_TOKEN, {"input": {"appId": bigint(app_id)}})
         return msgspec.convert(payload, AppTokenResponse)
@@ -290,7 +326,12 @@ class PortalAPI(Domain):
         refreshes until the sign-in's lifetime (the organization's setting) ends; then the
         device asks its organization again. A refresh is also refused with
         ``ORG_LEGAL_ACCEPTANCE_REQUIRED`` (:func:`crowdypy.errors.org_legal_acceptance_required_of`)
-        while the organization has not accepted the current Org-Managed Players Addendum.
+        while the organization has not accepted the current Org-Managed Players Addendum. Since
+        ck-api v2.60.0 the organization's server passes the player's ``ageYears`` and
+        ``country`` to the mint (``crowdypy.inputs.MintManagedPlayerTokenInput``), and the mint
+        and every refresh answer the player gate's refusals (:meth:`mint_app_token`); a refresh
+        only has the stored age bracket, so it is refused once that bracket is wholly below the
+        app's youngest age.
 
         Raises :class:`ValueError` and holds nothing for a response without a token or with an
         org token (``cko_...``): an org token signs in any of the organization's players, so a
@@ -323,11 +364,88 @@ class PortalAPI(Domain):
         ``extensions.reason`` (:func:`crowdypy.errors.assertion_rejected_of`); resending the same
         assertion cannot succeed. A valid assertion is refused with
         ``ORG_LEGAL_ACCEPTANCE_REQUIRED`` while the organization has not accepted the current
-        Org-Managed Players Addendum.
+        Org-Managed Players Addendum, and with the player gate's refusals
+        (:meth:`mint_app_token`) for the age and country it asserts: the claims ``ageYears``
+        and ``country`` (ck-api v2.60.0), which become required once the platform admits
+        players under 18.
         """
         payload = self._request(
             EXCHANGE_MANAGED_PLAYER_ASSERTION,
             {"input": {"appId": bigint(app_id), "assertion": assertion}},
+        )
+        token = msgspec.convert(payload, AppTokenResponse)
+        self._session.set_token(token.token)
+        return token
+
+    # ------------------------------------------------------------------ Minecraft sign-in
+
+    def minecraft_challenge(self, app_id: str | int) -> MinecraftChallenge:
+        """Start a Minecraft sign-in: a one-time server id for the app, good for two minutes.
+        The Minecraft client joins it through Mojang's session service as the account signed
+        in to the game (the request a client makes to join any online-mode server), then calls
+        :meth:`sign_in_with_minecraft`. Ask for it yourself, and never join a server id
+        something else hands you: whoever holds a joined server id can sign in as that account.
+
+        Open only to Crowded Kingdoms' own apps: any other app is refused ``FORBIDDEN``, and a
+        tier without Minecraft sign-in ``FEATURE_DISABLED``. Public; rate-limited per address.
+        ck-api v2.60.0.
+        """
+        payload = self._request(MINECRAFT_CHALLENGE, {"appId": bigint(app_id)})
+        return msgspec.convert(payload, MinecraftChallenge)
+
+    def sign_in_with_minecraft(
+        self,
+        *,
+        app_id: str | int,
+        username: str,
+        server_id: str,
+        birth_date: str,
+        country: str,
+        accepted_documents: Sequence[AcceptedLegalDocument | Mapping[str, Any]],
+        parental_confirmation: bool | None = None,
+    ) -> AppTokenResponse:
+        """Sign a Minecraft player in to one of Crowded Kingdoms' own apps, and hold the app
+        token (as :meth:`adopt_app_token` does). The API asks Mojang whether ``username``
+        joined with the challenge's ``server_id`` and admits the player only on a yes; the
+        player is an org-managed player of the app's organization, identified by its Minecraft
+        account, and refreshes with :meth:`refresh`. Public. ck-api v2.60.0.
+
+        ``birth_date`` (``YYYY-MM-DD`` or ``YYYY-MM``; only the age bracket is kept),
+        ``country`` (ISO 3166-1 alpha-2) and, under 18, ``parental_confirmation`` come from the
+        age screen. ``accepted_documents`` is every document ``auth.player_legal_documents()``
+        and ``auth.app_required_documents(app_id)`` name, at those versions, which the player
+        accepted in game (recorded with method ``IN_GAME``).
+
+        Refusals: ``MINECRAFT_VERIFICATION_FAILED``
+        (:func:`crowdypy.errors.minecraft_verification_failed_of`, with the reason: start again
+        from :meth:`minecraft_challenge`), ``MINECRAFT_VERIFICATION_UNAVAILABLE``
+        (:func:`crowdypy.errors.minecraft_verification_unavailable_of`: Mojang did not answer;
+        retry shortly), the player gate's (:meth:`mint_app_token`),
+        ``LEGAL_ACCEPTANCE_REQUIRED`` when ``accepted_documents`` misses one
+        (:func:`crowdypy.errors.legal_acceptance_required_of` lists them), and
+        ``ORG_LEGAL_ACCEPTANCE_REQUIRED``.
+        """
+        documents = []
+        for document in accepted_documents:
+            if isinstance(document, AcceptedLegalDocument):
+                documents.append({"documentId": document.document_id, "version": document.version})
+            else:
+                documents.append(
+                    {"documentId": document["documentId"], "version": document["version"]}
+                )
+        payload = self._request(
+            SIGN_IN_WITH_MINECRAFT,
+            {
+                "input": {
+                    "appId": bigint(app_id),
+                    "username": username,
+                    "serverId": server_id,
+                    "birthDate": birth_date,
+                    "country": country,
+                    "acceptedDocuments": documents,
+                    **omit_none({"parentalConfirmation": parental_confirmation}),
+                }
+            },
         )
         token = msgspec.convert(payload, AppTokenResponse)
         self._session.set_token(token.token)

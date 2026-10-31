@@ -55,12 +55,21 @@ _LAZY: dict[str, str] = {
     "ACCESS_REVOKED_CODE": "crowdypy.errors",
     "ACCESS_SUSPENDED_CODE": "crowdypy.errors",
     "ACTOR_EXISTS_CODE": "crowdypy.errors",
+    "AGE_REQUIRED_CODE": "crowdypy.errors",
+    "AGE_REQUIREMENT_NOT_MET_CODE": "crowdypy.errors",
     "APP_PAUSED_CODE": "crowdypy.errors",
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
     "ASSERTION_REJECTED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
+    "LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
+    "MINECRAFT_VERIFICATION_FAILED_CODE": "crowdypy.errors",
+    "MINECRAFT_VERIFICATION_UNAVAILABLE_CODE": "crowdypy.errors",
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
+    "PARENTAL_CONSENT_UNAVAILABLE_CODE": "crowdypy.errors",
+    "SAFETY_LOG_REQUIRED_CODE": "crowdypy.errors",
+    "SOCIAL_LIMIT_REACHED_CODE": "crowdypy.errors",
+    "TERRITORY_NOT_SUPPORTED_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
     "CrowdyAccessRefusal": "crowdypy.errors",
     "CrowdyAccountBlocked": "crowdypy.errors",
@@ -71,22 +80,35 @@ _LAZY: dict[str, str] = {
     "CrowdyError": "crowdypy.errors",
     "CrowdyGraphQLError": "crowdypy.errors",
     "CrowdyHttpError": "crowdypy.errors",
+    "CrowdyLegalAcceptanceRequired": "crowdypy.errors",
+    "CrowdyMinecraftVerificationFailed": "crowdypy.errors",
+    "CrowdyMissingLegalDocument": "crowdypy.errors",
     "CrowdyNetworkError": "crowdypy.errors",
     "CrowdyPlayerFault": "crowdypy.errors",
     "CrowdyProtocolError": "crowdypy.errors",
     "CrowdyRealtimeError": "crowdypy.errors",
     "CrowdyReplicationError": "crowdypy.errors",
+    "CrowdyTerritoryNotSupported": "crowdypy.errors",
     "CrowdyTimeoutError": "crowdypy.errors",
     "CrowdyUserCodeFaultError": "crowdypy.errors",
     "GridScopeError": "crowdypy.errors",
     "access_refusal_of": "crowdypy.errors",
     "account_blocked_of": "crowdypy.errors",
+    "age_required_of": "crowdypy.errors",
+    "age_requirement_not_met_of": "crowdypy.errors",
     "assertion_rejected_of": "crowdypy.errors",
     "actor_exists_of": "crowdypy.errors",
     "app_paused_of": "crowdypy.errors",
     "group_member_banned_of": "crowdypy.errors",
+    "legal_acceptance_required_of": "crowdypy.errors",
     "managed_player_not_allowed_of": "crowdypy.errors",
+    "minecraft_verification_failed_of": "crowdypy.errors",
+    "minecraft_verification_unavailable_of": "crowdypy.errors",
     "org_legal_acceptance_required_of": "crowdypy.errors",
+    "parental_consent_unavailable_of": "crowdypy.errors",
+    "safety_log_required_of": "crowdypy.errors",
+    "social_limit_reached_of": "crowdypy.errors",
+    "territory_not_supported_of": "crowdypy.errors",
     "is_app_paused": "crowdypy.errors",
     "player_fault_of": "crowdypy.errors",
     # sessions, tokens, routing
@@ -114,14 +136,18 @@ _LAZY: dict[str, str] = {
     "validate_chunk_coordinates": "crowdypy.utils",
     "validate_crowdy_uuid": "crowdypy.utils",
     # identity results and helpers
+    "AcceptedLegalDocument": "crowdypy.domains.portal",
     "AppRuntimeGate": "crowdypy.domains.portal",
     "AppTokenResponse": "crowdypy.domains.portal",
     "CurrentServer": "crowdypy.domains.portal",
     "MemoryPkceStore": "crowdypy.domains.portal",
+    "MinecraftChallenge": "crowdypy.domains.portal",
     "PortalConsentRequiredError": "crowdypy.domains.portal",
     "default_hosted_sign_in_url": "crowdypy.domains.portal",
     "is_hosted_sign_in_required_error": "crowdypy.domains.portal",
     "is_legal_acceptance_required_error": "crowdypy.domains.portal",
+    "PlayerAge": "crowdypy.domains.auth",
+    "ManagedPlayerAssertionClaims": "crowdypy.domains.managed_players",
     "AuthResponse": "crowdypy.domains.auth",
     "is_already_registered_error": "crowdypy.domains.auth",
     "is_invalid_current_password_error": "crowdypy.domains.auth",
@@ -149,12 +175,14 @@ _LAZY: dict[str, str] = {
     "HostAPI": "crowdypy.domains.host",
     "MarketplaceAPI": "crowdypy.domains.marketplace",
     "ManagedPlayersAPI": "crowdypy.domains.managed_players",
+    "ModerationAPI": "crowdypy.domains.moderation",
     "OrganizationsAPI": "crowdypy.domains.organizations",
     "PaymentsAPI": "crowdypy.domains.payments",
     "PlatformAPI": "crowdypy.domains.platform",
     "PlayerWalletAPI": "crowdypy.domains.player_wallet",
     "PortalAPI": "crowdypy.domains.portal",
     "QuotasAPI": "crowdypy.domains.quotas",
+    "SafetyAPI": "crowdypy.domains.safety",
     "ServerStatusAPI": "crowdypy.domains.server_status",
     "SharedEnvironmentAPI": "crowdypy.domains.shared_environment",
     "StateAPI": "crowdypy.domains.state",
@@ -270,6 +298,9 @@ if TYPE_CHECKING:
         AuthResponse as AuthResponse,
     )
     from crowdypy.domains.auth import (
+        PlayerAge as PlayerAge,
+    )
+    from crowdypy.domains.auth import (
         is_already_registered_error as is_already_registered_error,
     )
     from crowdypy.domains.auth import (
@@ -327,10 +358,16 @@ if TYPE_CHECKING:
         InputLogAPI as InputLogAPI,
     )
     from crowdypy.domains.managed_players import (
+        ManagedPlayerAssertionClaims as ManagedPlayerAssertionClaims,
+    )
+    from crowdypy.domains.managed_players import (
         ManagedPlayersAPI as ManagedPlayersAPI,
     )
     from crowdypy.domains.marketplace import (
         MarketplaceAPI as MarketplaceAPI,
+    )
+    from crowdypy.domains.moderation import (
+        ModerationAPI as ModerationAPI,
     )
     from crowdypy.domains.organizations import (
         OrganizationsAPI as OrganizationsAPI,
@@ -345,6 +382,9 @@ if TYPE_CHECKING:
         PlayerWalletAPI as PlayerWalletAPI,
     )
     from crowdypy.domains.portal import (
+        AcceptedLegalDocument as AcceptedLegalDocument,
+    )
+    from crowdypy.domains.portal import (
         AppRuntimeGate as AppRuntimeGate,
     )
     from crowdypy.domains.portal import (
@@ -355,6 +395,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.portal import (
         MemoryPkceStore as MemoryPkceStore,
+    )
+    from crowdypy.domains.portal import (
+        MinecraftChallenge as MinecraftChallenge,
     )
     from crowdypy.domains.portal import (
         PortalAPI as PortalAPI,
@@ -373,6 +416,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.quotas import (
         QuotasAPI as QuotasAPI,
+    )
+    from crowdypy.domains.safety import (
+        SafetyAPI as SafetyAPI,
     )
     from crowdypy.domains.server_status import (
         ServerStatusAPI as ServerStatusAPI,
@@ -420,6 +466,12 @@ if TYPE_CHECKING:
         ACTOR_EXISTS_CODE as ACTOR_EXISTS_CODE,
     )
     from crowdypy.errors import (
+        AGE_REQUIRED_CODE as AGE_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
+        AGE_REQUIREMENT_NOT_MET_CODE as AGE_REQUIREMENT_NOT_MET_CODE,
+    )
+    from crowdypy.errors import (
         APP_PAUSED_CODE as APP_PAUSED_CODE,
     )
     from crowdypy.errors import (
@@ -432,10 +484,31 @@ if TYPE_CHECKING:
         GROUP_MEMBER_BANNED_CODE as GROUP_MEMBER_BANNED_CODE,
     )
     from crowdypy.errors import (
+        LEGAL_ACCEPTANCE_REQUIRED_CODE as LEGAL_ACCEPTANCE_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
         MANAGED_PLAYER_NOT_ALLOWED_CODE as MANAGED_PLAYER_NOT_ALLOWED_CODE,
     )
     from crowdypy.errors import (
+        MINECRAFT_VERIFICATION_FAILED_CODE as MINECRAFT_VERIFICATION_FAILED_CODE,
+    )
+    from crowdypy.errors import (
+        MINECRAFT_VERIFICATION_UNAVAILABLE_CODE as MINECRAFT_VERIFICATION_UNAVAILABLE_CODE,
+    )
+    from crowdypy.errors import (
         ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE as ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
+        PARENTAL_CONSENT_UNAVAILABLE_CODE as PARENTAL_CONSENT_UNAVAILABLE_CODE,
+    )
+    from crowdypy.errors import (
+        SAFETY_LOG_REQUIRED_CODE as SAFETY_LOG_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
+        SOCIAL_LIMIT_REACHED_CODE as SOCIAL_LIMIT_REACHED_CODE,
+    )
+    from crowdypy.errors import (
+        TERRITORY_NOT_SUPPORTED_CODE as TERRITORY_NOT_SUPPORTED_CODE,
     )
     from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
@@ -468,6 +541,15 @@ if TYPE_CHECKING:
         CrowdyHttpError as CrowdyHttpError,
     )
     from crowdypy.errors import (
+        CrowdyLegalAcceptanceRequired as CrowdyLegalAcceptanceRequired,
+    )
+    from crowdypy.errors import (
+        CrowdyMinecraftVerificationFailed as CrowdyMinecraftVerificationFailed,
+    )
+    from crowdypy.errors import (
+        CrowdyMissingLegalDocument as CrowdyMissingLegalDocument,
+    )
+    from crowdypy.errors import (
         CrowdyNetworkError as CrowdyNetworkError,
     )
     from crowdypy.errors import (
@@ -481,6 +563,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         CrowdyReplicationError as CrowdyReplicationError,
+    )
+    from crowdypy.errors import (
+        CrowdyTerritoryNotSupported as CrowdyTerritoryNotSupported,
     )
     from crowdypy.errors import (
         CrowdyTimeoutError as CrowdyTimeoutError,
@@ -501,6 +586,12 @@ if TYPE_CHECKING:
         actor_exists_of as actor_exists_of,
     )
     from crowdypy.errors import (
+        age_required_of as age_required_of,
+    )
+    from crowdypy.errors import (
+        age_requirement_not_met_of as age_requirement_not_met_of,
+    )
+    from crowdypy.errors import (
         app_paused_of as app_paused_of,
     )
     from crowdypy.errors import (
@@ -513,13 +604,34 @@ if TYPE_CHECKING:
         is_app_paused as is_app_paused,
     )
     from crowdypy.errors import (
+        legal_acceptance_required_of as legal_acceptance_required_of,
+    )
+    from crowdypy.errors import (
         managed_player_not_allowed_of as managed_player_not_allowed_of,
+    )
+    from crowdypy.errors import (
+        minecraft_verification_failed_of as minecraft_verification_failed_of,
+    )
+    from crowdypy.errors import (
+        minecraft_verification_unavailable_of as minecraft_verification_unavailable_of,
     )
     from crowdypy.errors import (
         org_legal_acceptance_required_of as org_legal_acceptance_required_of,
     )
     from crowdypy.errors import (
+        parental_consent_unavailable_of as parental_consent_unavailable_of,
+    )
+    from crowdypy.errors import (
         player_fault_of as player_fault_of,
+    )
+    from crowdypy.errors import (
+        safety_log_required_of as safety_log_required_of,
+    )
+    from crowdypy.errors import (
+        social_limit_reached_of as social_limit_reached_of,
+    )
+    from crowdypy.errors import (
+        territory_not_supported_of as territory_not_supported_of,
     )
     from crowdypy.estate import (
         is_same_estate as is_same_estate,
