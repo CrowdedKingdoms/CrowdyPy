@@ -11,6 +11,7 @@
 #include "crowdy/core/crypto.hpp"
 #include "crowdy/domains/domain_base.hpp"
 #include "crowdy/domains/types.hpp"
+#include "crowdy/generated/operations.hpp"
 
 /// Overworld portals & app-scoped tokens — client.portal(). Gameplay requires
 /// a short-lived APP-SCOPED token per app; an identity session token is not
@@ -27,6 +28,35 @@ struct PkcePair {
   Status status;
 
   bool ok() const { return status.ok(); }
+};
+
+/// A document the player accepted in the game: its id and the version shown
+/// (LegalDocument::documentId / version).
+struct AcceptedLegalDocument {
+  std::string documentId;
+  std::string version;
+};
+
+/// signInWithMinecraft()'s input (ck-api v2.60.0). Every field but parentalConfirmation is
+/// required.
+struct MinecraftSignInParams {
+  /// The app minecraftChallenge() was asked for.
+  std::string appId;
+  /// The Minecraft account name the game is signed in with (1-16 letters, digits and
+  /// underscores).
+  std::string username;
+  /// The challenge's serverId, after the game joined it through Mojang's session service.
+  std::string serverId;
+  /// From the game's own age screen: YYYY-MM-DD or YYYY-MM. Only the age bracket is kept.
+  std::string birthDate;
+  /// The country the player lives in, ISO 3166-1 alpha-2.
+  std::string country;
+  /// Under 18: the player confirms a parent or guardian agreed. Required true under 18;
+  /// ignored at 18 or over.
+  std::optional<bool> parentalConfirmation;
+  /// Every document AuthAPI::playerLegalDocuments() and appRequiredDocuments(appId) name, at
+  /// those versions, as the player accepted them in the game.
+  std::vector<AcceptedLegalDocument> acceptedDocuments;
 };
 
 /// The refresh selection, with and without the current replication server.
@@ -275,6 +305,68 @@ class PortalAPI : public DomainBase {
                     });
   }
 
+  // ----- Minecraft sign-in (ck-api v2.60.0) ------------------------------------
+  // For Crowded Kingdoms' own apps only (FORBIDDEN for any other app; FEATURE_DISABLED on a
+  // tier without it). The game signs in as a player the app's organization manages, so there
+  // is no Crowded Kingdoms account: the result is an app token, as mintManagedPlayerToken's,
+  // which refresh() rotates. Start the session with it as with any app token
+  // (crowdy::startGameSession).
+
+  /// Step 1: a one-time server id for the app, good for two minutes. The game then joins it
+  /// through Mojang's session service as the account it is signed in with (the request a
+  /// client makes to join any online-mode server). Ask for it yourself: never join a server id
+  /// something else hands you. Public; rate-limited per address.
+  MinecraftChallenge minecraftChallenge(std::string_view appId) const {
+    graphql::JVal vars;
+    vars["appId"] = appId;
+    return MinecraftChallenge::fromJson(execUnwrap(
+        gen::portal::documentFor(gen::portal::kMinecraftChallengeOperationName), vars,
+        gen::portal::kMinecraftChallengeOperationName));
+  }
+
+  void minecraftChallengeAsync(
+      std::string_view appId,
+      std::function<void(graphql::GraphQLOutcome, MinecraftChallenge)> cb) const {
+    graphql::JVal vars;
+    vars["appId"] = appId;
+    execUnwrapAsync(gen::portal::documentFor(gen::portal::kMinecraftChallengeOperationName), vars,
+                    gen::portal::kMinecraftChallengeOperationName,
+                    [cb = std::move(cb)](graphql::GraphQLOutcome out) mutable {
+                      MinecraftChallenge value{};
+                      if (out.ok()) value = MinecraftChallenge::fromJson(out.data);
+                      cb(std::move(out), value);
+                    });
+  }
+
+  /// Step 2, after the Mojang join: sign the player in and store the app token on this client,
+  /// as exchangeManagedPlayerAssertion() does. The accepted documents are recorded with method
+  /// IN_GAME. Refusals: MINECRAFT_VERIFICATION_FAILED (graphql::minecraftVerificationFailedOf;
+  /// start again from minecraftChallenge), MINECRAFT_VERIFICATION_UNAVAILABLE (retryable),
+  /// TERRITORY_NOT_SUPPORTED, AGE_REQUIREMENT_NOT_MET, LEGAL_ACCEPTANCE_REQUIRED (with the
+  /// missing documents) and ORG_LEGAL_ACCEPTANCE_REQUIRED. Public; rate-limited per address.
+  AppTokenResponse signInWithMinecraft(const MinecraftSignInParams& input) const {
+    auto r = AppTokenResponse::fromJson(execUnwrap(
+        gen::portal::documentFor(gen::portal::kSignInWithMinecraftOperationName),
+        minecraftVars(input), gen::portal::kSignInWithMinecraftOperationName));
+    if (!r.token.empty()) auth_->setToken(r.token);
+    return r;
+  }
+
+  void signInWithMinecraftAsync(
+      const MinecraftSignInParams& input,
+      std::function<void(graphql::GraphQLOutcome, AppTokenResponse)> cb) const {
+    execUnwrapAsync(gen::portal::documentFor(gen::portal::kSignInWithMinecraftOperationName),
+                    minecraftVars(input), gen::portal::kSignInWithMinecraftOperationName,
+                    [auth = auth_, cb = std::move(cb)](graphql::GraphQLOutcome out) mutable {
+                      AppTokenResponse r{};
+                      if (out.ok()) {
+                        r = AppTokenResponse::fromJson(out.data);
+                        if (!r.token.empty()) auth->setToken(r.token);
+                      }
+                      cb(std::move(out), r);
+                    });
+  }
+
   /// A begun portal entry: send the player to `url`; keep `verifier` (and
   /// `state` for correlation) to pass to completeEntry() on the callback.
   struct PortalEntry {
@@ -460,6 +552,26 @@ class PortalAPI : public DomainBase {
   }
 
  private:
+  static graphql::JVal minecraftVars(const MinecraftSignInParams& input) {
+    graphql::JVal vars;
+    graphql::JVal& body = vars["input"];
+    body["appId"] = input.appId;
+    body["username"] = input.username;
+    body["serverId"] = input.serverId;
+    body["birthDate"] = input.birthDate;
+    body["country"] = input.country;
+    if (input.parentalConfirmation) body["parentalConfirmation"] = *input.parentalConfirmation;
+    graphql::JArray documents;
+    documents.reserve(input.acceptedDocuments.size());
+    for (const auto& document : input.acceptedDocuments) {
+      documents.push_back(graphql::JVal::object(
+          {{"documentId", graphql::JVal(document.documentId)},
+           {"version", graphql::JVal(document.version)}}));
+    }
+    body["acceptedDocuments"] = graphql::JVal(std::move(documents));
+    return vars;
+  }
+
   static void setScopes(
       graphql::JVal& input,
       const std::optional<std::vector<std::string>>& scopes) {

@@ -18,6 +18,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_STUDIO_GRID_ID` | no | a grid in the app that the owner controls (Studio suite). On dev, app `96701660793088`'s is `105350185270272` (chunks 900,0,900 to 901,1,901, made by the org admin with `createGrid` on 2026-10-25) |
 | `CROWDY_E2E_SLOW=1` | no | long-running suites |
 | `CROWDY_E2E_THROWAWAY_OWNER=1` | no | the open-grid suite registers a throwaway owner, org and app (archived afterwards), at `crowdy-e2e-py-<kind>-<id>@test.invalid` addresses and with the provisioning token when one is set |
+| `CROWDY_E2E_ORG_TOKEN`, `CROWDY_E2E_MANAGED_APP_ID` | no | the teen safety suite's org-managed players: an org token with `players:mint` and one of its organization's apps, whose organization has accepted the Org-Managed Players Addendum. On dev, org `107209212824576` and app `107209219611648` (the 13+ test org); the token is the operator's, kept outside the repository. Unset, those scenarios skip |
 | `CROWDY_E2E_PROVISIONING_TOKEN` | dev and test | dev and test are staff-only, so a new derived player is refused (`TIER_ACCESS_REQUIRED`) unless `register` carries a provisioning token covering its address. Use the `harness` token (Secrets Manager `infra-cp/<tier>/loadtest/provisioning-token-harness`, `token` key), which covers `crowdy-e2e*@test.invalid`, with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` (the `*` needs at least one character, so the bare `crowdy-e2e@test.invalid` is refused for a suite that registers the base address). Sent on `register` only; other tiers ignore it |
 
 ```bash
@@ -37,7 +38,8 @@ player once and signs it in for the later suites.
 
 | Suite | Scenarios | CrowdyCPP counterpart |
 |---|---|---|
-| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a player registered without the legal consents is refused a gameplay token (`LEGAL_ACCEPTANCE_REQUIRED`) until `record_player_consents`, and `player_legal_acceptance` follows; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
+| `test_e2e_identity.py` | register and sign in; mint an app token (64 octets) and refresh it; `serverWithLeastClients` with the app token; a player registered without the legal consents is refused a gameplay token (`LEGAL_ACCEPTANCE_REQUIRED`, read by `legal_acceptance_required_of`) until `record_player_consents`, gives its age once with `record_player_age` (again is `CONFLICT`), and `player_legal_acceptance` follows; a wrong password is refused; the identity session token is refused for gameplay | `e2e_auth_identities`, `e2e_negative_auth`, `e2e_gameplay_token_refresh` |
+| `test_e2e_teen_safety.py` | ck-api v2.60.0: sign-up with an age and a country (`me` reads `ageBracket` and `country`), the player and app documents, `record_player_consents` with an `app_id`, the territory policies; a sign-up under the floor and one from a blocked country make no account (`age_requirement_not_met_of`, `territory_not_supported_of`); two players' scopes, contacts and blocks; `apps.recording`, an adult's parental consent (`NOT_REQUIRED`) and a report (reason `OTHER`) the org admin reads and resolves with `client.moderation`; the Minecraft challenge refused to an app that is not Crowded Kingdoms' own; an org-managed adult with `ageYears` and `country`, and a managed 12-year-old and a blocked country refused | none yet |
 | `test_e2e_replication.py` | two players over native UDP: an actor update reaches the other player and echoes back to the sender; a 16-entity batched frame (`send_actor_updates`) reaches the other player; voxel updates and client events reach the other player | `e2e_two_client_actor`, `e2e_self_echo`, `e2e_spatial_distance` |
 | `test_e2e_world.py` | two World Stores sessions: each sees the other's actor natively; a voxel edit lands in the other session's chunk store | `e2e_stores_live`, `e2e_world_session` |
 | `test_e2e_world_data.py` | a GraphQL voxel write by an entitled player is recorded and listed back | `e2e_chunks` |
@@ -79,6 +81,12 @@ These CrowdyCPP suites have no CrowdyPy counterpart yet; the reason is in each r
 | `e2e_host_election`, `e2e_durable_stores`, `e2e_chunk_store_live` | the World Stores' host, save and chunk persistence run over GraphQL timers covered by unit suites against fakes; live coverage needs a dedicated app (chunk write-back closes the wilderness) |
 | `e2e_cross_app`, `e2e_cross_tenant`, `e2e_malicious_input` | platform isolation properties the CrowdyCPP suites already exercise against the same API |
 | `e2e_bans_blocks` | 0.11.0's `channels.ban` / `teams.ban`, `account_blocked_of` and `group_member_banned_of` send the documents CrowdyCPP's suite exercises live, and the unit suites check them against a mocked API; an account block needs the tier operator's credentials. The tier round trip and the nightly identity probe run the same bans and blocks on each tier |
+
+0.23.0's teen safety refusals that a tier admitting adults only cannot give (`AGE_REQUIRED`,
+which the legacy documents answer with `LEGAL_ACCEPTANCE_REQUIRED`; `SAFETY_LOG_REQUIRED` and
+`PARENTAL_CONSENT_UNAVAILABLE`, which need a minor's app token; `SOCIAL_LIMIT_REACHED`; the
+Minecraft verification refusals, which need Crowded Kingdoms' own app) and a minor's defaults
+are covered by the unit suites until the platform admits players under 18.
 
 0.8.0's additions (channel audio, the echo of your own voxel edit, `APP_PAUSED`, access
 suspension, player profiles, `exec.restart_type`) have no live suite yet, in CrowdyPy or in

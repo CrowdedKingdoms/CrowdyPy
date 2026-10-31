@@ -18,7 +18,14 @@ PLAYER_PROFILES_MAX = 100
 
 class UsersAPI(Domain):
     async def me(self) -> dict[str, Any]:
-        """The signed-in user."""
+        """The signed-in user.
+
+        ``ageBracket`` is ``unknown`` until the player gives an age (``auth.record_player_age``;
+        a managed player's comes from its organization), then ``under_13``, ``13_15``,
+        ``16_17`` or ``18_plus``; ``country`` is the declared or asserted country (ck-api
+        v2.60.0, which this selection needs). Use them for your logic, never as text: no
+        screen shows a player an age.
+        """
         result: dict[str, Any] = await self._request(ops.ME)
         return result
 
@@ -29,7 +36,10 @@ class UsersAPI(Domain):
         return result
 
     async def delete_my_account(self) -> bool:
-        """Delete the signed-in account. Irreversible."""
+        """Delete the signed-in account. Irreversible. Since ck-api v2.60.0 an open or
+        escalated safety report about the account puts it under a legal hold first: the
+        account still closes, but its content and identity are kept until the report is
+        resolved."""
         return bool(await self._request(ops.DELETE_MY_ACCOUNT))
 
     async def free_play_window(self) -> dict[str, Any] | None:

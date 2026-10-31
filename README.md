@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.23.0: teen safety.** ck-api v2.60.0's age, territory and documents gate, and a player's own safety controls. `auth.register` takes the age screen's `birth_date`, `country` and `parental_confirmation`, `auth.record_player_age` gives an account its age once, and `crowdypy.errors` reads the gate's refusals (`age_requirement_not_met_of` is deliberately a boolean: no refusal names an age). `client.safety` holds the voice and video scopes, contacts, blocks, a parent's consent and reports; `client.moderation` is the app's moderators'; `apps.recording` is what the notice and the indicator show. Org-managed players carry `ageYears` and `country`. It also brings CrowdyJS 18.23's Studio game editor (`CrowdyStudioController(draft_store=...)`). It needs ck-api v2.60.0 on the tier. CrowdyJS 18.24.0 and CrowdyCPP 0.75.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.22.0: a deploy's dropped node types.** `exec.instances` returns `orphaned`, true for an instance whose node type the app's active version no longer deploys: ck-exec 0.19 stops such an instance at once when a deploy or a rollback drops its type, and keeps its saved state. It needs Game API v2.58.0 on the tier. CrowdyJS 18.22.0 and CrowdyCPP 0.74.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.21.0: a send waiting across a reassignment is resent then.** An actor or voxel update still waiting for its echo when the connection is reassigned is resent as soon as the new session is connected, rather than at its timeout, since its echo went to the session it left. That is its one retry; audio, text and events are never resent. CrowdyJS 18.21.0 and CrowdyCPP 0.73.0. See [MIGRATION.md](MIGRATION.md).
@@ -179,7 +181,8 @@ There is one API origin but two tokens, as in every Crowded Kingdoms SDK:
    with `client.refresh_gameplay_token()` (concurrent callers share one refresh). It is
    refused with `LEGAL_ACCEPTANCE_REQUIRED` until the player's agreement to the legal
    documents and age attestation are stored: show both checkboxes, then call
-   `auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)`.
+   `auth.record_player_consents(accept_legal=True, attest_age_of_majority=True)`. With an
+   app's own documents (`auth.app_required_documents(app_id)`), pass its `app_id` too.
 3. Build one identity client and one client per game. The game client points at the app's
    datacenter (`game_api_url`) with `discovery_url` set, so it can find the app again if
    that instance stops answering.
@@ -214,6 +217,23 @@ entering the world, and tell the player it is paused. Replication then refuses s
 error 33 (`APP_PAUSED`). `crowdypy.app_paused_of(error)`, `access_refusal_of(error)`
 (`ACCESS_REVOKED`, `ACCESS_SUSPENDED` with `suspended_until`, `ACCESS_NOT_GRANTED`) and
 `actor_exists_of(error)` read those refusals. None of them clears by retrying.
+
+Every mint and refresh passes the player gate (ck-api v2.60.0), and its refusals have readers
+too: `territory_not_supported_of` (with the `country`), `age_required_of` (give the age with
+`auth.record_player_age`), `age_requirement_not_met_of` (a boolean: no refusal names an age),
+`legal_acceptance_required_of` (with the `missing_documents`) and `safety_log_required_of`.
+`client.safety` answers `social_limit_reached_of` and `parental_consent_unavailable_of`.
+
+## Player safety
+
+`client.safety` is the player's own controls in one app, on the game client (the app token):
+voice and video scopes (`comm_settings`, `set_comm_settings`; a player can only lower them),
+contacts (`request_contact`, `accept_contact`, `remove_contact`, `contacts`,
+`contact_requests`), blocks (`block`, `unblock`, `blocks`), a parent's consent for a player
+under 18 (`request_parental_consent`) and reports to the app's moderators (`file_report`). The
+platform enforces all of it on the realtime servers. When `apps.recording(app_id)` says voice
+or video is recorded, show the player your notice and indicator. An app's moderators
+(`moderate_safety`) read and decide reports with `client.moderation`.
 
 ## Replication
 
@@ -346,7 +366,9 @@ print(result.status, studio.get_state().build_output)
 ```
 
 A CLIENT target runs in a host you pass as `broker_factory`; the browser Studio runs it in a
-Web Worker.
+Web Worker. A bound Construct game opens its repository draft instead of the mod crates when
+you pass `draft_store=`, a factory returning the project's `crowdypy.studio.DraftStore`, such
+as a `GitHubDraftStore` over `game.crowdy_studio_github`.
 
 ## Performance
 

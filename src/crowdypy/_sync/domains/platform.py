@@ -3,13 +3,15 @@
 
 No token needed. It tells a client where the shared game-api is, for apps published to
 the shared environment, before the client has a per-app endpoint; point a per-game
-client at ``sharedGameApiUrl`` / ``sharedGameApiWsUrl``.
+client at ``sharedGameApiUrl`` / ``sharedGameApiWsUrl``. It also lists the countries the
+platform does not serve.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from crowdypy._generated import operations as ops
 from crowdypy._operation import inline_operation
 from crowdypy._sync.domains._base import Domain
 
@@ -44,4 +46,15 @@ class PlatformAPI(Domain):
         no shared environment.
         """
         result: dict[str, Any] = self._request(PLATFORM_CONFIG, {})
+        return result
+
+    def territory_policies(self) -> list[dict[str, Any]]:
+        """The countries Crowded Kingdoms lists, by ISO 3166-1 alpha-2 ``countryCode``:
+        ``status`` ``blocked`` for one it does not serve (sign-up and play are refused there
+        with ``TERRITORY_NOT_SUPPORTED``, by the country a player gives or connects from), and
+        ``open`` with a ``minAge`` above the platform's for the others it lists. A country not
+        listed is open at the platform's youngest age. Public, so a sign-up form can tell a
+        player before an account exists that the service is not available in their country.
+        Do not show the ages: a sign-up screen names none. ck-api v2.60.0."""
+        result: list[dict[str, Any]] = self._request(ops.TERRITORY_POLICIES, {})
         return result

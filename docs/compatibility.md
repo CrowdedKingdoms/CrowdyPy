@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.22.0`
+- CrowdyPy `0.23.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -41,6 +41,14 @@ requirement names one exactly, the same way a caret never matches an npm prerele
 - `auth.record_player_consents` and `auth.player_legal_acceptance` need ck-api v2.35.0; an
   older API answers them with a GraphQL validation error. From v2.35.0 a gameplay token
   waits for both consents (`LEGAL_ACCEPTANCE_REQUIRED`).
+- 0.23.0 selects the teen safety fields in `users.me()` (`ageBracket`, `country`),
+  `apps.app()` and `apps.update()` (`recording`, `replayLoggingRecordsVoice` / `Video`,
+  `minPlayerAge`, `effectiveMinPlayerAge`), so those need ck-api v2.60.0; so do `client.safety`,
+  `client.moderation`, `apps.recording`, `apps.set_required_documents`,
+  `platform.territory_policies`, the new `auth` methods, the Minecraft sign-in, and
+  `record_player_consents` / `player_legal_acceptance` with an `app_id`, a `method` or no
+  attestation. `record_player_consents` with both flags and nothing else still sends the
+  v2.35.0 document.
 - The input log (`client.input_log`, 0.7.0) needs ck-api v2.39.0 or later: every app read selects
   `replayLoggingEnabled`, which an older API refuses with a GraphQL validation error. The retryable
   `INPUT_LOG_TEMPORARILY_UNAVAILABLE` / `INPUT_LOG_RATE_LIMITED` and the `logging_off` / `shutdown`
