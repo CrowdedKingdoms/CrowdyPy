@@ -45,13 +45,14 @@ __all__ = [
 ]
 
 CrowdyStudioSaveState = Literal["SAVING", "SAVED", "CONFLICT", "OFFLINE"]
-CrowdyStudioFileSource = Literal["PROJECT", "PERSONAL_LIBRARY", "COMMON"]
+CrowdyStudioFileSource = Literal["PROJECT", "PERSONAL_LIBRARY", "COMMON", "REPOSITORY"]
 
 
 @dataclass(frozen=True, slots=True)
 class CrowdyStudioFileRef:
-    """An open editor tab: a project file (``target`` and ``path``) or a read-only reference
-    file (``reference_id``, or ``target`` and ``path``)."""
+    """An open editor tab: a project file (``target`` and ``path``), a read-only reference
+    file (``reference_id``, or ``target`` and ``path``), or a game draft file (``REPOSITORY``,
+    ``path`` only)."""
 
     source: CrowdyStudioFileSource
     path: str

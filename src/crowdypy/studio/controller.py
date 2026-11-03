@@ -39,6 +39,14 @@ from crowdypy.domains.crowdy_studio import (
 )
 from crowdypy.errors import CrowdyError, CrowdyGraphQLError
 from crowdypy.studio.diagnostics import CrowdyStudioDiagnostic, parse_rustc_diagnostics
+from crowdypy.studio.draft import (
+    DraftChangeEvent,
+    DraftCommitResult,
+    DraftConflict,
+    DraftError,
+    DraftStore,
+    normalize_repo_path,
+)
 from crowdypy.studio.github_new_repo import github_new_repository_url, github_repository_slug
 from crowdypy.studio.models import (
     CrowdyStudioAtomicPatchInput,
@@ -64,9 +72,11 @@ __all__ = [
     "CrowdyStudioController",
     "CrowdyStudioDeployResult",
     "CrowdyStudioDeploymentPlan",
+    "CrowdyStudioDraftStoreFactory",
     "CrowdyStudioError",
     "CrowdyStudioInvokeResult",
     "CrowdyStudioLogLine",
+    "CrowdyStudioRepositoryDocument",
     "CrowdyStudioRuntimeStatus",
     "CrowdyStudioRuntimeSync",
     "CrowdyStudioState",
@@ -98,6 +108,8 @@ _CRATE_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 _LEGACY_CLIENT = re.compile(r"^\s*crowdy-compute-sdk\s*=", re.MULTILINE)
 _LOG_LEVELS: tuple[CrowdyStudioLogLevel, ...] = ("error", "warn", "info", "debug")
 _PREVIEW_LOG_LINES_KEPT = 100
+#: Editor keystrokes reach the game draft after this pause.
+_REPOSITORY_WRITE_DEBOUNCE_MS = 250
 _LEGACY_CLIENT_CRATE = (
     "This CLIENT crate depends on crowdy-compute-sdk, legacy player compute. On ck-exec a CLIENT "
     "target is a mod\u2019s CLIENT half, one crowdy-client-sdk crate: in Cargo.toml replace the "
@@ -235,6 +247,46 @@ class CrowdyStudioState:
     logs: tuple[CrowdyStudioLogLine, ...] = ()
     wallet: Any = None
     invoke_result: CrowdyStudioInvokeResult | None = None
+    #: True when the open project is a Construct game (``crowdyStudioGitHubLayout.kind`` is
+    #: ``CONSTRUCT_GAME``) and the host gave a draft store: the files are the game's
+    #: repository draft instead of the mod crates.
+    repository_mode: bool | None = None
+    #: Draft backend in use (``github``, ``dev-server``).
+    repository_store: str | None = None
+    #: Relative file paths in the draft; ``None`` while the first listing is in flight.
+    repository_files: tuple[str, ...] | None = None
+    #: Relative directory paths in the draft, excluding the root.
+    repository_directories: tuple[str, ...] | None = None
+    #: Draft paths that differ from the base commit.
+    repository_dirty: tuple[str, ...] | None = None
+    #: Paths the draft deletes.
+    repository_deleted: tuple[str, ...] | None = None
+    #: Paths the branch and the draft both changed; the player settles each.
+    repository_conflicts: tuple[DraftConflict, ...] | None = None
+    #: Commit the draft builds on.
+    repository_base_commit_sha: str | None = None
+    #: Draft revision; bumps on every change.
+    repository_revision: int | None = None
+    #: Open draft files and their text, with the hash they were read at.
+    repository_documents: tuple[CrowdyStudioRepositoryDocument, ...] | None = None
+    repository_message: str | None = None
+    repository_busy: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CrowdyStudioRepositoryDocument:
+    """An open file of the game draft: its text, and the blob id it was read at."""
+
+    path: str
+    content: str
+    hash: str | None = None
+
+
+class CrowdyStudioDraftStoreFactory(Protocol):
+    """Gives the controller the open Construct game's draft store, or ``None`` to keep the mod
+    editor (CrowdyJS's ``draftStore`` option)."""
+
+    def __call__(self, *, app_id: str, project_id: str, github_sha: str) -> DraftStore | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +333,7 @@ class CrowdyStudioController:
         grid_id: str,
         player_wallet: Any = None,
         github: Any = None,
+        draft_store: CrowdyStudioDraftStoreFactory | None = None,
         initial_project_id: str | None = None,
         grid: Any = None,
         on_host_call: Any = None,
@@ -311,6 +364,7 @@ class CrowdyStudioController:
         self._grid_id = str(grid_id)
         self._wallet = player_wallet
         self._github = github
+        self._draft_store_factory = draft_store
         self._initial_project_id = initial_project_id
         self._grid = grid
         self._on_host_call = on_host_call
@@ -339,6 +393,16 @@ class CrowdyStudioController:
         self._conflict_remote: CrowdyStudioProject | None = None
         self._broker: CrowdyStudioBroker | None = None
         self._operation_generation = 0
+        #: Game editor: the open Construct game's draft, or None in the mod editor.
+        self._draft: DraftStore | None = None
+        self._draft_project_id: str | None = None
+        self._draft_unsubscribe: Callable[[], None] | None = None
+        #: Layout kind per ``projectId@githubSha``; a commit's tree never changes.
+        self._layout_kinds: dict[str, str] = {}
+        #: Pending editor writes into the draft, by path (``None``: no loop to time on).
+        self._repository_writes: dict[str, asyncio.TimerHandle | None] = {}
+        self._editor_known = False
+        self._editor_known_waiters: list[asyncio.Future[None]] = []
         self._agent_operation_generation = 0
         self._github_status_generation = 0
         self._visible_surfaces: dict[CrowdyStudioPolledSurface, None] = {}
@@ -486,6 +550,8 @@ class CrowdyStudioController:
         )
         if first is not None:
             await self._load_project(first.project_id)
+        else:
+            self._mark_editor_known()
 
     async def create_project(
         self,
@@ -558,6 +624,7 @@ class CrowdyStudioController:
     async def _load_project(self, project_id: str) -> None:
         project = await self._provider.get_project(self._app_id, self._grid_id, project_id)
         self._install_project(project)
+        await self.refresh_repository_mode()
         if self._sync is not None:
             await self.refresh_checkpoints()
 
@@ -601,7 +668,8 @@ class CrowdyStudioController:
     # ------------------------------------------------------------------ files
 
     def open_file(self, ref: CrowdyStudioFileRef) -> None:
-        self._require_file(ref)
+        if ref.source != "REPOSITORY":
+            self._require_file(ref)
         open_files = self._state.open_files
         self._update(
             open_files=open_files if ref in open_files else (*open_files, ref), active_file=ref
@@ -615,7 +683,355 @@ class CrowdyStudioController:
         self._update(open_files=open_files, active_file=active)
 
     def file_content(self, ref: CrowdyStudioFileRef) -> str:
+        if ref.source == "REPOSITORY":
+            document = self._repository_document(ref.path)
+            return document.content if document is not None else ""
         return self._require_file(ref).content
+
+    # ------------------------------------------------------------------ game editor
+    # The draft of a bound Construct game.
+
+    @property
+    def draft_store(self) -> DraftStore | None:
+        """The open project's draft in the game editor; ``None`` in the mod editor."""
+        return self._draft
+
+    async def when_editor_known(self, timeout_ms: float = 15_000) -> None:
+        """Return once the first project load decided between the mod editor and the game
+        editor. Bounded, so a host that cannot reach the API still starts (in the mod editor)
+        instead of waiting forever."""
+        if self._editor_known:
+            return
+        waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._editor_known_waiters.append(waiter)
+        try:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(waiter, timeout_ms / 1000)
+        finally:
+            with contextlib.suppress(ValueError):
+                self._editor_known_waiters.remove(waiter)
+
+    async def refresh_repository_mode(self) -> None:
+        """Pick the editor for the open project. A GITHUB project the API classifies as
+        ``CONSTRUCT_GAME`` gets the host's draft store; anything else, or a host without one,
+        the mod editor. The kind is asked once per mirror commit."""
+        try:
+            project = self._state.project
+            factory = self._draft_store_factory
+            github = self._github
+            sha = project.github.sha if project is not None and project.github else None
+            if (
+                project is None
+                or project.source != "GITHUB"
+                or not sha
+                or github is None
+                or factory is None
+            ):
+                self._close_draft()
+                return
+            key = f"{project.project_id}@{sha}"
+            kind = self._layout_kinds.get(key)
+            if kind is None:
+                layout = await github.layout(
+                    {"appId": self._app_id, "projectId": project.project_id}
+                )
+                kind = str(getattr(layout, "kind", None) or "STUDIO_CRATES")
+                self._layout_kinds[key] = kind
+            if kind != "CONSTRUCT_GAME":
+                self._close_draft()
+                return
+            # The same game keeps its store: the store follows its own commits.
+            if self._draft is not None and self._draft_project_id == project.project_id:
+                return
+            self._close_draft()
+            store = factory(app_id=self._app_id, project_id=project.project_id, github_sha=sha)
+            if store is None:
+                return
+            self._draft = store
+            self._draft_project_id = project.project_id
+            self._draft_unsubscribe = store.subscribe(self._on_draft_change)
+            active = self._state.active_file
+            self._update(
+                repository_mode=True,
+                repository_store=store.kind,
+                repository_files=None,
+                repository_directories=None,
+                repository_documents=(),
+                repository_message=None,
+                open_files=tuple(ref for ref in self._state.open_files if ref.source != "PROJECT"),
+                active_file=None if active is not None and active.source == "PROJECT" else active,
+            )
+            await self.reload_repository()
+        except Exception as error:
+            self._update(repository_message=_message(error))
+        finally:
+            self._mark_editor_known()
+
+    async def reload_repository(self) -> None:
+        """Load the draft again (base tree and stored edits) for the file list."""
+        store = self._draft
+        if store is None:
+            return
+        self._update(repository_busy=True)
+        try:
+            snapshot = await store.load()
+            if store is not self._draft:
+                return
+            self._apply_draft_snapshot()
+            open_paths = [doc.path for doc in self._state.repository_documents or ()]
+            if open_paths:
+                await self._refresh_repository_documents(open_paths)
+            self._update(
+                repository_message=(
+                    "The repository is larger than the editor lists; some files are hidden."
+                    if snapshot.truncated
+                    else None
+                )
+            )
+        except Exception as error:
+            self._update(repository_message=_message(error))
+        finally:
+            self._update(repository_busy=False)
+
+    async def open_repository_file(self, path: str) -> None:
+        """Open one draft file in the editor."""
+        store = self._require_draft()
+        normalized = normalize_repo_path(path)
+        if not normalized:
+            raise CrowdyStudioError(f"{path} is not a file the game editor opens.")
+        read = await store.read([normalized])
+        if normalized in read.binary:
+            self._update(
+                repository_message=f"{normalized} is a binary file; the editor opens text only."
+            )
+            return
+        file = read.files[0] if read.files else None
+        if file is None:
+            raise CrowdyStudioError(f"{normalized} is not in the draft.")
+        ref = CrowdyStudioFileRef(source="REPOSITORY", path=normalized)
+        open_files = self._state.open_files
+        self._update(
+            repository_documents=_upsert_repository_document(
+                self._state.repository_documents or (), normalized, file.content, file.hash
+            ),
+            open_files=open_files if ref in open_files else (*open_files, ref),
+            active_file=ref,
+        )
+
+    def update_repository_file(self, path: str, content: str) -> None:
+        """A keystroke in a draft file. The text reaches the draft a moment later; the
+        player's typing wins over a concurrent agent write (the agent writes under a hash
+        precondition, so its next write reads again). Never a commit."""
+        current = self._repository_document(path)
+        if current is not None and current.content == content:
+            return
+        self._update(
+            repository_documents=_upsert_repository_document(
+                self._state.repository_documents or (),
+                path,
+                content,
+                current.hash if current is not None else None,
+            )
+        )
+        if self._draft is None:
+            return
+        pending = self._repository_writes.pop(path, None)
+        if pending is not None:
+            pending.cancel()
+
+        def fire() -> None:
+            self._repository_writes.pop(path, None)
+            self._spawn(self._write_repository_document(path))
+
+        self._repository_writes[path] = self._later(_REPOSITORY_WRITE_DEBOUNCE_MS, fire)
+
+    async def commit_repository(
+        self, message: str, *, paths: Sequence[str] | None = None
+    ) -> DraftCommitResult:
+        """Publish the draft (or the named paths) as one commit on the bound branch. When the
+        branch moved, the store rebases what does not collide and lists the rest in
+        ``repository_conflicts`` for :meth:`resolve_repository_conflict`."""
+        store = self._require_draft()
+        await self._flush_repository_writes()
+        self._update(repository_busy=True, repository_message="Committing\u2026")
+        try:
+            result = await store.commit(message, paths=paths)
+            count = len(result.committed)
+            self._update(
+                repository_message=(
+                    f"Committed {count} file{'' if count == 1 else 's'} as {result.commit_sha[:7]}."
+                )
+            )
+            # The project's github sha moved; the GitHub card and the mod tools read it.
+            if self._state.save_state == "SAVED":
+                self._spawn(self.reload_project())
+            return result
+        except Exception as error:
+            self._update(
+                repository_conflicts=tuple(store.conflicts()), repository_message=_message(error)
+            )
+            raise
+        finally:
+            self._update(repository_busy=False)
+
+    async def discard_repository_files(self, paths: Sequence[str] | None = None) -> None:
+        """Drop draft edits (every one when ``paths`` is ``None``)."""
+        store = self._require_draft()
+        for path in list(paths if paths is not None else self._repository_writes):
+            pending = self._repository_writes.pop(path, None)
+            if pending is not None:
+                pending.cancel()
+        await store.discard(paths)
+
+    async def resolve_repository_conflict(self, path: str, keep: Literal["mine", "theirs"]) -> None:
+        """``mine`` commits the draft over the branch's change; ``theirs`` drops the draft
+        edit."""
+        store = self._require_draft()
+        await store.resolve_conflict(path, keep)
+        self._update(repository_conflicts=tuple(store.conflicts()))
+        if keep == "theirs":
+            await self._refresh_repository_documents([path])
+
+    def _require_draft(self) -> DraftStore:
+        if self._draft is None:
+            raise DraftError("DRAFT_UNAVAILABLE", "This project has no game draft.")
+        return self._draft
+
+    def _repository_document(self, path: str) -> CrowdyStudioRepositoryDocument | None:
+        return next(
+            (doc for doc in self._state.repository_documents or () if doc.path == path), None
+        )
+
+    def _mark_editor_known(self) -> None:
+        if self._editor_known:
+            return
+        self._editor_known = True
+        waiters, self._editor_known_waiters = self._editor_known_waiters, []
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.set_result(None)
+
+    def _close_draft(self) -> None:
+        for timer in self._repository_writes.values():
+            if timer is not None:
+                timer.cancel()
+        self._repository_writes.clear()
+        unsubscribe, self._draft_unsubscribe = self._draft_unsubscribe, None
+        if unsubscribe is not None:
+            unsubscribe()
+        if self._draft is not None:
+            self._draft.dispose()
+        was_on = self._state.repository_mode is True
+        self._draft = None
+        self._draft_project_id = None
+        if not was_on:
+            return
+        active = self._state.active_file
+        self._update(
+            repository_mode=False,
+            repository_store=None,
+            repository_files=None,
+            repository_directories=None,
+            repository_dirty=None,
+            repository_deleted=None,
+            repository_conflicts=None,
+            repository_base_commit_sha=None,
+            repository_revision=None,
+            repository_documents=None,
+            repository_message=None,
+            open_files=tuple(ref for ref in self._state.open_files if ref.source != "REPOSITORY"),
+            active_file=None if active is not None and active.source == "REPOSITORY" else active,
+        )
+
+    def _apply_draft_snapshot(self) -> None:
+        store = self._draft
+        if store is None:
+            return
+        snapshot = store.snapshot()
+        files = tuple(entry.path for entry in snapshot.entries)
+        self._update(
+            repository_files=files,
+            repository_directories=_directories_of(files),
+            repository_dirty=tuple(entry.path for entry in snapshot.entries if entry.dirty),
+            repository_deleted=tuple(snapshot.deleted),
+            repository_conflicts=tuple(store.conflicts()),
+            repository_base_commit_sha=snapshot.base_commit_sha,
+            repository_revision=snapshot.revision,
+        )
+
+    def _on_draft_change(self, event: DraftChangeEvent) -> None:
+        if self._draft is None:
+            return
+        self._apply_draft_snapshot()
+        # The editor already shows its own keystrokes.
+        if event.source == "player":
+            return
+        open_paths = [doc.path for doc in self._state.repository_documents or ()]
+        if event.source in ("agent", "commit"):
+            touched = [change.path for change in event.changes if change.path in open_paths]
+        else:
+            touched = open_paths
+        if touched:
+            self._spawn(self._refresh_repository_documents(touched))
+
+    async def _refresh_repository_documents(self, paths: Sequence[str]) -> None:
+        """Read open documents from the draft again; one the player is still typing in is left
+        alone."""
+        store = self._draft
+        if store is None:
+            return
+        wanted = [path for path in paths if path not in self._repository_writes]
+        if not wanted:
+            return
+        read = await store.read(wanted)
+        if store is not self._draft:
+            return
+        documents: Sequence[CrowdyStudioRepositoryDocument] = self._state.repository_documents or ()
+        for file in read.files:
+            if file.path in self._repository_writes:
+                continue
+            documents = _upsert_repository_document(documents, file.path, file.content, file.hash)
+        gone = set(read.missing)
+        open_files = tuple(
+            ref
+            for ref in self._state.open_files
+            if not (ref.source == "REPOSITORY" and ref.path in gone)
+        )
+        active = self._state.active_file
+        active_gone = active is not None and active.source == "REPOSITORY" and active.path in gone
+        self._update(
+            repository_documents=tuple(doc for doc in documents if doc.path not in gone),
+            open_files=open_files,
+            active_file=(open_files[-1] if open_files else None) if active_gone else active,
+        )
+
+    async def _write_repository_document(self, path: str) -> None:
+        store = self._draft
+        document = self._repository_document(path)
+        if store is None or document is None:
+            return
+        try:
+            result = await store.write(path, document.content, source="player")
+            latest = self._repository_document(path)
+            if latest is not None and latest.content == document.content:
+                self._update(
+                    repository_documents=_upsert_repository_document(
+                        self._state.repository_documents or (),
+                        path,
+                        document.content,
+                        result.hash,
+                    )
+                )
+        except Exception as error:
+            self._update(repository_message=_message(error))
+
+    async def _flush_repository_writes(self) -> None:
+        pending = list(self._repository_writes)
+        for path in pending:
+            timer = self._repository_writes.pop(path, None)
+            if timer is not None:
+                timer.cancel()
+        await asyncio.gather(*(self._write_repository_document(path) for path in pending))
 
     def add_file(self, target: CrowdyStudioTarget, path: str, content: str = "") -> None:
         project = self._require_project()
@@ -1718,6 +2134,7 @@ class CrowdyStudioController:
         """Stop everything: timers, polling, the CLIENT half and the gateway connection."""
         if self._destroyed:
             return
+        self._close_draft()
         self._destroyed = True
         self._operation_generation += 1
         self._clear_save_timers()
@@ -2130,9 +2547,37 @@ def _upsert_checkpoint(
     return (checkpoint, *(c for c in checkpoints if c.checkpoint_id != checkpoint.checkpoint_id))
 
 
+def _upsert_repository_document(
+    documents: Sequence[CrowdyStudioRepositoryDocument],
+    path: str,
+    content: str,
+    hash: str | None = None,
+) -> tuple[CrowdyStudioRepositoryDocument, ...]:
+    return (
+        *(doc for doc in documents if doc.path != path),
+        CrowdyStudioRepositoryDocument(path, content, hash or None),
+    )
+
+
+def _directories_of(files: Sequence[str]) -> tuple[str, ...]:
+    """Every directory that holds one of ``files``, excluding the root."""
+    directories: set[str] = set()
+    for file in files:
+        slash = file.rfind("/")
+        while slash > 0:
+            directory = file[:slash]
+            if directory in directories:
+                break
+            directories.add(directory)
+            slash = directory.rfind("/")
+    return tuple(sorted(directories))
+
+
 def _file_ref_exists(
     project: CrowdyStudioProject, state: CrowdyStudioState, ref: CrowdyStudioFileRef
 ) -> bool:
+    if ref.source == "REPOSITORY":
+        return True
     if ref.source == "PROJECT":
         path = normalize_crowdy_studio_path(ref.path)
         return any(f.target == ref.target and f.path == path for f in project.files)

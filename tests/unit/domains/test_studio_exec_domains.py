@@ -39,6 +39,8 @@ from crowdypy.domains.crowdy_studio_github import (
     INLINE_OPERATIONS,
     CrowdyStudioGitHubConnectStart,
     CrowdyStudioGitHubFile,
+    CrowdyStudioGitHubFileContent,
+    CrowdyStudioGitHubFiles,
     CrowdyStudioGitHubLayout,
     CrowdyStudioGitHubRepo,
     CrowdyStudioGitHubTransport,
@@ -134,7 +136,9 @@ PORTED: dict[type, set[str]] = {
         "layout",
         "tree",
         "get_file",
+        "get_files",
         "put_file",
+        "commit_files",
         "delete_file",
     },
     # CrowdyJS's ExecAPI; connect and connect_as_developer open an ExecConnection.
@@ -1018,6 +1022,25 @@ async def test_the_github_transport_sends_named_operations_with_the_project_scop
             },
             "CrowdyStudioGitHubFile": file,
             "CrowdyStudioGitHubPutFile": {**file, "content": "fn b(){}", "commitSha": SHA_B},
+            "CrowdyStudioGitHubFiles": {
+                "commitSha": SHA_B,
+                "files": [
+                    {
+                        "path": "server/src/lib.rs",
+                        "sha": "abc",
+                        "size": 8,
+                        "binary": False,
+                        "content": "fn b(){}",
+                    }
+                ],
+                "missing": ["missing.rs"],
+            },
+            "CrowdyStudioGitHubCommitFiles": {
+                "commitSha": SHA_C,
+                "parentSha": SHA_B,
+                "written": ["a.rs"],
+                "deleted": ["b.rs"],
+            },
             "CrowdyStudioGitHubDeleteFile": {**GITHUB_STATUS, "githubSha": SHA_C},
         },
     )
@@ -1065,6 +1088,23 @@ async def test_the_github_transport_sends_named_operations_with_the_project_scop
         "expectedCommitSha": SHA_A,
     }
     assert (await github.put_file(put)).commit_sha == SHA_B
+    files = {**scope, "paths": ["server/src/lib.rs", "missing.rs"]}
+    assert await github.get_files(files) == CrowdyStudioGitHubFiles(
+        commit_sha=SHA_B,
+        files=[
+            CrowdyStudioGitHubFileContent(
+                path="server/src/lib.rs", sha="abc", size=8, binary=False, content="fn b(){}"
+            )
+        ],
+        missing=["missing.rs"],
+    )
+    commit = {
+        **scope,
+        "message": "two at once",
+        "expectedCommitSha": SHA_B,
+        "changes": [{"path": "a.rs", "content": "x"}, {"path": "b.rs", "delete": True}],
+    }
+    assert (await github.commit_files(commit)).written == ["a.rs"]
     delete = {**scope, "path": "server/src/old.rs", "message": "rm", "expectedCommitSha": SHA_B}
     assert (await github.delete_file(delete)).github_sha == SHA_C
 
@@ -1082,6 +1122,8 @@ async def test_the_github_transport_sends_named_operations_with_the_project_scop
         ("CrowdyStudioGitHubTree", {"input": scope}),
         ("CrowdyStudioGitHubFile", {"input": {**scope, "path": "server/src/lib.rs"}}),
         ("CrowdyStudioGitHubPutFile", {"input": put}),
+        ("CrowdyStudioGitHubFiles", {"input": files}),
+        ("CrowdyStudioGitHubCommitFiles", {"input": commit}),
         ("CrowdyStudioGitHubDeleteFile", {"input": delete}),
     ]
     # Each request carries its inline document, which never selects a token.

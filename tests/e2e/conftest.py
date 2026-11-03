@@ -116,15 +116,31 @@ _REGISTER = (
 )
 
 
+async def register_raw(email: str, **fields: Any) -> dict[str, Any]:
+    """One ``register`` request with ``fields`` beside the email and the derived password,
+    carrying the provisioning token when one is configured; the GraphQL response as it came."""
+    registration: dict[str, Any] = {"email": email, "password": derive_password(email), **fields}
+    token = _env("CROWDY_E2E_PROVISIONING_TOKEN")
+    async with httpx.AsyncClient(timeout=60.0) as http:
+        res = await http.post(
+            graphql_endpoint(CONFIG.api_url) or CONFIG.api_url,
+            json={"query": _REGISTER, "variables": {"i": registration}},
+            headers={"x-ck-provisioning-token": token} if token else {},
+        )
+    payload: dict[str, Any] = res.json()
+    return payload
+
+
 async def register_with_provisioning_token(
-    email: str, token: str, *, consent: bool = True
+    email: str, token: str, *, consent: bool = True, **fields: Any
 ) -> tuple[str, str]:
     """Dev and test are staff-only: a new account there needs the provisioning token, which
     only ``register`` reads. The SDK sends no test-only header, so this one request goes
     direct; the session it returns is handed to an ordinary client. ``consent=False`` leaves
     out both terms flags, as a request with no Origin may, so the account starts without the
-    stored documents a gameplay token waits for."""
-    registration: dict[str, Any] = {"email": email, "password": derive_password(email)}
+    stored documents a gameplay token waits for. ``fields`` go into the registration too (the
+    age screen's ``birthDate``, ``country`` and ``parentalConfirmation``)."""
+    registration: dict[str, Any] = {"email": email, "password": derive_password(email), **fields}
     if consent:
         registration.update({"acceptLegal": True, "attestAgeOfMajority": True})
     variables = {"i": registration}

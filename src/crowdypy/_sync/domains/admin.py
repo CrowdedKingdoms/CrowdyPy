@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from crowdypy._sync.domains.billing import BillingAPI
     from crowdypy._sync.domains.game_apps import GameAppsAPI
     from crowdypy._sync.domains.managed_players import ManagedPlayersAPI
+    from crowdypy._sync.domains.moderation import ModerationAPI
     from crowdypy._sync.domains.organizations import OrganizationsAPI
     from crowdypy._sync.domains.payments import PaymentsAPI
     from crowdypy._sync.domains.quotas import QuotasAPI
@@ -48,6 +49,8 @@ class AdminAPI:
     shared_environment: SharedEnvironmentAPI
     #: App grids and grid runtime-permission administration.
     grids: GameAppsAPI
+    #: An app's safety reports, for its moderators (``moderate_safety``).
+    moderation: ModerationAPI
 
     def __init__(
         self,
@@ -62,6 +65,7 @@ class AdminAPI:
         usage: UsageAPI,
         shared_environment: SharedEnvironmentAPI,
         grids: GameAppsAPI,
+        moderation: ModerationAPI,
     ) -> None:
         self.organizations = organizations
         self.managed_players = managed_players
@@ -73,3 +77,4 @@ class AdminAPI:
         self.usage = usage
         self.shared_environment = shared_environment
         self.grids = grids
+        self.moderation = moderation
