@@ -226,8 +226,9 @@ class SafetyAPI : public DomainBase {
   /// For a player under 18: ask a parent, through the consent service, to allow one medium in
   /// this app. The service emails `parentEmail`, which Crowded Kingdoms does not store; once
   /// the parent consents, the medium opens up to CONTACTS. PARENTAL_CONSENT_UNAVAILABLE
-  /// (graphql::parentalConsentUnavailableOf) while the deployment has no consent service;
-  /// RATE_LIMITED after three requests in an hour.
+  /// (graphql::parentalConsentUnavailableOf, whose `reason` says whether the deployment has no
+  /// consent service or the service refused or did not answer); RATE_LIMITED after three
+  /// requests in an hour.
   ParentalConsentRequest requestParentalConsent(std::string_view appId,
                                                 gen::ParentalConsentFeature feature,
                                                 std::string_view parentEmail) const {

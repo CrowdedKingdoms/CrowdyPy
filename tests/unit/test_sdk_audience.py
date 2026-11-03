@@ -65,6 +65,11 @@ PLATFORM_ONLY = {
     # player's data.
     "setTerritoryPolicy",
     "exportPlayerData",
+    # ck-api v2.61.0: CK's child-safety queue across apps, an operator's account erasure (a
+    # parent's request), and a parent's emailed withdrawal of consent.
+    "childSafetyReports",
+    "eraseAccount",
+    "recordParentalConsentWithdrawal",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",
@@ -164,6 +169,10 @@ def test_the_description_net_tells_platform_from_org_admin() -> None:
         "emailDeliverability",
         "allHostedGames",
         "checkouts",
+        "setTerritoryPolicy",
+        "exportPlayerData",
+        "childSafetyReports",
+        "recordParentalConsentWithdrawal",
     ):
         assert PLATFORM_DESCRIPTION.search(roots.get(name, "")), (
             f"{name} should read as platform-only"

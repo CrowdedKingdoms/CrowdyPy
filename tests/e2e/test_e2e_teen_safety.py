@@ -1,18 +1,38 @@
-"""The teen safety surface (ck-api v2.60.0) against a live deployment: sign-up with an age and
-a country, the refusals a tier still admitting adults only can give, the documents, a player's
-voice and video scopes, contacts, blocks, a report and its moderation, and an org-managed
-player's asserted age and country.
+"""The teen safety surface (ck-api v2.60.0 and v2.61.0) against a live deployment: sign-up with an
+age and a country, a sign-up from a blocked country refused before any account exists, the
+documents, a player's voice and video scopes, contacts, blocks, a report and its moderation,
+what existing accounts read (whether the app's organization appointed a safety moderator, a
+player's own records in the input log, the territory list's regions), and an org-managed
+player's asserted age, country and region.
+
+A tier's sign-ups are limited and shared (dev: 30 an hour per address, every attempt counts),
+so mind which tests register: the sign-up test one account (deleted at the end), the two-player
+scenarios two (reused within a run). The existing-account, Minecraft and managed-player
+scenarios register nobody. The two-player scenarios also need an owner that may administer the
+app's organization: on a tier that asks for the developer documents, one that has accepted them
+(``auth.developer_legal_acceptance()``), or its ``grant`` is refused. The existing-account scenario also needs ``CROWDY_E2E_PLAYER_EMAIL`` /
+``CROWDY_E2E_PLAYER_PASSWORD``, an existing player outside the app's organization; unset, it
+skips.
+
+``CROWDY_E2E_UNDER13_SIGNUP=1`` also checks that a sign-up under 13 is refused. Since ck-api
+v2.61.0 an age refusal at sign-up or at ``record_player_age`` blocks the same address and user
+agent from both for 24 hours, so never set it on a machine others register from; no other test
+declares an age the platform refuses.
 
 The managed-player scenarios need an organization's server credential: an org token with
-``players:mint`` (``CROWDY_E2E_ORG_TOKEN``) and one of that organization's apps
-(``CROWDY_E2E_MANAGED_APP_ID``); unset, they skip. A tier admitting adults only (the floor at
-18) refuses every minor, so the minor's defaults, parental consent and the safety-log refusal
-are left to the unit suites there.
+``players:mint`` and ``players:manage`` (``CROWDY_E2E_ORG_TOKEN``) and one of that
+organization's apps (``CROWDY_E2E_MANAGED_APP_ID``); unset, they skip. A managed refusal locks
+only that player (its organization and external id), and every run uses fresh ids. The region
+cases need a blocked region on the territory list (Ukraine's sanctioned regions since v2.61.0).
+The minor's defaults, parental consent and the safety-log and safety-moderator refusals need a
+minor's account, so they are left to the unit suites.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,6 +45,8 @@ from crowdypy.graphql import graphql_endpoint
 from e2e.conftest import (
     CONFIG,
     derive_email,
+    ensure_tier,
+    identity_client,
     owner_client,
     provision_player,
     register_raw,
@@ -53,38 +75,48 @@ async def test_sign_up_with_an_age_and_a_country_and_the_documents() -> None:
     assert not payload.get("errors"), payload["errors"] if payload.get("errors") else None
     async with crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url) as client:
         client.set_token(payload["data"]["register"]["token"])
-        me = await client.users.me()
-        assert (me["ageBracket"], me["country"]) == ("18_plus", "US")
-        with pytest.raises(crowdypy.CrowdyGraphQLError) as again:
-            await client.auth.record_player_age(birth_date="1990-05", country="US")
-        assert again.value.code == "CONFLICT"
+        try:
+            me = await client.users.me()
+            assert (me["ageBracket"], me["country"]) == ("18_plus", "US")
+            with pytest.raises(crowdypy.CrowdyGraphQLError) as again:
+                await client.auth.record_player_age(birth_date="1990-05", country="US")
+            assert again.value.code == "CONFLICT"
 
-        documents = await client.auth.player_legal_documents()
-        assert documents
-        assert all({"documentId", "version", "title", "url"} <= set(doc) for doc in documents)
-        assert isinstance(await client.auth.app_required_documents(CONFIG.app_id), list)
-        assert isinstance(await client.auth.developer_legal_documents(), list)
-        assert await client.auth.player_legal_acceptance(app_id=CONFIG.app_id) is True
-        assert await client.auth.record_player_consents(
-            accept_legal=True, attest_age_of_majority=True, app_id=CONFIG.app_id, method="CLICKWRAP"
-        )
+            documents = await client.auth.player_legal_documents()
+            assert documents
+            assert all({"documentId", "version", "title", "url"} <= set(doc) for doc in documents)
+            assert isinstance(await client.auth.app_required_documents(CONFIG.app_id), list)
+            assert isinstance(await client.auth.developer_legal_documents(), list)
+            assert await client.auth.player_legal_acceptance(app_id=CONFIG.app_id) is True
+            assert await client.auth.record_player_consents(
+                accept_legal=True,
+                attest_age_of_majority=True,
+                app_id=CONFIG.app_id,
+                method="CLICKWRAP",
+            )
 
-        policies = {p["countryCode"]: p for p in await client.platform.territory_policies()}
-        assert policies["DE"]["status"] == "blocked"
-        assert policies["KR"]["status"] == "open"
+            policies = await client.platform.territory_policies()
+            countries = {p["countryCode"]: p for p in policies if p["regionCode"] is None}
+            assert countries["DE"]["status"] == "blocked"
+            assert countries["KR"]["status"] == "open"
+        finally:
+            # The account is this test's alone: no later suite signs it in.
+            with contextlib.suppress(crowdypy.CrowdyError):
+                await client.users.delete_my_account()
 
 
 async def test_an_age_or_a_country_the_platform_refuses_makes_no_account() -> None:
-    under = await register_raw(
-        derive_email("py-young"),
-        acceptLegal=True,
-        birthDate=_years_ago(14),
-        country="US",
-        parentalConfirmation=True,
-    )
-    young = _refusal(under)
-    assert crowdypy.age_requirement_not_met_of(young), young.graphql_errors
-    assert not crowdypy.territory_not_supported_of(young)
+    if os.environ.get("CROWDY_E2E_UNDER13_SIGNUP") == "1":
+        under = await register_raw(
+            derive_email("py-young"),
+            acceptLegal=True,
+            birthDate=_years_ago(10),
+            country="US",
+            parentalConfirmation=True,
+        )
+        young = _refusal(under)
+        assert crowdypy.age_requirement_not_met_of(young), young.graphql_errors
+        assert not crowdypy.territory_not_supported_of(young)
 
     blocked = _refusal(
         await register_raw(
@@ -185,6 +217,71 @@ async def test_minecraft_sign_in_is_closed_to_an_app_that_is_not_crowded_kingdom
         assert refused.value.code in {"FORBIDDEN", "FEATURE_DISABLED"}
 
 
+# ---------------------------------------------------------------------- existing accounts
+
+PLAYER_EMAIL = os.environ.get("CROWDY_E2E_PLAYER_EMAIL", "").strip()
+PLAYER_PASSWORD = os.environ.get("CROWDY_E2E_PLAYER_PASSWORD", "").strip()
+existing = pytest.mark.skipif(
+    not (PLAYER_EMAIL and PLAYER_PASSWORD and CONFIG.owner_password),
+    reason="existing accounts: set CROWDY_E2E_PLAYER_EMAIL, CROWDY_E2E_PLAYER_PASSWORD and "
+    "CROWDY_E2E_OWNER_PASSWORD",
+)
+
+
+@existing
+async def test_existing_accounts_read_the_moderator_their_own_records_and_the_regions() -> None:
+    app = CONFIG.app_id
+    owner = await owner_client()
+    player, player_id = await identity_client(PLAYER_EMAIL, PLAYER_PASSWORD)
+    game: crowdypy.AsyncCrowdyClient | None = None
+    try:
+        # A member of the app's organization reads whether it appointed a safety moderator;
+        # an outsider reads None.
+        as_member = await owner.apps.app(app)
+        assert as_member is not None
+        assert isinstance(as_member["hasSafetyModerator"], bool), as_member
+        as_outsider = await player.apps.app(app)
+        assert as_outsider is not None
+        assert as_outsider["hasSafetyModerator"] is None
+
+        # The player's own records: the documents the tier asks for now, a token, its sessions.
+        if not await player.auth.player_legal_acceptance(app_id=app):
+            await player.auth.record_player_consents(accept_legal=True, app_id=app)
+        try:
+            minted = await player.portal.mint_app_token(app)
+        except crowdypy.CrowdyGraphQLError as error:
+            refusal = crowdypy.access_refusal_of(error)
+            if refusal is None or refusal.code != "ACCESS_NOT_GRANTED":
+                raise
+            tier = await ensure_tier(owner, app)
+            await owner.admin.app_access.grant({"appId": app, "userId": player_id, "tierId": tier})
+            minted = await player.portal.mint_app_token(app)
+        game = crowdypy.AsyncCrowdyClient(
+            http_url=CONFIG.http_url or minted.game_api_url or CONFIG.api_url,
+            discovery_url=minted.discovery_url or CONFIG.api_url,
+        )
+        game.set_app_token(minted)
+        page = await game.input_log.sessions(app, first=5)
+        assert isinstance(page["edges"], list)
+        assert {str(edge["node"]["userId"]) for edge in page["edges"]} <= {player_id}
+
+        # Every territory row has a regionCode, and a region's names its country.
+        policies = await player.platform.territory_policies()
+        assert all("regionCode" in p for p in policies)
+        for policy in policies:
+            if policy["regionCode"] is not None:
+                assert re.fullmatch(
+                    rf"{policy['countryCode']}-[A-Z0-9]{{1,3}}", policy["regionCode"]
+                ), policy
+    finally:
+        if game is not None:
+            await game.aclose()
+        for client in (player, owner):
+            with contextlib.suppress(crowdypy.CrowdyError):
+                await client.auth.logout()
+            await client.aclose()
+
+
 # ---------------------------------------------------------------------- org-managed players
 
 ORG_TOKEN = os.environ.get("CROWDY_E2E_ORG_TOKEN", "").strip()
@@ -218,32 +315,78 @@ def _external_id(tag: str) -> str:
     return f"crowdypy-e2e-{tag}-{secrets.token_hex(4)}"
 
 
+async def _admitted(external_id: str, **fields: Any) -> dict[str, Any]:
+    payload = await _org_mint(externalId=external_id, **fields)
+    assert not payload.get("errors"), (external_id, payload.get("errors"))
+    minted: dict[str, Any] = payload["data"]["mintManagedPlayerToken"]
+    return minted
+
+
 @managed
-async def test_a_managed_player_carries_the_age_and_country_its_organization_asserts() -> None:
-    external_id = _external_id("adult")
-    payload = await _org_mint(externalId=external_id, ageYears=30, country="US")
-    assert not payload.get("errors"), payload.get("errors")
-    minted = payload["data"]["mintManagedPlayerToken"]
-    async with crowdypy.AsyncCrowdyClient(
-        http_url=minted.get("gameApiUrl") or CONFIG.api_url
-    ) as game:
+async def test_managed_players_carry_what_their_organization_asserts_or_are_never_made() -> None:
+    adult = _external_id("adult")
+    minted = await _admitted(adult, ageYears=30, country="US")
+    created, refused = [adult], []
+    async with (
+        crowdypy.AsyncCrowdyClient(http_url=minted.get("gameApiUrl") or CONFIG.api_url) as game,
+        crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url) as org,
+    ):
+        org.set_token(ORG_TOKEN)
         game.set_app_token(game.portal.adopt_app_token(minted))
         me = await game.users.me()
         try:
+            assert me["userType"] == "org_managed"
             assert (me["ageBracket"], me["country"]) == ("18_plus", "US")
             assert (await game.safety.comm_settings(MANAGED_APP_ID))["isMinor"] is False
             assert len((await game.refresh_gameplay_token()).token) == 64
+
+            # Refused before a player exists: under the youngest age admitted, a blocked country.
+            young = _external_id("child")
+            refusal = _refusal(await _org_mint(externalId=young, ageYears=12, country="US"))
+            assert crowdypy.age_requirement_not_met_of(refusal), refusal.graphql_errors
+            german = _external_id("de")
+            refusal = _refusal(await _org_mint(externalId=german, ageYears=30, country="DE"))
+            assert crowdypy.territory_not_supported_of(
+                refusal
+            ) == crowdypy.CrowdyTerritoryNotSupported("DE"), refusal.graphql_errors
+            refused += [young, german]
+
+            # A country checked by region (ck-api v2.61.0): a blocked region and no region are
+            # refused, and another region of it is admitted.
+            policies = await game.platform.territory_policies()
+            blocked_region = next(
+                (p for p in policies if p["regionCode"] and p["status"] == "blocked"), None
+            )
+            if blocked_region is not None:
+                country = blocked_region["countryCode"]
+                in_region, no_region = _external_id("in-region"), _external_id("no-region")
+                refusal = _refusal(
+                    await _org_mint(
+                        externalId=in_region,
+                        ageYears=30,
+                        country=country,
+                        region=blocked_region["regionCode"],
+                    )
+                )
+                assert crowdypy.territory_not_supported_of(refusal), refusal.graphql_errors
+                refusal = _refusal(
+                    await _org_mint(externalId=no_region, ageYears=30, country=country)
+                )
+                assert crowdypy.territory_not_supported_of(refusal), refusal.graphql_errors
+                refused += [in_region, no_region]
+                rows = [p for p in policies if p["countryCode"] == country]
+                open_country = all(p["status"] != "blocked" for p in rows if not p["regionCode"])
+                if (
+                    country == "UA"
+                    and open_country
+                    and "UA-30" not in {p["regionCode"] for p in rows}
+                ):
+                    kyiv = _external_id("ua-30")
+                    await _admitted(kyiv, ageYears=30, country="UA", region="UA-30")
+                    created.append(kyiv)
+
+            for external_id in refused:
+                assert await org.managed_players.get(me["orgId"], external_id) is None, external_id
         finally:
-            async with crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url) as org:
-                org.set_token(ORG_TOKEN)
-                assert await org.managed_players.delete(me["orgId"], external_id)
-
-
-@managed
-async def test_a_managed_player_under_the_age_or_in_a_blocked_country_is_refused() -> None:
-    young = _refusal(await _org_mint(externalId=_external_id("child"), ageYears=12, country="US"))
-    assert crowdypy.age_requirement_not_met_of(young), young.graphql_errors
-    blocked = _refusal(await _org_mint(externalId=_external_id("de"), ageYears=30, country="DE"))
-    assert crowdypy.territory_not_supported_of(blocked) == crowdypy.CrowdyTerritoryNotSupported(
-        "DE"
-    ), blocked.graphql_errors
+            for external_id in created:
+                assert await org.managed_players.delete(me["orgId"], external_id), external_id

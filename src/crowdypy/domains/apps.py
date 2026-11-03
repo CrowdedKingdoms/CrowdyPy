@@ -146,7 +146,8 @@ class AppsAPI(Domain):
 
         Any signed-in caller: no org or app permission is checked, so it reads apps the
         caller does not own, of any visibility or status. Prefer :meth:`app_by_slug` for
-        marketplace lookups.
+        marketplace lookups. ``hasSafetyModerator`` (ck-api v2.61.0; :meth:`update` returns it
+        too) is ``None`` for a caller who is not a member of the app's organization.
         """
         result: dict[str, Any] | None = await self._request(ops.APP, {"appId": bigint(app_id)})
         return result
@@ -305,6 +306,13 @@ class AppsAPI(Domain):
         youngest age the app admits above the platform's, never below it; ``None`` returns it
         to the platform's, and ``effectiveMinPlayerAge`` reads the result. Younger players are
         refused ``AGE_REQUIREMENT_NOT_MET`` at their next mint or refresh.
+
+        App reads and this update also return ``hasSafetyModerator`` (ck-api v2.61.0): whether
+        the organization has appointed a safety moderator, a member whose own role grants
+        ``moderate_safety`` (an admin alone does not count). An app that admits players under
+        18 needs one, or its minors are refused ``SAFETY_MODERATOR_REQUIRED``
+        (:func:`crowdypy.errors.safety_moderator_required_of`). ``None`` for a caller who is
+        not a member of the app's organization.
         """
         result: dict[str, Any] = await self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}

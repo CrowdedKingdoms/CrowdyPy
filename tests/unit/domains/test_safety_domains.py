@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import msgspec
 import pytest
 
 import crowdypy
@@ -28,7 +29,9 @@ from crowdypy.domains import portal as portal_module
 from crowdypy.domains._base import Domain
 from crowdypy.domains.apps import AppsAPI
 from crowdypy.domains.auth import AuthAPI, PlayerAge
+from crowdypy.domains.input_log import InputLogAPI
 from crowdypy.domains.moderation import ModerationAPI
+from crowdypy.domains.platform import PlatformAPI
 from crowdypy.domains.portal import (
     AcceptedLegalDocument,
     AppTokenResponse,
@@ -395,10 +398,48 @@ def test_the_app_selections_carry_the_safety_log_and_the_ages() -> None:
             "replayLoggingRecordsVideo",
             "minPlayerAge",
             "effectiveMinPlayerAge",
+            "hasSafetyModerator",
         ):
-            assert field_name in operation.document, (operation.name, field_name)
+            assert re.search(rf"\b{field_name}\b", operation.document), (operation.name, field_name)
         assert re.search(r"recording \{\s*enabled\s+voice\s+video\s*\}", operation.document)
     assert re.search(r"\bageBracket\b[\s\S]*\bcountry\b", ops.ME.document)
+
+
+async def test_an_outsider_reads_no_safety_moderator(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    api.reply_with_root({"appId": "42", "hasSafetyModerator": None, "effectiveMinPlayerAge": 13})
+    app = await AppsAPI(graphql).app(42)
+    assert app is not None
+    assert app["hasSafetyModerator"] is None
+    assert (api.last.operation_name, api.last.variables) == ("App", {"appId": "42"})
+
+
+async def test_territory_policies_read_the_regions(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    api.reply_with_root(
+        [
+            {"countryCode": "DE", "regionCode": None, "status": "blocked", "minAge": 13},
+            {"countryCode": "UA", "regionCode": "UA-43", "status": "blocked", "minAge": 13},
+        ]
+    )
+    rows = await PlatformAPI(graphql).territory_policies()
+    assert [(r["countryCode"], r["regionCode"]) for r in rows] == [("DE", None), ("UA", "UA-43")]
+    assert (api.last.operation_name, api.last.variables) == ("TerritoryPolicies", {})
+    assert re.search(r"\{\s*countryCode\s+regionCode\s+status\s+minAge\s*\}", api.last.query)
+
+
+async def test_a_player_s_own_records_name_no_user(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    # On an app that admits players under 18 the server lists the caller's own sessions (a
+    # moderator's: the reported ones); the SDK must not add a userId of its own.
+    api.reply_with_root(
+        {"edges": [], "pageInfo": {"hasNextPage": False, "endCursor": None}, "totalCount": 0}
+    )
+    await InputLogAPI(graphql).sessions(42)
+    assert (api.last.operation_name, api.last.variables) == ("InputLogSessions", {"appId": "42"})
 
 
 # ---------------------------------------------------------------------- portal: Minecraft
@@ -457,7 +498,19 @@ def test_the_new_names_are_on_the_package_root() -> None:
     assert crowdypy.PlayerAge is PlayerAge
     assert crowdypy.MinecraftChallenge is MinecraftChallenge
     assert crowdypy.AcceptedLegalDocument is AcceptedLegalDocument
-    assert "ageYears" in crowdypy.ManagedPlayerAssertionClaims.__annotations__
-    assert {"age_years", "country"} <= set(
+    assert {"ageYears", "country", "region"} <= set(
+        crowdypy.ManagedPlayerAssertionClaims.__annotations__
+    )
+    assert {"age_years", "country", "region"} <= set(
         crowdypy.inputs.MintManagedPlayerTokenInput.__struct_fields__
     )
+    minted = crowdypy.inputs.MintManagedPlayerTokenInput(
+        app_id="42", external_id="p-1", age_years=30, country="UA", region="UA-30"
+    )
+    assert msgspec.to_builtins(minted) == {
+        "appId": "42",
+        "externalId": "p-1",
+        "ageYears": 30,
+        "country": "UA",
+        "region": "UA-30",
+    }

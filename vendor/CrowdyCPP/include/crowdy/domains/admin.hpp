@@ -201,6 +201,17 @@ class OrganizationsAPI : public detail::AdminDomain {
 /// portal().adoptAppToken(). This SDK has no wrapper for the org-token mint, on purpose: an
 /// org token signs in any of the organization's players and stays on its server.
 ///
+/// Age, country and region (ck-api v2.60.0, region v2.61.0): either way the organization says
+/// how old the player is and where it lives: `ageYears`, `country` (ISO 3166-1 alpha-2) and,
+/// where the country is checked by region (the regions platform().territoryPolicies() lists),
+/// `region` (ISO 3166-2, such as UA-30) on the mint's input or as the assertion's claims.
+/// Crowded Kingdoms stores an age bracket and the country on the player (the region is checked
+/// at each sign-in, not stored) and refuses the sign-in with TERRITORY_NOT_SUPPORTED in a
+/// country or region it does not serve, or without a region it needs, and
+/// AGE_REQUIREMENT_NOT_MET under the app's, the country's or the platform's youngest age,
+/// before the player is created. That refusal names no age, the same player is refused for 24
+/// hours whatever is sent, and a player that exists and is said to be under 13 is deleted.
+///
 /// These are the organization's administration: an org admin's session with
 /// `manage_players` (from the organization's server, an org token with `players:manage`
 /// also works for the six player operations).
@@ -506,6 +517,12 @@ class AppsAPI : public detail::AdminDomain {
   void mineAsync(graphql::GraphQLCallback cb) const {
     execUnwrapAsync(gen::apps::kMyAppsDocument, graphql::JVal(), {}, std::move(cb));
   }
+  /// One app. With the safety log and age fields, and `hasSafetyModerator` (ck-api v2.61.0):
+  /// whether the organization has appointed a safety moderator, a member whose own role grants
+  /// moderate_safety (an admin alone does not count). An app that admits players under 18
+  /// needs one, or its minors are refused SAFETY_MODERATOR_REQUIRED
+  /// (graphql::safetyModeratorRequiredOf). Null for a caller who is not a member of the app's
+  /// organization.
   graphql::Json get(std::string_view appId) const {
     return execUnwrap(gen::apps::kAppDocument, one("appId", graphql::JVal(appId)));
   }
@@ -570,6 +587,8 @@ class AppsAPI : public detail::AdminDomain {
   void createAsync(const graphql::JVal& input, graphql::GraphQLCallback cb) const {
     execUnwrapAsync(gen::apps::kCreateAppDocument, one("input", input), {}, std::move(cb));
   }
+  /// Update an app's mutable fields (manage_apps). The updated app carries the safety log and
+  /// age fields and `hasSafetyModerator`, as get() does.
   graphql::Json update(std::string_view appId, const graphql::JVal& input) const {
     return execUnwrap(gen::apps::kUpdateAppDocument,
                       two("appId", graphql::JVal(appId), "input", input));

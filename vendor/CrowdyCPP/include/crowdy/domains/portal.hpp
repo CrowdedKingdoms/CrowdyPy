@@ -47,7 +47,9 @@ struct MinecraftSignInParams {
   std::string username;
   /// The challenge's serverId, after the game joined it through Mojang's session service.
   std::string serverId;
-  /// From the game's own age screen: YYYY-MM-DD or YYYY-MM. Only the age bracket is kept.
+  /// From the game's own age screen: YYYY-MM-DD or YYYY-MM; the age is counted from the last
+  /// day of the month. Since ck-api v2.61.0 the year and month of the account's first admitted
+  /// sign-in decide its age from then on: a later sign-in's birthDate is not used.
   std::string birthDate;
   /// The country the player lives in, ISO 3166-1 alpha-2.
   std::string country;
@@ -94,6 +96,16 @@ class PortalAPI : public DomainBase {
   /// app-scoped gameplay token. The token is NOT stored on this client —
   /// build a per-game client with it. Free/open apps auto-grant access; paid
   /// apps require an existing entitlement (FORBIDDEN otherwise).
+  ///
+  /// The player gate (ck-api v2.60.0) runs at every mint and refresh, in this order:
+  /// TERRITORY_NOT_SUPPORTED (graphql::territoryNotSupportedOf), AGE_REQUIRED
+  /// (graphql::ageRequiredOf; AuthAPI::recordPlayerAge), AGE_REQUIREMENT_NOT_MET
+  /// (graphql::ageRequirementNotMetOf), then the documents (graphql::legalAcceptanceRequiredOf).
+  /// A player under 18 is also refused SAFETY_LOG_REQUIRED (graphql::safetyLogRequiredOf) in an
+  /// app without the safety log, then SAFETY_MODERATOR_REQUIRED
+  /// (graphql::safetyModeratorRequiredOf, ck-api v2.61.0) in one whose organization has
+  /// appointed no safety moderator. None of them is fixed by retrying, and no refusal names an
+  /// age.
   AppTokenResponse mintAppToken(std::string_view appId) const {
     graphql::JVal vars;
     vars["input"]["appId"] = appId;
@@ -342,8 +354,10 @@ class PortalAPI : public DomainBase {
   /// as exchangeManagedPlayerAssertion() does. The accepted documents are recorded with method
   /// IN_GAME. Refusals: MINECRAFT_VERIFICATION_FAILED (graphql::minecraftVerificationFailedOf;
   /// start again from minecraftChallenge), MINECRAFT_VERIFICATION_UNAVAILABLE (retryable),
-  /// TERRITORY_NOT_SUPPORTED, AGE_REQUIREMENT_NOT_MET, LEGAL_ACCEPTANCE_REQUIRED (with the
-  /// missing documents) and ORG_LEGAL_ACCEPTANCE_REQUIRED. Public; rate-limited per address.
+  /// TERRITORY_NOT_SUPPORTED (the declared country, or the network's country or region),
+  /// AGE_REQUIREMENT_NOT_MET (it names no age, and since ck-api v2.61.0 the same Minecraft
+  /// account is then refused for 24 hours whatever it sends), LEGAL_ACCEPTANCE_REQUIRED (with
+  /// the missing documents) and ORG_LEGAL_ACCEPTANCE_REQUIRED. Public; rate-limited per address.
   AppTokenResponse signInWithMinecraft(const MinecraftSignInParams& input) const {
     auto r = AppTokenResponse::fromJson(execUnwrap(
         gen::portal::documentFor(gen::portal::kSignInWithMinecraftOperationName),

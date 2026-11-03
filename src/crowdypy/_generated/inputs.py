@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: bdaf7879cff4b03d365ce265ebd3cf87e6ab12b0af2dc3a796758a39c7269adf
+schema.gql sha256: a760084351b81f2baf814053895c147a2c4190715fdb5f0d61a21b00c79f6fec
 """
 
 from __future__ import annotations
@@ -706,6 +706,7 @@ class MintManagedPlayerTokenInput(msgspec.Struct, kw_only=True, omit_defaults=Tr
     session_ttl_seconds: int | None | UnsetType = UNSET
     age_years: int | None | UnsetType = UNSET
     country: str | None | UnsetType = UNSET
+    region: str | None | UnsetType = UNSET
 
 
 class NearbyGridPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'user_id': 'userId', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
@@ -1095,9 +1096,10 @@ class SetTeamPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, renam
     max_groups_per_user: int | None | UnsetType = UNSET
 
 
-class SetTerritoryPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'country_code': 'countryCode', 'min_age': 'minAge'}):
-    'An operator’s change to one country’s policy.'
+class SetTerritoryPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'country_code': 'countryCode', 'region_code': 'regionCode', 'min_age': 'minAge'}):
+    'An operator’s change to the policy of one country, or of one of its regions.'
     country_code: str
+    region_code: str | None | UnsetType = UNSET
     status: str
     min_age: int | None | UnsetType = UNSET
     reason: str

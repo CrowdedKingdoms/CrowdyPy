@@ -111,8 +111,8 @@ struct GraphQLErrorDetail {
   /// elsewhere, and while a block lasts until lifted.
   std::string blockedUntil;
   /// extensions.reason on APP_PAUSED (why the app's runtime gate is not ACTIVE), on
-  /// ASSERTION_REJECTED (the check that failed) and on MINECRAFT_VERIFICATION_FAILED;
-  /// empty elsewhere.
+  /// ASSERTION_REJECTED (the check that failed), on MINECRAFT_VERIFICATION_FAILED and on
+  /// PARENTAL_CONSENT_UNAVAILABLE (why a parent cannot be asked); empty elsewhere.
   std::string reason;
   /// extensions.country on TERRITORY_NOT_SUPPORTED: the country refused (ISO 3166-1
   /// alpha-2), the one declared or asserted or the network's. Empty elsewhere.
@@ -183,8 +183,12 @@ inline constexpr std::string_view kTerritoryNotSupportedCode = "TERRITORY_NOT_SU
 /// extensions.code for an app that admits players under 18 without its safety log on (HTTP
 /// 403): a minor's mint there, or turning the log off; see safetyLogRequiredOf().
 inline constexpr std::string_view kSafetyLogRequiredCode = "SAFETY_LOG_REQUIRED";
-/// extensions.code for a parental-consent request the deployment cannot send yet (HTTP 503);
-/// see parentalConsentUnavailableOf().
+/// extensions.code for an app that admits players under 18 while its organization has appointed
+/// no safety moderator (HTTP 403, ck-api v2.61.0): a minor's mint there; see
+/// safetyModeratorRequiredOf().
+inline constexpr std::string_view kSafetyModeratorRequiredCode = "SAFETY_MODERATOR_REQUIRED";
+/// extensions.code for a parental-consent request that cannot be sent right now (HTTP 503), with
+/// why in extensions.reason; see parentalConsentUnavailableOf().
 inline constexpr std::string_view kParentalConsentUnavailableCode = "PARENTAL_CONSENT_UNAVAILABLE";
 /// extensions.code for a contact or block over its limit (HTTP 409): 100 waiting requests,
 /// 1,000 contacts or 1,000 blocks per app; see socialLimitReachedOf().
@@ -342,7 +346,12 @@ inline bool ageRequiredOf(const std::vector<GraphQLErrorDetail>& errors) {
 }
 
 /// True when the player is younger than the platform, the app or the country requires
-/// (AGE_REQUIREMENT_NOT_MET). Not fixed by retrying.
+/// (AGE_REQUIREMENT_NOT_MET). Not fixed by retrying, and asking for the age again changes
+/// nothing: since ck-api v2.61.0 the same client (address and user agent) is refused at
+/// sign-up and AuthAPI::recordPlayerAge for 24 hours whatever it sends, and an org-managed
+/// player at its sign-ins; an account that answers recordPlayerAge under 13 is deleted.
+/// Deliberately a bool: no refusal names an age. Tell the player they cannot play this,
+/// without naming an age or a minimum, and do not offer to enter the date again.
 inline bool ageRequirementNotMetOf(const std::vector<GraphQLErrorDetail>& errors) {
   return errorWithCode(errors, kAgeRequirementNotMetCode) != nullptr;
 }
@@ -367,10 +376,35 @@ inline bool safetyLogRequiredOf(const std::vector<GraphQLErrorDetail>& errors) {
   return errorWithCode(errors, kSafetyLogRequiredCode) != nullptr;
 }
 
-/// True when the deployment cannot ask a parent yet (PARENTAL_CONSENT_UNAVAILABLE): its
-/// consent service is not configured.
-inline bool parentalConsentUnavailableOf(const std::vector<GraphQLErrorDetail>& errors) {
-  return errorWithCode(errors, kParentalConsentUnavailableCode) != nullptr;
+/// True when a player under 18 was refused a token (SAFETY_MODERATOR_REQUIRED, ck-api v2.61.0)
+/// in an app that admits players under 18 while the app's organization has appointed no safety
+/// moderator (a member whose own role grants moderate_safety; an admin alone does not count).
+/// The player cannot fix it: tell them the app cannot admit them yet. The organization appoints
+/// one; `hasSafetyModerator` on AppsAPI::get says whether it has, for its members.
+inline bool safetyModeratorRequiredOf(const std::vector<GraphQLErrorDetail>& errors) {
+  return errorWithCode(errors, kSafetyModeratorRequiredCode) != nullptr;
+}
+
+/// extensions.reason values on PARENTAL_CONSENT_UNAVAILABLE, from the Game API release after
+/// v2.61.0. The set is open: the server may add one, so compare against these and treat
+/// anything else as unknown.
+inline constexpr std::string_view kParentalConsentNotConfigured = "not_configured";
+inline constexpr std::string_view kParentalConsentProviderRefused = "provider_refused";
+inline constexpr std::string_view kParentalConsentProviderUnavailable = "provider_unavailable";
+
+/// A PARENTAL_CONSENT_UNAVAILABLE refusal of SafetyAPI::requestParentalConsent: a parent cannot
+/// be asked right now. `reason` is extensions.reason: `not_configured` (the deployment has no
+/// consent service; retrying soon does not help), `provider_refused` or `provider_unavailable`
+/// (the service refused or did not answer); empty from an API that does not say (v2.61.0 and
+/// older). Voice and video stay off for the player meanwhile.
+struct ParentalConsentUnavailable {
+  std::string reason;
+};
+inline std::optional<ParentalConsentUnavailable> parentalConsentUnavailableOf(
+    const std::vector<GraphQLErrorDetail>& errors) {
+  const GraphQLErrorDetail* e = errorWithCode(errors, kParentalConsentUnavailableCode);
+  if (!e) return std::nullopt;
+  return ParentalConsentUnavailable{e->reason};
 }
 
 /// True when a contact request or a block is over its limit (SOCIAL_LIMIT_REACHED).

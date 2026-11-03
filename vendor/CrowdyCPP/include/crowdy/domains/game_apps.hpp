@@ -234,8 +234,11 @@ class PlatformAPI : public DomainBase {
   /// The countries Crowded Kingdoms lists (ck-api v2.60.0): those it does not serve ("blocked":
   /// sign-up and play are refused there with TERRITORY_NOT_SUPPORTED, by the country a player
   /// gives or connects from), and those with a minimum age above the platform's. A country not
-  /// listed is open at the platform's minimum. Public, so a sign-up form can use it before an
-  /// account exists; a sign-up screen names no age.
+  /// listed is open at the platform's minimum. Since ck-api v2.61.0 a row may be for one region
+  /// of a country (`regionCode`, ISO 3166-2, such as UA-43; null on a country's own row): a
+  /// country with a region listed is checked by region, so a connection whose region cannot be
+  /// told is refused there, and an organization sends its players' `region`. Public, so a
+  /// sign-up form can use it before an account exists; a sign-up screen names no age.
   std::vector<TerritoryPolicy> territoryPolicies() const {
     std::vector<TerritoryPolicy> out;
     execUnwrap(gen::platform::kTerritoryPoliciesDocument).forEach([&](graphql::Json p) {

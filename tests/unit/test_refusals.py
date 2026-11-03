@@ -22,6 +22,7 @@ from crowdypy.errors import (
     CrowdyLegalAcceptanceRequired,
     CrowdyMinecraftVerificationFailed,
     CrowdyMissingLegalDocument,
+    CrowdyParentalConsentUnavailable,
     CrowdyTerritoryNotSupported,
     access_refusal_of,
     account_blocked_of,
@@ -36,6 +37,7 @@ from crowdypy.errors import (
     minecraft_verification_unavailable_of,
     parental_consent_unavailable_of,
     safety_log_required_of,
+    safety_moderator_required_of,
     social_limit_reached_of,
     territory_not_supported_of,
 )
@@ -268,9 +270,33 @@ def test_safety_log_consent_and_social_limit_refusals() -> None:
     )
     assert social_limit_reached_of(later) is True
     assert safety_log_required_of(refused(code="SAFETY_LOG_REQUIRED")) is True
-    assert parental_consent_unavailable_of(refused(code="PARENTAL_CONSENT_UNAVAILABLE")) is True
     assert not safety_log_required_of(refused(code="PARENTAL_CONSENT_UNAVAILABLE"))
-    assert not parental_consent_unavailable_of(ValueError("x"))
+
+
+def test_the_safety_moderator_refusal_is_a_boolean_of_its_own() -> None:
+    assert safety_moderator_required_of(refused(code="SAFETY_MODERATOR_REQUIRED")) is True
+    assert safety_moderator_required_of(refused(code="SAFETY_LOG_REQUIRED")) is False
+    assert safety_log_required_of(refused(code="SAFETY_MODERATOR_REQUIRED")) is False
+    entry = {"message": "m", "extensions": {"code": "SAFETY_MODERATOR_REQUIRED"}}
+    assert safety_moderator_required_of(entry) is True
+    assert safety_moderator_required_of(None) is False
+
+
+def test_the_consent_refusal_carries_its_reason() -> None:
+    assert parental_consent_unavailable_of(
+        refused(code="PARENTAL_CONSENT_UNAVAILABLE")
+    ) == CrowdyParentalConsentUnavailable(None)
+    for reason in ("not_configured", "provider_refused", "provider_unavailable"):
+        assert parental_consent_unavailable_of(
+            refused(code="PARENTAL_CONSENT_UNAVAILABLE", reason=reason)
+        ) == CrowdyParentalConsentUnavailable(reason)
+    assert parental_consent_unavailable_of(
+        refused(code="PARENTAL_CONSENT_UNAVAILABLE", reason="")
+    ) == CrowdyParentalConsentUnavailable(None)
+    # Truthy, so `if parental_consent_unavailable_of(error):` reads as it did when it was a bool.
+    assert parental_consent_unavailable_of(refused(code="PARENTAL_CONSENT_UNAVAILABLE"))
+    assert parental_consent_unavailable_of(refused(code="RATE_LIMITED")) is None
+    assert parental_consent_unavailable_of(ValueError("x")) is None
 
 
 def test_the_teen_safety_codes_are_on_the_package_root() -> None:
@@ -280,6 +306,7 @@ def test_the_teen_safety_codes_are_on_the_package_root() -> None:
         "AGE_REQUIREMENT_NOT_MET_CODE": "AGE_REQUIREMENT_NOT_MET",
         "TERRITORY_NOT_SUPPORTED_CODE": "TERRITORY_NOT_SUPPORTED",
         "SAFETY_LOG_REQUIRED_CODE": "SAFETY_LOG_REQUIRED",
+        "SAFETY_MODERATOR_REQUIRED_CODE": "SAFETY_MODERATOR_REQUIRED",
         "PARENTAL_CONSENT_UNAVAILABLE_CODE": "PARENTAL_CONSENT_UNAVAILABLE",
         "SOCIAL_LIMIT_REACHED_CODE": "SOCIAL_LIMIT_REACHED",
         "MINECRAFT_VERIFICATION_FAILED_CODE": "MINECRAFT_VERIFICATION_FAILED",
@@ -288,3 +315,6 @@ def test_the_teen_safety_codes_are_on_the_package_root() -> None:
     assert {name: getattr(crowdypy, name) for name in codes} == codes
     assert crowdypy.age_requirement_not_met_of is age_requirement_not_met_of
     assert crowdypy.legal_acceptance_required_of is legal_acceptance_required_of
+    assert crowdypy.safety_moderator_required_of is safety_moderator_required_of
+    assert crowdypy.parental_consent_unavailable_of is parental_consent_unavailable_of
+    assert crowdypy.CrowdyParentalConsentUnavailable is CrowdyParentalConsentUnavailable

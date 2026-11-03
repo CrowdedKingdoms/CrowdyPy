@@ -280,8 +280,11 @@ class PortalAPI(Domain):
         (:func:`crowdypy.errors.age_requirement_not_met_of`) under the app's, the country's or
         the platform's youngest age; then the documents (``LEGAL_ACCEPTANCE_REQUIRED``). A
         player under 18 is also refused ``SAFETY_LOG_REQUIRED``
-        (:func:`crowdypy.errors.safety_log_required_of`) in an app without the safety log.
-        None of them is fixed by retrying.
+        (:func:`crowdypy.errors.safety_log_required_of`) in an app without the safety log,
+        then ``SAFETY_MODERATOR_REQUIRED``
+        (:func:`crowdypy.errors.safety_moderator_required_of`, ck-api v2.61.0) in one whose
+        organization has appointed no safety moderator. None of them is fixed by retrying,
+        and no refusal names an age.
         """
         payload = self._request(MINT_APP_TOKEN, {"input": {"appId": bigint(app_id)}})
         return msgspec.convert(payload, AppTokenResponse)

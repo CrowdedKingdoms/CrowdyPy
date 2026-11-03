@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: 439ca8e74e0711af255aea3ceefde3a07a4ab6bd29e725a60dd698e2581ca128
-// operations sha256: f602338457366db722f3e0f1ee2b1434ba698c9ff80f0df1f4255f81a493056c
+// schema.gql sha256: 3214d0f4ff85324b458d4e354fef0f4a041748094916947e23738b8bea5ffd62
+// operations sha256: a6ae158b4aa69a80f588ab751c05ec865ba86ea7883b6c96c69d815422c767c3
 
 #pragma once
 
@@ -965,6 +965,7 @@ inline constexpr std::string_view kAppDocument = R"gql(query App($appId: BigInt!
     }
     minPlayerAge
     effectiveMinPlayerAge
+    hasSafetyModerator
     claimOwnerKeys
     splitMode
     deploymentTarget
@@ -1003,6 +1004,7 @@ inline constexpr std::string_view kAppIsolatedDocument = R"gql(query App($appId:
     }
     minPlayerAge
     effectiveMinPlayerAge
+    hasSafetyModerator
     claimOwnerKeys
     splitMode
     deploymentTarget
@@ -1532,6 +1534,7 @@ inline constexpr std::string_view kUpdateAppDocument = R"gql(mutation UpdateApp(
     }
     minPlayerAge
     effectiveMinPlayerAge
+    hasSafetyModerator
     claimOwnerKeys
     updatedAt
   }
@@ -1557,6 +1560,7 @@ inline constexpr std::string_view kUpdateAppIsolatedDocument = R"gql(mutation Up
     }
     minPlayerAge
     effectiveMinPlayerAge
+    hasSafetyModerator
     claimOwnerKeys
     updatedAt
   }
@@ -8334,6 +8338,7 @@ inline constexpr std::string_view kPlatformConfigOperationName = "PlatformConfig
 inline constexpr std::string_view kTerritoryPoliciesDocument = R"gql(query TerritoryPolicies {
   territoryPolicies {
     countryCode
+    regionCode
     status
     minAge
   }
@@ -8341,6 +8346,7 @@ inline constexpr std::string_view kTerritoryPoliciesDocument = R"gql(query Terri
 inline constexpr std::string_view kTerritoryPoliciesIsolatedDocument = R"gql(query TerritoryPolicies {
   territoryPolicies {
     countryCode
+    regionCode
     status
     minAge
   }
