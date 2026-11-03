@@ -6,10 +6,18 @@ which raises ``INPUT_LOG_FUNDS_NEEDED`` unless the org wallet can spend the proj
 keeping one retention period of the app's recent traffic; ``extensions["requiredMicrousd"]`` and
 ``["spendableMicrousd"]`` say how much) has every client input the realtime servers accept
 recorded. These calls read them back on the app-scoped client for the app; an identity session
-token is refused. A player reads only the sessions and inputs they sent; a holder of
-``manage_apps`` on the app reads every session. Inputs are kept for the input log's published
-retention (up to about an hour longer), so an old session can still be listed after its inputs
-are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without input logging.
+token is refused. Every player reads the sessions and inputs they sent: on an app with the
+safety log, that is the player's own records (call :meth:`InputLogAPI.sessions` without a
+filter, then :meth:`InputLogAPI.messages` for one of them). A moderator (``moderate_safety``: an
+appointed moderator or the organization's admins, ck-api v2.60.0) reads only the sessions an
+open or escalated safety report covers (``client.moderation.reports(app_id)``, each report's
+``sessions``; ``filter`` ``userId`` narrows them). ``manage_apps`` reads every session and may
+filter by ``userId`` only on an app for adults (effective minimum age 18), and never a player
+under 18's (ck-api v2.61.0). Every read of another player's session is audited, and on an app
+that admits players under 18 every read is, the player's own included. Inputs are kept for the
+input log's published retention (up to about an hour longer), so an old session can still be
+listed after its inputs are gone. Both answer ``INPUT_LOG_UNAVAILABLE`` on a deployment without
+input logging.
 
 Recording is best-effort, and a session says what it lost: ``missingRecords`` counts the inputs
 the replication server accepted that never reached the log (0 when the recording is complete as
@@ -69,8 +77,10 @@ class InputLogAPI(Domain):
         """An app's recorded sessions, newest first: ``edges { cursor node }``, ``pageInfo``,
         ``totalCount``. A session is one game token's inputs.
 
-        ``filter`` takes ``userId`` (another user's needs ``manage_apps``, else ``FORBIDDEN``;
-        an int is sent as its decimal string), ``from`` / ``to`` and ``messageType``. Page with
+        ``filter`` takes ``userId`` (another user's needs ``manage_apps`` on an app for adults,
+        or ``moderate_safety`` on one that admits players under 18, where it narrows the
+        reported sessions; else ``FORBIDDEN``; an int is sent as its decimal string), ``from`` /
+        ``to`` and ``messageType``. Without it a player lists its own sessions. Page with
         ``first`` (default 50, max 200) and the previous page's ``pageInfo.endCursor`` as
         ``after``. A node carries ``missingRecords`` (see the module docstring). Its
         ``endReason`` is ``expired``, ``revoked``, ``reconnect`` or ``released`` as the client

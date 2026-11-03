@@ -8,9 +8,9 @@ login, and it is never required: a project starts in Crowdy Studio and may be bo
 
 Which token may call what is decided server-side: ``connect_url``, ``repos``, ``bind`` and
 ``unbind`` need the identity session; ``status``, ``layout``, ``tree``, ``get_file``,
-``put_file``, ``delete_file`` and ``refresh`` also work under a game's app-scoped token, for
-projects that token's user owns, so a game needs no identity session to author against
-GitHub.
+``get_files``, ``put_file``, ``delete_file``, ``commit_files`` and ``refresh`` also work under
+a game's app-scoped token, for projects that token's user owns, so a game needs no identity
+session to author against GitHub.
 
 Every field here is served only in the app's own datacenter: call it on the client that
 adopted the app's endpoint (the one that plays), never on one pointed at the shared origin.
@@ -27,11 +27,14 @@ from crowdypy._generated import inputs
 from crowdypy._operation import inline_operation
 from crowdypy._sync.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
-from crowdypy.domains.crowdy_studio_github import CrowdyStudioGitHubConnectStart, CrowdyStudioGitHubFile, CrowdyStudioGitHubLayout, CrowdyStudioGitHubRepo, CrowdyStudioGitHubStatus, CrowdyStudioGitHubTree, CrowdyStudioGitHubTreeEntry  # one class in both clients
+from crowdypy.domains.crowdy_studio_github import CrowdyStudioGitHubCommit, CrowdyStudioGitHubConnectStart, CrowdyStudioGitHubFile, CrowdyStudioGitHubFileContent, CrowdyStudioGitHubFiles, CrowdyStudioGitHubLayout, CrowdyStudioGitHubRepo, CrowdyStudioGitHubStatus, CrowdyStudioGitHubTree, CrowdyStudioGitHubTreeEntry  # one class in both clients
 
 __all__ = [
+    "CrowdyStudioGitHubCommit",
     "CrowdyStudioGitHubConnectStart",
     "CrowdyStudioGitHubFile",
+    "CrowdyStudioGitHubFileContent",
+    "CrowdyStudioGitHubFiles",
     "CrowdyStudioGitHubLayout",
     "CrowdyStudioGitHubRepo",
     "CrowdyStudioGitHubStatus",
@@ -39,6 +42,12 @@ __all__ = [
     "CrowdyStudioGitHubTree",
     "CrowdyStudioGitHubTreeEntry",
 ]
+
+
+
+
+
+
 
 
 
@@ -108,7 +117,23 @@ CROWDY_STUDIO_GITHUB_LAYOUT = inline_operation(
     "query",
     "crowdyStudioGitHubLayout",
     "\n  query CrowdyStudioGitHubLayout($input: CrowdyStudioGitHubAtCommitInput!) {\n"
-    "    crowdyStudioGitHubLayout(input: $input) { commitSha server client assets fromFile }\n"
+    "    crowdyStudioGitHubLayout(input: $input) { commitSha server client assets fromFile kind }\n"
+    "  }\n",
+)
+CROWDY_STUDIO_GITHUB_FILES = inline_operation(
+    "CrowdyStudioGitHubFiles",
+    "query",
+    "crowdyStudioGitHubFiles",
+    "\n  query CrowdyStudioGitHubFiles($input: CrowdyStudioGitHubFilesInput!) {\n"
+    "    crowdyStudioGitHubFiles(input: $input) { commitSha missing files { path sha size binary content } }\n"
+    "  }\n",
+)
+CROWDY_STUDIO_GITHUB_COMMIT_FILES = inline_operation(
+    "CrowdyStudioGitHubCommitFiles",
+    "mutation",
+    "crowdyStudioGitHubCommitFiles",
+    "\n  mutation CrowdyStudioGitHubCommitFiles($input: CrowdyStudioGitHubCommitFilesInput!) {\n"
+    "    crowdyStudioGitHubCommitFiles(input: $input) { commitSha parentSha written deleted }\n"
     "  }\n",
 )
 CROWDY_STUDIO_GITHUB_TREE = inline_operation(
@@ -155,6 +180,8 @@ INLINE_OPERATIONS = (
     CROWDY_STUDIO_GITHUB_TREE,
     CROWDY_STUDIO_GITHUB_FILE,
     CROWDY_STUDIO_GITHUB_PUT_FILE,
+    CROWDY_STUDIO_GITHUB_FILES,
+    CROWDY_STUDIO_GITHUB_COMMIT_FILES,
     CROWDY_STUDIO_GITHUB_DELETE_FILE,
 )
 
@@ -263,6 +290,25 @@ class CrowdyStudioGitHubTransport(Domain):
         """
         payload = self._request(CROWDY_STUDIO_GITHUB_PUT_FILE, {"input": input})
         return msgspec.convert(payload, CrowdyStudioGitHubFile)
+
+    def get_files(
+        self, input: inputs.CrowdyStudioGitHubFilesInput | Mapping[str, Any]
+    ) -> CrowdyStudioGitHubFiles:
+        """Up to 100 files at one commit (``commitSha``; default: the mirror commit) for one
+        operation against the per-user GitHub budget. Paths that are not files there come
+        back in ``missing``; binary or oversize blobs with ``content`` ``None``."""
+        payload = self._request(CROWDY_STUDIO_GITHUB_FILES, {"input": input})
+        return msgspec.convert(payload, CrowdyStudioGitHubFiles)
+
+    def commit_files(
+        self, input: inputs.CrowdyStudioGitHubCommitFilesInput | Mapping[str, Any]
+    ) -> CrowdyStudioGitHubCommit:
+        """Up to 100 writes and deletions as ONE commit on top of ``expectedCommitSha`` (the
+        project's ``github.sha``). A moved project or branch is refused with
+        ``GITHUB_STALE_SHA`` and nothing is written; the returned ``commit_sha`` is the new
+        ``github.sha``."""
+        payload = self._request(CROWDY_STUDIO_GITHUB_COMMIT_FILES, {"input": input})
+        return msgspec.convert(payload, CrowdyStudioGitHubCommit)
 
     def delete_file(
         self, input: inputs.CrowdyStudioGitHubDeleteFileInput | Mapping[str, Any]

@@ -42,12 +42,14 @@ from crowdypy._sync.domains.host import HostAPI
 from crowdypy._sync.domains.input_log import InputLogAPI
 from crowdypy._sync.domains.managed_players import ManagedPlayersAPI
 from crowdypy._sync.domains.marketplace import MarketplaceAPI
+from crowdypy._sync.domains.moderation import ModerationAPI
 from crowdypy._sync.domains.organizations import OrganizationsAPI
 from crowdypy._sync.domains.payments import PaymentsAPI
 from crowdypy._sync.domains.platform import PlatformAPI
 from crowdypy._sync.domains.player_wallet import PlayerWalletAPI
 from crowdypy._sync.domains.portal import AppTokenResponse, PkceStore, PortalAPI
 from crowdypy._sync.domains.quotas import QuotasAPI
+from crowdypy._sync.domains.safety import SafetyAPI
 from crowdypy._sync.domains.server_status import ServerStatusAPI
 from crowdypy._sync.domains.shared_environment import SharedEnvironmentAPI
 from crowdypy._sync.domains.state import StateAPI
@@ -138,11 +140,16 @@ class CrowdyClient:
         self.quotas = QuotasAPI(self.graphql)
         self.usage = UsageAPI(self.graphql)
         self.shared_environment = SharedEnvironmentAPI(self.graphql)
+        #: An app's safety reports for its moderators (``moderate_safety``; identity session).
+        self.moderation = ModerationAPI(self.graphql)
         self.chunks = ChunksAPI(self.graphql)
         self.voxels = VoxelsAPI(self.graphql)
         self.actors = ActorsAPI(self.graphql)
         self.teleport = TeleportAPI(self.graphql)
         self.input_log = InputLogAPI(self.graphql)
+        #: The player's own safety controls in an app (app token): voice and video scopes,
+        #: contacts, blocks, a parent's consent, and reports to the app's moderators.
+        self.safety = SafetyAPI(self.graphql)
         self.state = StateAPI(self.graphql)
         self.server_status = ServerStatusAPI(self.graphql)
         self.channels = ChannelsAPI(self.graphql)
@@ -168,6 +175,7 @@ class CrowdyClient:
             usage=self.usage,
             shared_environment=self.shared_environment,
             grids=self.game_apps,
+            moderation=self.moderation,
         )
         #: Native UDP replication for this client's app (CrowdyCPP's connection).
         self.udp = UdpAPI(self)
