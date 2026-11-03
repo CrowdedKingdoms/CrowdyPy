@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.24.0: appointed moderators, regions, and the consent refusal's reason.** ck-api v2.61.0 refuses a player under 18 `SAFETY_MODERATOR_REQUIRED` in an app whose organization has appointed no safety moderator (`crowdypy.errors.safety_moderator_required_of`; `apps.app()` reads `hasSafetyModerator` for the organization's members), checks some countries by region (`region` on an org-managed player's mint and assertion, `regionCode` on `platform.territory_policies()`), and says why parental consent cannot be requested: `parental_consent_unavailable_of` now returns a `CrowdyParentalConsentUnavailable` with its `reason`, or `None`. An age refusal at sign-up stops the same client for 24 hours. It needs ck-api v2.61.0 on the tier. CrowdyJS 18.25.0 and CrowdyCPP 0.76.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.23.0: teen safety.** ck-api v2.60.0's age, territory and documents gate, and a player's own safety controls. `auth.register` takes the age screen's `birth_date`, `country` and `parental_confirmation`, `auth.record_player_age` gives an account its age once, and `crowdypy.errors` reads the gate's refusals (`age_requirement_not_met_of` is deliberately a boolean: no refusal names an age). `client.safety` holds the voice and video scopes, contacts, blocks, a parent's consent and reports; `client.moderation` is the app's moderators'; `apps.recording` is what the notice and the indicator show. Org-managed players carry `ageYears` and `country`. It also brings CrowdyJS 18.23's Studio game editor (`CrowdyStudioController(draft_store=...)`). It needs ck-api v2.60.0 on the tier. CrowdyJS 18.24.0 and CrowdyCPP 0.75.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.22.0: a deploy's dropped node types.** `exec.instances` returns `orphaned`, true for an instance whose node type the app's active version no longer deploys: ck-exec 0.19 stops such an instance at once when a deploy or a rollback drops its type, and keeps its saved state. It needs Game API v2.58.0 on the tier. CrowdyJS 18.22.0 and CrowdyCPP 0.74.0. See [MIGRATION.md](MIGRATION.md).
@@ -221,8 +223,11 @@ error 33 (`APP_PAUSED`). `crowdypy.app_paused_of(error)`, `access_refusal_of(err
 Every mint and refresh passes the player gate (ck-api v2.60.0), and its refusals have readers
 too: `territory_not_supported_of` (with the `country`), `age_required_of` (give the age with
 `auth.record_player_age`), `age_requirement_not_met_of` (a boolean: no refusal names an age),
-`legal_acceptance_required_of` (with the `missing_documents`) and `safety_log_required_of`.
-`client.safety` answers `social_limit_reached_of` and `parental_consent_unavailable_of`.
+`legal_acceptance_required_of` (with the `missing_documents`), `safety_log_required_of` and
+`safety_moderator_required_of` (ck-api v2.61.0). `client.safety` answers
+`social_limit_reached_of` and `parental_consent_unavailable_of` (with the `reason`). After an
+age refusal at sign-up or at `record_player_age`, the same client is refused both for 24 hours
+whatever it sends: do not ask again.
 
 ## Player safety
 

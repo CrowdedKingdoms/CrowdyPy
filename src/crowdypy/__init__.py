@@ -68,6 +68,7 @@ _LAZY: dict[str, str] = {
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "PARENTAL_CONSENT_UNAVAILABLE_CODE": "crowdypy.errors",
     "SAFETY_LOG_REQUIRED_CODE": "crowdypy.errors",
+    "SAFETY_MODERATOR_REQUIRED_CODE": "crowdypy.errors",
     "SOCIAL_LIMIT_REACHED_CODE": "crowdypy.errors",
     "TERRITORY_NOT_SUPPORTED_CODE": "crowdypy.errors",
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
@@ -84,6 +85,7 @@ _LAZY: dict[str, str] = {
     "CrowdyMinecraftVerificationFailed": "crowdypy.errors",
     "CrowdyMissingLegalDocument": "crowdypy.errors",
     "CrowdyNetworkError": "crowdypy.errors",
+    "CrowdyParentalConsentUnavailable": "crowdypy.errors",
     "CrowdyPlayerFault": "crowdypy.errors",
     "CrowdyProtocolError": "crowdypy.errors",
     "CrowdyRealtimeError": "crowdypy.errors",
@@ -107,6 +109,7 @@ _LAZY: dict[str, str] = {
     "org_legal_acceptance_required_of": "crowdypy.errors",
     "parental_consent_unavailable_of": "crowdypy.errors",
     "safety_log_required_of": "crowdypy.errors",
+    "safety_moderator_required_of": "crowdypy.errors",
     "social_limit_reached_of": "crowdypy.errors",
     "territory_not_supported_of": "crowdypy.errors",
     "is_app_paused": "crowdypy.errors",
@@ -505,6 +508,9 @@ if TYPE_CHECKING:
         SAFETY_LOG_REQUIRED_CODE as SAFETY_LOG_REQUIRED_CODE,
     )
     from crowdypy.errors import (
+        SAFETY_MODERATOR_REQUIRED_CODE as SAFETY_MODERATOR_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
         SOCIAL_LIMIT_REACHED_CODE as SOCIAL_LIMIT_REACHED_CODE,
     )
     from crowdypy.errors import (
@@ -551,6 +557,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         CrowdyNetworkError as CrowdyNetworkError,
+    )
+    from crowdypy.errors import (
+        CrowdyParentalConsentUnavailable as CrowdyParentalConsentUnavailable,
     )
     from crowdypy.errors import (
         CrowdyPlayerFault as CrowdyPlayerFault,
@@ -626,6 +635,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         safety_log_required_of as safety_log_required_of,
+    )
+    from crowdypy.errors import (
+        safety_moderator_required_of as safety_moderator_required_of,
     )
     from crowdypy.errors import (
         social_limit_reached_of as social_limit_reached_of,

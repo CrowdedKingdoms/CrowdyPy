@@ -34,6 +34,7 @@ __all__ = [
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "PARENTAL_CONSENT_UNAVAILABLE_CODE",
     "SAFETY_LOG_REQUIRED_CODE",
+    "SAFETY_MODERATOR_REQUIRED_CODE",
     "SOCIAL_LIMIT_REACHED_CODE",
     "TERRITORY_NOT_SUPPORTED_CODE",
     "WRONG_DATACENTER_CODE",
@@ -51,6 +52,7 @@ __all__ = [
     "CrowdyMinecraftVerificationFailed",
     "CrowdyMissingLegalDocument",
     "CrowdyNetworkError",
+    "CrowdyParentalConsentUnavailable",
     "CrowdyPlayerFault",
     "CrowdyProtocolError",
     "CrowdyRealtimeError",
@@ -76,6 +78,7 @@ __all__ = [
     "parental_consent_unavailable_of",
     "player_fault_of",
     "safety_log_required_of",
+    "safety_moderator_required_of",
     "social_limit_reached_of",
     "territory_not_supported_of",
 ]
@@ -124,8 +127,11 @@ TERRITORY_NOT_SUPPORTED_CODE = "TERRITORY_NOT_SUPPORTED"
 #: The app does not keep the safety log where it must (HTTP 403); see
 #: :func:`safety_log_required_of`.
 SAFETY_LOG_REQUIRED_CODE = "SAFETY_LOG_REQUIRED"
-#: Parental consent cannot be requested on this deployment (HTTP 503); see
-#: :func:`parental_consent_unavailable_of`.
+#: The app admits players under 18 and its organization has appointed no safety moderator
+#: (HTTP 403); see :func:`safety_moderator_required_of`.
+SAFETY_MODERATOR_REQUIRED_CODE = "SAFETY_MODERATOR_REQUIRED"
+#: Parental consent cannot be requested right now (HTTP 503), with why in
+#: ``extensions.reason``; see :func:`parental_consent_unavailable_of`.
 PARENTAL_CONSENT_UNAVAILABLE_CODE = "PARENTAL_CONSENT_UNAVAILABLE"
 #: The player has as many contacts, waiting requests or blocks in the app as the platform
 #: allows (HTTP 409); see :func:`social_limit_reached_of`.
@@ -376,6 +382,16 @@ class CrowdyMinecraftVerificationFailed:
     reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CrowdyParentalConsentUnavailable:
+    """A ``PARENTAL_CONSENT_UNAVAILABLE`` refusal: a parent cannot be asked right now."""
+
+    #: ``extensions.reason``: ``not_configured`` (the deployment has no consent service),
+    #: ``provider_refused`` (the service refused the request) or ``provider_unavailable`` (it
+    #: did not answer), an open set; ``None`` from an API that does not say.
+    reason: str | None
+
+
 def _extensions_with_code(value: object, code: str) -> Mapping[str, Any] | None:
     """The extensions of the first error entry carrying ``code``, from a raised
     :class:`CrowdyGraphQLError` or one raw GraphQL error entry."""
@@ -510,20 +526,23 @@ def age_required_of(value: object) -> bool:
 def age_requirement_not_met_of(value: object) -> bool:
     """Whether an error is an ``AGE_REQUIREMENT_NOT_MET`` refusal (HTTP 403): by age, the
     player may not play this app, or create or administer an organization. Not retryable, and
-    asking for the age again changes nothing: an account keeps the answer it gave.
+    asking for the age again changes nothing: an account keeps the answer it gave, and since
+    ck-api v2.61.0 the same client (address and user agent) is refused at sign-up and
+    ``auth.record_player_age`` for 24 hours whatever it sends, and an org-managed player at its
+    sign-ins. An account that answers ``record_player_age`` with an age under 13 is deleted.
 
     Deliberately a boolean. No refusal names an age: tell the player they cannot play this,
-    without naming an age or a minimum, and do not offer to enter the date again. Older APIs
-    put ``minimumAge`` and ``ageBracket`` in the extensions; this reader does not surface them,
-    and a game must not show them."""
+    without naming an age or a minimum, and do not offer to enter the date again. v2.60.0 put
+    ``minimumAge`` and ``ageBracket`` in the extensions (v2.61.0 does not); this reader never
+    surfaces them, and a game must not show them."""
     return _extensions_with_code(value, AGE_REQUIREMENT_NOT_MET_CODE) is not None
 
 
 def territory_not_supported_of(value: object) -> CrowdyTerritoryNotSupported | None:
     """A ``TERRITORY_NOT_SUPPORTED`` refusal (HTTP 403), or ``None``: Crowded Kingdoms does not
     serve the player's country (the one they connect from, the one they declared, or the one
-    their organization asserted). Not retryable; tell the player it is not available where
-    they are."""
+    their organization asserted) or, since ck-api v2.61.0, their region of a country it checks
+    by region. Not retryable; tell the player it is not available where they are."""
     extensions = _extensions_with_code(value, TERRITORY_NOT_SUPPORTED_CODE)
     if extensions is None:
         return None
@@ -540,11 +559,31 @@ def safety_log_required_of(value: object) -> bool:
     return _extensions_with_code(value, SAFETY_LOG_REQUIRED_CODE) is not None
 
 
-def parental_consent_unavailable_of(value: object) -> bool:
-    """Whether an error is a ``PARENTAL_CONSENT_UNAVAILABLE`` refusal (HTTP 503) from
-    ``safety.request_parental_consent``: the deployment's consent service is not configured.
-    Not fixed by retrying soon; voice and video stay off for the player meanwhile."""
-    return _extensions_with_code(value, PARENTAL_CONSENT_UNAVAILABLE_CODE) is not None
+def safety_moderator_required_of(value: object) -> bool:
+    """Whether an error is a ``SAFETY_MODERATOR_REQUIRED`` refusal (HTTP 403, ck-api v2.61.0): a
+    player under 18 is refused a token in an app that admits players under 18 while the app's
+    organization has appointed no safety moderator (a member whose own role grants
+    ``moderate_safety``; an admin alone does not count). The player cannot fix it: tell them
+    the app cannot admit them yet. The organization appoints one; ``hasSafetyModerator`` on
+    ``apps.app`` (for the organization's members) says whether it has."""
+    return _extensions_with_code(value, SAFETY_MODERATOR_REQUIRED_CODE) is not None
+
+
+def parental_consent_unavailable_of(value: object) -> CrowdyParentalConsentUnavailable | None:
+    """A ``PARENTAL_CONSENT_UNAVAILABLE`` refusal (HTTP 503) from
+    ``safety.request_parental_consent``, or ``None``: a parent cannot be asked right now.
+    ``reason`` is ``not_configured`` (the deployment has no consent service; retrying soon does
+    not help), ``provider_refused`` or ``provider_unavailable`` (the service refused or did not
+    answer), or ``None`` from an API that does not say. Voice and video stay off for the player
+    meanwhile.
+
+    Since 0.24.0 a refusal reads as a :class:`CrowdyParentalConsentUnavailable` instead of
+    ``True``: ``if parental_consent_unavailable_of(error):`` works as before."""
+    extensions = _extensions_with_code(value, PARENTAL_CONSENT_UNAVAILABLE_CODE)
+    if extensions is None:
+        return None
+    reason = extensions.get("reason")
+    return CrowdyParentalConsentUnavailable(reason if isinstance(reason, str) and reason else None)
 
 
 def social_limit_reached_of(value: object) -> bool:

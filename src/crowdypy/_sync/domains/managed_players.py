@@ -23,15 +23,17 @@ for the acceptance, on purpose: it binds the organization, so a person makes it,
 tier that does not serve org-managed players answers ``FEATURE_DISABLED`` to every field.
 
 Age and country (ck-api v2.60.0): either way the organization says how old the player is and
-where it lives: ``ageYears`` and ``country`` on the mint's input
-(``crowdypy.inputs.MintManagedPlayerTokenInput``) or as the assertion's claims
-(:class:`ManagedPlayerAssertionClaims`). Crowded Kingdoms stores an age bracket and the country
-on the player, applies a minor's defaults itself, and refuses the sign-in with
-``TERRITORY_NOT_SUPPORTED`` in a country it does not serve and ``AGE_REQUIREMENT_NOT_MET`` under
-the app's, the country's or the platform's youngest age, before the player is created. Both are
-optional while every managed player is 18 or older under the Org-Managed Players Addendum (left
-out, the player counts as an adult), and required once the platform admits players under 18
-(``AGE_REQUIRED`` without an age).
+where it lives: ``ageYears``, ``country`` and, where the country is checked by region,
+``region`` (v2.61.0) on the mint's input (``crowdypy.inputs.MintManagedPlayerTokenInput``) or as
+the assertion's claims (:class:`ManagedPlayerAssertionClaims`). Crowded Kingdoms stores an age
+bracket and the country on the player, applies a minor's defaults itself, and refuses the
+sign-in with ``TERRITORY_NOT_SUPPORTED`` in a country or region it does not serve (or without a
+region it needs) and ``AGE_REQUIREMENT_NOT_MET`` under the app's, the country's or the
+platform's youngest age, before the player is created. That refusal names no age, the same
+player is refused for 24 hours whatever is sent, and a player that exists and is said to be
+under 13 is deleted. The age and country are optional while every managed player is 18 or older
+under the Org-Managed Players Addendum (left out, the player counts as an adult), and required
+once the platform admits players under 18 (``AGE_REQUIRED`` without an age).
 """
 
 from __future__ import annotations

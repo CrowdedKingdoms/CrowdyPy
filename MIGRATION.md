@@ -3,6 +3,41 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.24.0
+
+CrowdyJS 18.25.0 and CrowdyCPP 0.76.0. `apps.app()` and `apps.update()` select
+`hasSafetyModerator`, and `platform.territory_policies()` selects `regionCode`, so they need
+ck-api v2.61.0 on the tier (an older API refuses the fields with a GraphQL validation error).
+Dev runs it with players from 13 admitted.
+
+- **One change of type:** `crowdypy.errors.parental_consent_unavailable_of(error)` returns a
+  `CrowdyParentalConsentUnavailable` or `None` instead of a boolean. Its `reason` is
+  `not_configured` (the deployment has no consent service), `provider_refused` or
+  `provider_unavailable` (the service refused or did not answer), or `None` from an API that
+  does not say (v2.61.0 does not; the release after it does). `if
+  parental_consent_unavailable_of(error):` works as before; replace a comparison with `True`.
+- **Appointed moderators.** A player under 18 is refused `SAFETY_MODERATOR_REQUIRED`
+  (`safety_moderator_required_of`, `SAFETY_MODERATOR_REQUIRED_CODE`) in an app that admits
+  players under 18 while its organization has appointed no safety moderator: a member whose own
+  role grants `moderate_safety` (an admin alone does not count). `apps.app()` reads
+  `hasSafetyModerator`, whether it has one, for the organization's members (`None` for anyone
+  else).
+- **Regions.** A country Crowded Kingdoms checks by region (Ukraine today) needs the player's
+  ISO 3166-2 region: `region` on the managed-player mint's input
+  (`crowdypy.inputs.MintManagedPlayerTokenInput`) and on `ManagedPlayerAssertionClaims`.
+  Without it, or in a blocked region, the sign-in is refused `TERRITORY_NOT_SUPPORTED`.
+  `platform.territory_policies()` rows carry `regionCode` (`None` on a country's own row).
+- **No refusal names an age** (`AGE_REQUIREMENT_NOT_MET` has no extensions), the same client
+  is refused at sign-up and `auth.record_player_age` for 24 hours after one, an account that
+  answers `record_player_age` under 13 is deleted, and an org-managed player said to be under
+  13 is too.
+- **A player's own records.** On an app with the safety log a player reads its own sessions
+  with `input_log.sessions(app_id)` and `messages`; on an app that admits players under 18,
+  `manage_apps` reads nothing more and moderators read the sessions a report covers.
+
+The operator's `childSafetyReports`, `eraseAccount` and `recordParentalConsentWithdrawal` are
+not wrapped. The schema is ck-api's at `dev/v2.61.0`.
+
 ## 0.23.0
 
 CrowdyJS 18.24.0 and CrowdyCPP 0.75.0. Additive, but `users.me()`, `apps.app()` and

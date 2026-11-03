@@ -202,12 +202,16 @@ struct LegalDocument {
   }
 };
 
-/// A country Crowded Kingdoms lists (territoryPolicies): `status` "blocked" refuses its
-/// players with TERRITORY_NOT_SUPPORTED, and `minAge` raises the youngest age admitted there.
-/// A country not listed is open at the platform's minimum.
+/// A country, or a region of one, that Crowded Kingdoms lists (territoryPolicies): `status`
+/// "blocked" refuses its players with TERRITORY_NOT_SUPPORTED, and `minAge` raises the
+/// youngest age admitted there. A country not listed is open at the platform's minimum. A
+/// country with a region listed is checked by region (ck-api v2.61.0): a connection from it
+/// whose region cannot be told is refused, and so is an organization's player there sent
+/// without a region.
 struct TerritoryPolicy {
-  std::string countryCode;  ///< ISO 3166-1 alpha-2
-  std::string status;       ///< "open" or "blocked"
+  std::string countryCode;    ///< ISO 3166-1 alpha-2
+  NullableString regionCode;  ///< ISO 3166-2 (such as UA-43); null on the country's own row
+  std::string status;         ///< "open" or "blocked"
   int minAge = 13;
 
   bool blocked() const { return status == "blocked"; }
@@ -215,6 +219,7 @@ struct TerritoryPolicy {
   static TerritoryPolicy fromJson(const graphql::Json& j) {
     TerritoryPolicy p;
     p.countryCode = j["countryCode"].asString();
+    p.regionCode = NullableString::fromJson(j["regionCode"]);
     p.status = j["status"].asString();
     p.minAge = static_cast<int>(j["minAge"].asInt64(13));
     return p;

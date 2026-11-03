@@ -463,7 +463,9 @@ class AuthAPI : public DomainBase {
   /// once the platform admits players under 18; a native client may leave it out and call
   /// recordPlayerAge() before its first gameplay token. An age under the minimum where the
   /// player is, or a country Crowded Kingdoms does not serve, is refused before any account
-  /// exists (AGE_REQUIREMENT_NOT_MET, TERRITORY_NOT_SUPPORTED).
+  /// exists (AGE_REQUIREMENT_NOT_MET, TERRITORY_NOT_SUPPORTED). Since ck-api v2.61.0 the age
+  /// refusal names no age, and for 24 hours the same client (address and user agent) is
+  /// refused it whatever it sends.
   AuthResponse registerUser(const RegisterUserInput& input) const {
     auto r = AuthResponse::fromJson(execUnwrap(kRegisterDocument, registerVars(input)));
     if (!r.token.empty()) auth_->setToken(r.token);
@@ -485,9 +487,14 @@ class AuthAPI : public DomainBase {
 
   /// Record the signed-in player's birth date, country and (under 18) parental confirmation,
   /// for an account whose age is not known yet (me's ageBracket is "unknown"). Only the year and
-  /// month are kept. Returns the account's bracket and country. CONFLICT when the account
-  /// already has an age; TERRITORY_NOT_SUPPORTED and AGE_REQUIREMENT_NOT_MET as at sign-up, and
-  /// an under-13 answer cannot be changed by asking again. Session token.
+  /// month are kept. Returns the account's bracket and country. Ask on a neutral screen (no age
+  /// shown, the parental line only for a player under 18). CONFLICT when the account already
+  /// has an age; TERRITORY_NOT_SUPPORTED where Crowded Kingdoms does not serve (the declared
+  /// country, or the network's country or region); AGE_REQUIREMENT_NOT_MET under the
+  /// platform's youngest age. Since ck-api v2.61.0 that refusal names no age, the account is
+  /// deleted and erased as UsersAPI::deleteMyAccount does, and for 24 hours the same client
+  /// (address and user agent) is refused here and at sign-up whatever it sends: drop the
+  /// session and do not ask again. Session token.
   PlayerAge recordPlayerAge(const PlayerAgeInput& input) const {
     return PlayerAge::fromJson(execUnwrap(gen::auth::kRecordPlayerAgeDocument, ageVars(input)));
   }

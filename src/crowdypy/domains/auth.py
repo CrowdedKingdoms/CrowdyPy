@@ -423,7 +423,8 @@ class AuthAPI(Domain):
         does not serve, declared or detected, is refused ``TERRITORY_NOT_SUPPORTED``
         (:func:`crowdypy.errors.territory_not_supported_of`), and an age the platform does not
         admit ``AGE_REQUIREMENT_NOT_MET`` (:func:`crowdypy.errors.age_requirement_not_met_of`);
-        either way no account is made.
+        either way no account is made. Since ck-api v2.61.0 the age refusal names no age, and
+        for 24 hours the same client (address and user agent) is refused it whatever it sends.
         """
         input_: dict[str, Any] = {"email": email, "password": password}
         if gamertag is not None:
@@ -531,11 +532,13 @@ class AuthAPI(Domain):
 
         Ask on a neutral screen: the date of birth and the country, with no age shown, and the
         parental line only for a player under 18. Refused with ``CONFLICT`` once the account
-        has an age, ``TERRITORY_NOT_SUPPORTED`` for a country Crowded Kingdoms does not serve
-        (declared or detected), and ``AGE_REQUIREMENT_NOT_MET`` under the platform's youngest
-        age, in which case the account keeps that answer and asking again changes nothing.
-        Whether the player may play a given app is decided at the mint. Returns the account's
-        ``age_bracket`` and ``country``.
+        has an age, ``TERRITORY_NOT_SUPPORTED`` where Crowded Kingdoms does not serve (the
+        declared country, or the network's country or region), and ``AGE_REQUIREMENT_NOT_MET``
+        under the platform's youngest age. Since ck-api v2.61.0 that refusal names no age, the
+        account is deleted and erased as ``users.delete_my_account`` does, and for 24 hours the
+        same client (address and user agent) is refused here and at sign-up whatever it sends:
+        drop the session and do not ask again. Whether the player may play a given app is
+        decided at the mint. Returns the account's ``age_bracket`` and ``country``.
         """
         payload = await self._request(
             RECORD_PLAYER_AGE,

@@ -106,8 +106,9 @@ class SafetyAPI(Domain):
         ``status`` is ``REQUESTED`` (the email went out), ``ALREADY_GRANTED`` or
         ``NOT_REQUIRED`` (the player is 18 or over; nothing was sent). Refused with
         ``PARENTAL_CONSENT_UNAVAILABLE``
-        (:func:`crowdypy.errors.parental_consent_unavailable_of`) while the service is not
-        configured on the deployment, and ``RATE_LIMITED`` after three requests in an hour."""
+        (:func:`crowdypy.errors.parental_consent_unavailable_of`, whose ``reason`` says whether
+        the deployment has no consent service or the service refused or did not answer), and
+        ``RATE_LIMITED`` after three requests in an hour."""
         result: dict[str, Any] = await self._request(
             ops.REQUEST_PARENTAL_CONSENT,
             {"appId": bigint(app_id), "feature": feature, "parentEmail": parent_email},
