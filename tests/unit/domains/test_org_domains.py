@@ -33,6 +33,7 @@ from crowdypy.domains.apps import AppRoute, AppsAPI
 from crowdypy.domains.billing import BillingAPI
 from crowdypy.domains.discovery import AppEndpoint, DiscoveryDomain
 from crowdypy.domains.managed_players import ManagedPlayersAPI
+from crowdypy.domains.moderation import ModerationAPI
 from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.payments import PaymentsAPI
 from crowdypy.domains.platform import INLINE_OPERATIONS, PLATFORM_CONFIG, PlatformAPI
@@ -94,6 +95,8 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
         "admitCode",
         "revokeCodeAdmission",
         "app",
+        "recording",
+        "setRequiredDocuments",
         "appBySlug",
         "myApps",
         "routeFor",
@@ -131,7 +134,7 @@ CROWDYJS_METHODS: dict[type[Domain], list[str]] = {
         "setupPaymentMethod",
         "removePaymentMethod",
     ],
-    PlatformAPI: ["config"],
+    PlatformAPI: ["config", "territoryPolicies"],
     DiscoveryDomain: ["apps", "app"],
 }
 
@@ -501,6 +504,40 @@ CASES: list[Case] = [
         ADMISSION,
     ),
     Case(AppsAPI, "app", (42,), "App", {"appId": "42"}, APP),
+    Case(
+        AppsAPI,
+        "recording",
+        (42,),
+        "AppRecording",
+        {"appId": "42"},
+        {"appId": "42", "recording": {"enabled": True, "voice": True, "video": False}},
+        returns={"enabled": True, "voice": True, "video": False},
+    ),
+    Case(
+        AppsAPI,
+        "set_required_documents",
+        (
+            "42",
+            [
+                inputs.AppRequiredDocumentInput(
+                    document_id="rules", version="rules-1", title="Rules", url="https://x.test/r"
+                )
+            ],
+        ),
+        "SetAppRequiredDocuments",
+        {
+            "appId": "42",
+            "documents": [
+                {
+                    "documentId": "rules",
+                    "version": "rules-1",
+                    "title": "Rules",
+                    "url": "https://x.test/r",
+                }
+            ],
+        },
+        [{"documentId": "rules", "version": "rules-1", "appId": "42"}],
+    ),
     Case(
         AppsAPI,
         "app_by_slug",
@@ -908,6 +945,14 @@ CASES: list[Case] = [
         {"sharedGameApiUrl": None, "sharedGameApiWsUrl": None, "freeAppsPerOrg": 1},
     ),
     Case(
+        PlatformAPI,
+        "territory_policies",
+        (),
+        "TerritoryPolicies",
+        {},
+        [{"countryCode": "DE", "status": "blocked", "minAge": 13}],
+    ),
+    Case(
         DiscoveryDomain,
         "apps",
         ([42, "43"],),
@@ -1117,6 +1162,7 @@ def test_admin_groups_the_same_instances(graphql: AsyncGraphQLClient) -> None:
         "usage": UsageAPI(graphql),
         "shared_environment": SharedEnvironmentAPI(graphql),
         "grids": object(),
+        "moderation": ModerationAPI(graphql),
     }
     admin = AdminAPI(**parts)
     for name, instance in parts.items():

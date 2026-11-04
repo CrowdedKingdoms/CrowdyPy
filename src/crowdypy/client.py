@@ -41,12 +41,14 @@ from crowdypy.domains.host import HostAPI
 from crowdypy.domains.input_log import InputLogAPI
 from crowdypy.domains.managed_players import ManagedPlayersAPI
 from crowdypy.domains.marketplace import MarketplaceAPI
+from crowdypy.domains.moderation import ModerationAPI
 from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.payments import PaymentsAPI
 from crowdypy.domains.platform import PlatformAPI
 from crowdypy.domains.player_wallet import PlayerWalletAPI
 from crowdypy.domains.portal import AppTokenResponse, PkceStore, PortalAPI
 from crowdypy.domains.quotas import QuotasAPI
+from crowdypy.domains.safety import SafetyAPI
 from crowdypy.domains.server_status import ServerStatusAPI
 from crowdypy.domains.shared_environment import SharedEnvironmentAPI
 from crowdypy.domains.state import StateAPI
@@ -137,11 +139,16 @@ class AsyncCrowdyClient:
         self.quotas = QuotasAPI(self.graphql)
         self.usage = UsageAPI(self.graphql)
         self.shared_environment = SharedEnvironmentAPI(self.graphql)
+        #: An app's safety reports for its moderators (``moderate_safety``; identity session).
+        self.moderation = ModerationAPI(self.graphql)
         self.chunks = ChunksAPI(self.graphql)
         self.voxels = VoxelsAPI(self.graphql)
         self.actors = ActorsAPI(self.graphql)
         self.teleport = TeleportAPI(self.graphql)
         self.input_log = InputLogAPI(self.graphql)
+        #: The player's own safety controls in an app (app token): voice and video scopes,
+        #: contacts, blocks, a parent's consent, and reports to the app's moderators.
+        self.safety = SafetyAPI(self.graphql)
         self.state = StateAPI(self.graphql)
         self.server_status = ServerStatusAPI(self.graphql)
         self.channels = ChannelsAPI(self.graphql)
@@ -167,6 +174,7 @@ class AsyncCrowdyClient:
             usage=self.usage,
             shared_environment=self.shared_environment,
             grids=self.game_apps,
+            moderation=self.moderation,
         )
         #: Native UDP replication for this client's app (CrowdyCPP's connection).
         self.udp = UdpAPI(self)
