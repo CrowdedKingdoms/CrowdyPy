@@ -162,6 +162,34 @@ ck-exec's golden record, `tests/fixtures/kit-protocol.json`, copied from CrowdyJ
 `tests/unit/test_kit_protocol.py` replays each starter's script through a gateway that answers
 only the next recorded step, with both clients.
 
+## Teen safety (0.23.0, 0.24.0)
+
+ck-api v2.60.0's gate and controls, ported from CrowdyJS 18.24.0: `client.safety` (the app
+token), `client.moderation` (also `admin.moderation`; `moderate_safety`), the age, document and
+Minecraft calls in `auth`, `apps`, `platform` and `portal`, and the refusal readers in
+`errors.py`. Keep `age_requirement_not_met_of` a boolean: no refusal may name an age (decision
+35 of the program), so it never surfaces `minimumAge` or `ageBracket`, as in CrowdyJS. 0.24.0
+(ck-api v2.61.0, CrowdyJS 18.25.0) added `safety_moderator_required_of`,
+`parental_consent_unavailable_of`'s `CrowdyParentalConsentUnavailable(reason)`,
+`hasSafetyModerator`, `regionCode` and the claims' `region`. The operator-only roots
+(`setTerritoryPolicy`, `exportPlayerData`, `childSafetyReports`, `eraseAccount`,
+`recordParentalConsentWithdrawal`) stay unwrapped and on `tests/unit/test_sdk_audience.py`'s
+list. `tests/e2e/test_e2e_teen_safety.py`'s org-managed scenario needs an org token and its
+existing-account one an existing player (`docs/e2e-coverage.md`).
+
+**The live teen safety suite never declares an age the platform refuses at sign-up or at
+`record_player_age`** (the under-13 sign-up is opt-in, `CROWDY_E2E_UNDER13_SIGNUP=1`). Since
+ck-api v2.61.0 such a refusal stops that address and user agent from signing up for 24 hours,
+which on a shared machine stops every agent's suites. A managed refusal locks only that player,
+and the suite uses fresh external ids. Each account a run registers spends the tier's shared
+sign-up limit, so prefer existing accounts and say in the run's row what registered.
+
+The Studio game editor (CrowdyJS 18.23.0) drives any `crowdypy.studio.DraftStore` the host's
+`draft_store` factory returns. `GitHubDraftStore` (`studio/github_draft_store.py`) is CrowdyJS's
+hosted backend ported, with its tests, over CrowdyPy's GitHub transport and a
+`DraftOverlayStorage` (memory by default; the IndexedDB one is the browser's). CrowdyJS's
+`crowdy-studio/draft/` is outside the parity gate's surface, so keep it in step by hand.
+
 ## Performance rules for the native binding
 
 The replication system saturates the local network stack, so the binding

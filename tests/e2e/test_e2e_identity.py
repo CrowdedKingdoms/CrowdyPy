@@ -57,6 +57,14 @@ async def test_a_gameplay_token_waits_for_the_players_consents() -> None:
         with pytest.raises(crowdypy.CrowdyError) as refused:
             await client.portal.mint_app_token(CONFIG.app_id)
         assert crowdypy.is_legal_acceptance_required_error(refused.value)
+        assert crowdypy.legal_acceptance_required_of(refused.value) is not None
+        # No age was given at sign-up: the account takes it once (ck-api v2.60.0).
+        assert (await client.users.me())["ageBracket"] == "unknown"
+        age = await client.auth.record_player_age(birth_date="1990-05", country="US")
+        assert (age.age_bracket, age.country) == ("18_plus", "US")
+        with pytest.raises(crowdypy.CrowdyGraphQLError) as again:
+            await client.auth.record_player_age(birth_date="1991-05", country="US")
+        assert again.value.code == "CONFLICT"
         assert await client.auth.record_player_consents(
             accept_legal=True, attest_age_of_majority=True
         )
