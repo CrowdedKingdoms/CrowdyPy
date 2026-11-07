@@ -97,7 +97,7 @@ async def test_sign_up_with_an_age_and_a_country_and_the_documents() -> None:
 
             policies = await client.platform.territory_policies()
             countries = {p["countryCode"]: p for p in policies if p["regionCode"] is None}
-            assert countries["DE"]["status"] == "blocked"
+            assert countries["CU"]["status"] == "blocked"
             assert countries["KR"]["status"] == "open"
         finally:
             # The account is this test's alone: no later suite signs it in.
@@ -120,15 +120,15 @@ async def test_an_age_or_a_country_the_platform_refuses_makes_no_account() -> No
 
     blocked = _refusal(
         await register_raw(
-            derive_email("py-de"),
+            derive_email("py-cu"),
             acceptLegal=True,
             attestAgeOfMajority=True,
             birthDate="1990-05-15",
-            country="DE",
+            country="CU",
         )
     )
     territory = crowdypy.territory_not_supported_of(blocked)
-    assert territory == crowdypy.CrowdyTerritoryNotSupported("DE"), blocked.graphql_errors
+    assert territory == crowdypy.CrowdyTerritoryNotSupported("CU"), blocked.graphql_errors
 
 
 async def test_scopes_contacts_and_blocks_between_two_players() -> None:
@@ -344,12 +344,12 @@ async def test_managed_players_carry_what_their_organization_asserts_or_are_neve
             young = _external_id("child")
             refusal = _refusal(await _org_mint(externalId=young, ageYears=12, country="US"))
             assert crowdypy.age_requirement_not_met_of(refusal), refusal.graphql_errors
-            german = _external_id("de")
-            refusal = _refusal(await _org_mint(externalId=german, ageYears=30, country="DE"))
+            cuban = _external_id("cu")
+            refusal = _refusal(await _org_mint(externalId=cuban, ageYears=30, country="CU"))
             assert crowdypy.territory_not_supported_of(
                 refusal
-            ) == crowdypy.CrowdyTerritoryNotSupported("DE"), refusal.graphql_errors
-            refused += [young, german]
+            ) == crowdypy.CrowdyTerritoryNotSupported("CU"), refusal.graphql_errors
+            refused += [young, cuban]
 
             # A country checked by region (ck-api v2.61.0): a blocked region and no region are
             # refused, and another region of it is admitted.

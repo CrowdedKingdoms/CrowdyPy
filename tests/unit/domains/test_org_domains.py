@@ -950,7 +950,7 @@ CASES: list[Case] = [
         (),
         "TerritoryPolicies",
         {},
-        [{"countryCode": "DE", "status": "blocked", "minAge": 13}],
+        [{"countryCode": "CU", "status": "blocked", "minAge": 13}],
     ),
     Case(
         DiscoveryDomain,
