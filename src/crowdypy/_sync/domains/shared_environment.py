@@ -167,9 +167,8 @@ class SharedEnvironmentAPI(Domain):
         A reservation is a floor, not a ceiling: the platform keeps that much capacity in
         service for the app, and traffic above it is metered like any other rather than
         refused. It buys capacity, not volume: every byte is metered from the first, and
-        the monthly fee comes on top. It does not lift the free tier's ~1 MB/s shaping;
-        funding the wallet or :meth:`set_auto_billing` does. Billed monthly whether used or
-        not; upgrades are prorated and lowering or clearing charges nothing.
+        the monthly fee comes on top. Billed monthly whether used or not; upgrades are
+        prorated and lowering or clearing charges nothing.
 
         ``reservedBytesPerSec`` is bytes per second (1,000,000 is 1 MB/s; 0 clears it). It
         reserves the realtime dimension only: read both back from the app's
