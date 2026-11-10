@@ -3,6 +3,24 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.25.0
+
+CrowdyJS 18.26.0 and CrowdyCPP 0.77.0. `apps.app()` and `apps.update()` select
+`idleTimeoutSeconds` and `effectiveIdleTimeoutSeconds`, so they need ck-api v2.64.0 on the tier
+(an older API refuses the fields with a GraphQL validation error).
+
+- **A session released for idleness is final.** The replication server (v0.44.0) ends a session
+  that sends no gameplay input (movement, edits, messages, voice, video; not heartbeats, and not
+  keyframes repeating an unchanged state) for the app's idle timeout: 15 minutes unless the app
+  sets its own with `apps.update()`'s `idleTimeoutSeconds` (60 to 86400, `0` for never, `None`
+  for the default). The connection moves to the new `ConnState.INACTIVE` (6) and nothing
+  reconnects it: the watchdog, the token refresh and reassignment stop. Call
+  `client.udp.connect()` on the player's next input. Code that maps every `ConnState` needs the
+  new member; `client.udp.connection_status()` reports it with `connected=False`.
+- `crowdypy.wire.MessageType.COMMAND_SESSION_RELEASED` (28) and `crowdypy.wire.ReleaseReason`
+  name the release and its reasons; the connection verifies and handles it, so a game reads only
+  the state.
+
 ## 0.24.0
 
 CrowdyJS 18.25.0 and CrowdyCPP 0.76.0. `apps.app()` and `apps.update()` select

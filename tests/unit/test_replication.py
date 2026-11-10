@@ -7,6 +7,8 @@ answers with signed notifications, echoes and errors, as the replication-API doc
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import socket
 import threading
 import time
@@ -28,7 +30,7 @@ from crowdypy.replication import (
     ReplicationConnection,
     TokenMaterial,
 )
-from crowdypy.wire import DecayRate, MessageType
+from crowdypy.wire import DecayRate, MessageType, ReleaseReason
 
 TOKEN = "t" * 64
 TOKEN_ID = 42
@@ -285,6 +287,50 @@ def test_a_batch_exposes_zero_copy_columns(server: FakeServer) -> None:
         ]
         assert bytes(batch.uuids[rows[0]]) == OTHER.encode()
         assert batch.chunks.base is not None or batch.chunks.flags.owndata is False
+
+
+def session_released(reason: int, key: str = TOKEN) -> bytes:
+    prefix = bytes([MessageType.COMMAND_SESSION_RELEASED, reason])
+    return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()
+
+
+def wait_for_state(connection: ReplicationConnection, want: ConnState) -> list[Any]:
+    rows: list[Any] = []
+    deadline = time.monotonic() + 3
+    while connection.state != want and time.monotonic() < deadline:
+        connection.wait(0.05)
+        rows.extend(connection.poll())
+    rows.extend(connection.poll())  # the row of a change that landed before the first poll
+    return rows
+
+
+def test_an_idle_release_is_final(server: FakeServer) -> None:
+    provider = Provider(server)
+    with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
+        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        connection.flush_sends()
+        server.recv()  # the server learns where the client is
+        server.send(session_released(ReleaseReason.IDLE))
+
+        rows = wait_for_state(connection, ConnState.INACTIVE)
+        assert connection.state == ConnState.INACTIVE
+        assert ConnState.INACTIVE in [r.state for r in rows if r.type == STATUS]
+        time.sleep(0.5)  # the watchdog and reassignment stay off
+        assert connection.state == ConnState.INACTIVE
+        assert provider.assigned == 1
+
+
+def test_a_release_that_does_not_verify_is_ignored(server: FakeServer) -> None:
+    provider = Provider(server)
+    with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
+        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        connection.flush_sends()
+        server.recv()
+        server.send(session_released(ReleaseReason.IDLE, key="x" * 64))
+
+        wait_for_state(connection, ConnState.INACTIVE)
+        assert connection.state == ConnState.CONNECTED
+        assert connection.stats()["hmac_failures"] >= 1
 
 
 def test_status_rows_report_the_lifecycle(server: FakeServer) -> None:

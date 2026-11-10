@@ -120,6 +120,18 @@ attribute set in `__init__` to one of CrowdyPy's classes contributes its methods
 unconfigured they skip. Run them against the local stack and then the dev tier before a
 release moves on, and record the run in `docs/e2e-coverage.md` (configuration, the
 `tools/e2e/provision.py` helper and where each tier's org admin credentials live are there).
+`test_e2e_idle_release.py` (slow) lowers the e2e app's idle timeout to 60 s and puts the app's
+own value back in a `finally`; an interrupted run can leave it at 60 s, so check
+`effectiveIdleTimeoutSeconds` before blaming a release for idle disconnects.
+
+## Idle release (0.25.0)
+
+The replication server (v0.44.0) releases a session that sends no gameplay input for the app's
+idle timeout, with `COMMAND_SESSION_RELEASED` reason 5. CrowdyCPP verifies and handles it, and the
+connection reports `ConnState.INACTIVE` (6), which nothing reconnects; a game calls
+`client.udp.connect()` on the player's next input. Status rows carry the state as a number, so
+`ConnState` must name every value CrowdyCPP's `replication::ConnState` has or `ConnState(...)`
+raises.
 
 ## Releasing
 

@@ -157,6 +157,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "BUNDLE_LENGTH_PREFIX_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle() / split_datagram(), which own the bundle layout" }
 "execWireIntegers" = { kind = "native-equivalent", reason = "msgspec writes a Python int as a msgpack integer of its width, so there is no float for a hub's integer field to refuse; @msgpack/msgpack writes a JS number of 2^32 or more as a float without it" }
 "BrowserLocalStorageTokenStore" = { kind = "native-equivalent", reason = "token persistence is TokenStore / SessionStore; the localStorage backing is browser-only, and FileTokenStore mirrors its session / app key split" }
+"IDLE_TIMEOUT_CODE" = { kind = "native-equivalent", reason = "the GraphQL UDP proxy's terminal event code; client.udp's native connection reads the server's idle release (COMMAND_SESSION_RELEASED reason 5) itself and moves to ConnState.INACTIVE without reconnecting" }
 "GraphQLTransport" = { kind = "native-equivalent", reason = "pass an httpx.AsyncClient / httpx.Client as http_client= (transport, proxies, HTTP/2, timeouts)" }
 "RELAY_MAX_BUNDLE_MEMBERS" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MAX_BUNDLE_MEMBERS" }
 "RELAY_MAX_BUNDLE_MEMBER_BYTES" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle(), which enforces the member limit" }
@@ -187,6 +188,7 @@ GraphQLClient = "AsyncGraphQLClient"
 "BinaryRelayTransport" = { kind = "browser-exclusion", reason = "the raw-WebSocket relay exists because a page cannot open a UDP socket; CrowdyPy replicates over native UDP (CrowdyCPP's core)" }
 "CLIENT_GRID_EVENT_MAX_CASCADE" = { kind = "browser-exclusion", reason = "page-local event bus between CLIENT mods running in this browser's glue workers" }
 "ClientGridEventBus" = { kind = "browser-exclusion", reason = "page-local event bus between CLIENT mods running in this browser's glue workers" }
+"GAMEPLAY_IDLE_CLOSE_CODE" = { kind = "browser-exclusion", reason = "the raw-WebSocket relay's close code for an idle release; CrowdyPy replicates over native UDP (CrowdyCPP's core), where the release arrives as COMMAND_SESSION_RELEASED reason 5 and the connection reports ConnState.INACTIVE" }
 "EMBEDDED_HOST_PROTOCOL_VERSION" = { kind = "browser-exclusion", reason = "iframe/postMessage bridge to the Crowdy Games shell page, retired 2026-10-29; there was never a frame around a Python client, and no Python wrapper is planned" }
 "EXEC_CLIENT_HOST_CALLS" = { kind = "browser-exclusion", reason = "page-side broker for player WASM in the browser glue Web Worker (worker lifecycle, host-call allowlists, rate caps, watchdogs)" }
 "GLUE_HOST_CALL_REQUEST_MAX_BYTES" = { kind = "browser-exclusion", reason = "glue that instantiates player WASM inside the browser Web Worker (CLIENT ABI imports, ck_fuel, watchdog)" }

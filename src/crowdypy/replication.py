@@ -73,6 +73,11 @@ class ConnState(IntEnum):
     RECONNECTING = 3
     FAILED = 4
     CLOSED = 5
+    #: The server released the session because the player sent no gameplay input for the
+    #: app's idle timeout (15 minutes unless the app sets its own; CrowdyCPP 0.77.0, Buddy
+    #: v0.44.0). Final: nothing reconnects until ``connect()`` is called, which a game does on
+    #: the player's next input.
+    INACTIVE = 6
 
 
 class Assignment(NamedTuple):
