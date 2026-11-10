@@ -41,6 +41,7 @@ __all__ = [
     "GenericError",
     "LongSpatialMessage",
     "MessageType",
+    "ReleaseReason",
     "VoxelPayload",
     "assert_voxel_edit",
     "bundle",
@@ -85,6 +86,9 @@ class MessageType(IntEnum):
     CHANNEL_MESSAGE_NOTIFICATION = 18
     COMMAND_RECONNECT = 22
     CLIENT_ACTOR_HEARTBEAT = 26
+    #: ``[28][reason][32-byte HMAC over the two leading bytes, keyed on the game token]``.
+    #: The connection handles it; see :class:`ReleaseReason`.
+    COMMAND_SESSION_RELEASED = 28
     CLIENT_CAPABILITIES = 29
     MESSAGE_BUNDLE_SIGNED = 30
     CHANNEL_MESSAGE_RANGED_REQUEST = 32
@@ -105,6 +109,19 @@ class MessageType(IntEnum):
     CLIENT_VIDEO_PACKET = 143
     CLIENT_VIDEO_NOTIFICATION = 144
     ACTOR_LEFT_NOTIFICATION = 145
+
+
+class ReleaseReason(IntEnum):
+    """Why the server ended a session (``COMMAND_SESSION_RELEASED``'s second byte)."""
+
+    DEAUTHORIZED = 0
+    STALE = 1
+    TOKEN_EXPIRED = 2
+    OVERLOAD = 3
+    REBALANCE = 4
+    #: No gameplay input for the app's idle timeout (replication server v0.44.0). The
+    #: connection moves to ``ConnState.INACTIVE`` and does not reconnect.
+    IDLE = 5
 
 
 class ErrorCode(IntEnum):
