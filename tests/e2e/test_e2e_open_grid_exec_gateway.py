@@ -84,6 +84,8 @@ async def _game(identity: crowdypy.AsyncCrowdyClient, app_id: str) -> crowdypy.A
 @pytest.fixture
 async def world() -> AsyncIterator[World]:
     owner, _ = await _account("owner")
+    # An account accepts the current developer terms before it creates or administers an org.
+    assert await owner.auth.record_developer_consents(accept_developer_terms=True)
     tag = rid()
     org = await owner.admin.organizations.create(
         {"name": f"e2e open grids {tag}", "slug": f"e2e-open-grids-{tag}"}
