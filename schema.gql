@@ -1490,6 +1490,14 @@ type App {
   The youngest age the app admits now: the higher of minPlayerAge and the platform's minimum (18 until players 13 and over are admitted, then 13). A player's country can require more (territoryPolicies); younger players are refused AGE_REQUIREMENT_NOT_MET at mint.
   """
   effectiveMinPlayerAge: Int!
+  """
+  The app's own gameplay idle timeout in seconds, when it sets one: 0 turns the timeout off, otherwise 60 to 86400. null uses the platform default (effectiveIdleTimeoutSeconds). Set with updateApp (manage_apps).
+  """
+  idleTimeoutSeconds: Int
+  """
+  Seconds a realtime session may go without gameplay input (movement, messages, edits, voice; keep-alives and keyframes that repeat an unchanged state do not count) before the replication server releases it with reason idle. 900 (15 minutes) unless the app sets its own; 0 means never. A released player is not reconnected automatically: the SDKs report the session inactive and the game reconnects on the next player input.
+  """
+  effectiveIdleTimeoutSeconds: Int!
   """Timestamp when the app was created."""
   createdAt: DateTime!
   """Timestamp when the app was last updated."""
@@ -1825,7 +1833,7 @@ type OrgManagedPlayerSettings {
   """Where the current addendum is published."""
   termsUrl: String!
   """
-  Whether the organization has accepted the current version. Until it has, its managed players are neither created nor signed in and their app tokens do not refresh (ORG_LEGAL_ACCEPTANCE_REQUIRED).
+  Whether the organization has accepted the current version. Until it has, its managed players are neither created nor signed in (ORG_LEGAL_ACCEPTANCE_REQUIRED); a player signed in under an earlier acceptance keeps playing until its session expires.
   """
   termsAccepted: Boolean!
   """
@@ -2369,7 +2377,7 @@ type SetAppReservedThroughputResult {
 }
 
 """
-Result of publishing an app to the shared environment. All paths publish immediately. Usage above the free allowances is wallet-billed: each app has a per-dimension hourly allowance and, for client egress, 5 decimal GB per calendar month. An unfunded free app is also shaped to roughly 1 MB/s; funding the org wallet or enabling auto-billing lifts that.
+Result of publishing an app to the shared environment. All paths publish immediately. Usage above the free allowances is wallet-billed: each app has a per-dimension hourly allowance and, for client egress, 5 decimal GB per calendar month.
 """
 type PublishAppResult {
   appId: BigInt!
@@ -9518,7 +9526,7 @@ type Mutation {
     method: LegalAcceptanceMethod
   ): Boolean!
   """
-  Record the signed-in player's birth date and country, and under 18 that a parent or guardian agreed, for an account whose age is not known yet (me.ageBracket is 'unknown'). Only the year and month are kept. Refused with CONFLICT when the account already has an age, TERRITORY_NOT_SUPPORTED where Crowded Kingdoms does not serve (the declared country, or the network's country or region; not for Crowded Kingdoms staff), and AGE_REQUIREMENT_NOT_MET under 13, in which case the account is deleted and erased as deleteMyAccount does. That refusal names no age, and for 24 hours afterwards the same client (address and user agent) is refused AGE_REQUIREMENT_NOT_MET here and at register whatever it sends. Whether the player may play a given app (its minimum age, the country's) is decided at the mint. Returns the account; read ageBracket and country. Requires a session token.
+  Record the signed-in player's birth date and country, and under 18 that a parent or guardian agreed, for an account whose age is not known yet (me.ageBracket is 'unknown'). Only the year and month are kept. Refused with CONFLICT when the account already has an age, TERRITORY_NOT_SUPPORTED where Crowded Kingdoms does not serve (the declared country, or the network's country or region; not for Crowded Kingdoms staff), and AGE_REQUIREMENT_NOT_MET under 13, in which case the account is deleted and erased as deleteMyAccount does. That refusal names no age, and afterwards the same client is refused AGE_REQUIREMENT_NOT_MET here and at register whatever it sends: for 24 hours a device that sent the x-ck-device-id header (an opaque random id the client keeps), else for an hour the same address and user agent. Whether the player may play a given app (its minimum age, the country's) is decided at the mint. Returns the account; read ageBracket and country. Requires a session token.
   """
   recordPlayerAge(input: RecordPlayerAgeInput!): User!
   """
@@ -9775,7 +9783,7 @@ type Mutation {
     input: CreateAppInput!
   ): App! @requiresPermission(scope: "org", permission: "manage_apps", scopeArg: "input.orgId")
   """
-  Update mutable fields of an existing app (name, description, visibility, status, metadata, wildernessWritesOpen, claimOwnerKeys, replayLoggingEnabled, replayLoggingRecordsMedia, replayLoggingRecordsVoice, replayLoggingRecordsVideo, minPlayerAge); only fields present in the input are changed. Turning replayLoggingEnabled on is refused with INPUT_LOG_FUNDS_NEEDED unless the org's wallet can spend at least the projected cost of keeping one retention period of the app's recent traffic (extensions.requiredMicrousd and spendableMicrousd say how much), or the org is billing-exempt; recordings already kept go on billing after it is turned off, until they age out. Turning it off is refused with SAFETY_LOG_REQUIRED while the app admits players under 18. Requires the 'manage_apps' permission on the app (resolved via its org); super admins bypass. Use this to publish (status=LIVE), change visibility, or restore an archived app (status back to DRAFT/LIVE). Throws if the app id does not exist.
+  Update mutable fields of an existing app (name, description, visibility, status, metadata, wildernessWritesOpen, claimOwnerKeys, replayLoggingEnabled, replayLoggingRecordsMedia, replayLoggingRecordsVoice, replayLoggingRecordsVideo, minPlayerAge, idleTimeoutSeconds); only fields present in the input are changed. Turning replayLoggingEnabled on is refused with INPUT_LOG_FUNDS_NEEDED unless the org's wallet can spend at least the projected cost of keeping one retention period of the app's recent traffic (extensions.requiredMicrousd and spendableMicrousd say how much), or the org is billing-exempt; recordings already kept go on billing after it is turned off, until they age out. Turning it off is refused with SAFETY_LOG_REQUIRED while the app admits players under 18. Requires the 'manage_apps' permission on the app (resolved via its org); super admins bypass. Use this to publish (status=LIVE), change visibility, or restore an archived app (status back to DRAFT/LIVE). Throws if the app id does not exist.
   """
   updateApp(
     """Numeric id of the app to update."""
@@ -9833,7 +9841,7 @@ type Mutation {
   """
   mintAppToken(input: MintAppTokenInput!): AppTokenResponse!
   """
-  Create a one-time, PKCE-bound portal authorization code (browser handoff). The Overworld identity origin (holding the SESSION token) calls this; redirect the player to the destination game carrying the code, which the game exchanges via exchangePortalCode. Requires a SESSION token.
+  Create a one-time, PKCE-bound portal authorization code (browser handoff). The Overworld identity origin (holding the SESSION token) calls this; redirect the player to the destination game carrying the code, which the game exchanges via exchangePortalCode. Refused like mintAppToken before any code exists: TERRITORY_NOT_SUPPORTED, AGE_REQUIRED, AGE_REQUIREMENT_NOT_MET and LEGAL_ACCEPTANCE_REQUIRED, and for a player under 18 SAFETY_LOG_REQUIRED (the app keeps no safety log) then SAFETY_MODERATOR_REQUIRED (its organization has no safety moderator), with the same neutral messages. Requires a SESSION token.
   """
   createPortalAuthorizationCode(input: CreatePortalAuthorizationCodeInput!): PortalAuthorizationCode!
   """
@@ -9985,7 +9993,7 @@ type Mutation {
     input: SetCommSettingsInput!
   ): CommSettings!
   """
-  For a player under 18: ask a parent, through the consent service (Kids Web Services), to allow one medium (VOICE or VIDEO) in this app. The service emails parentEmail; once the parent consents, the medium opens up to CONTACTS (see myCommSettings). The address goes to the service and is not stored by Crowded Kingdoms. NOT_REQUIRED for a player 18 or over, ALREADY_GRANTED if a parent has consented. Errors: PARENTAL_CONSENT_UNAVAILABLE while the service is not configured on this deployment; RATE_LIMITED after three requests in an hour. Game plane: send the app-scoped token for this app to the app’s datacenter.
+  For a player under 18: ask a parent, through the consent service (Kids Web Services), to allow one medium (VOICE or VIDEO) in this app. The service emails parentEmail; once the parent consents, the medium opens up to CONTACTS (see myCommSettings). The address goes to the service and is not stored by Crowded Kingdoms. NOT_REQUIRED for a player 18 or over, ALREADY_GRANTED if a parent has consented. Errors: PARENTAL_CONSENT_UNAVAILABLE, nothing sent, with extensions.reason not_configured (no consent service on this deployment), provider_refused (the service refused the request, such as an address it does not accept; do not retry it as it is) or provider_unavailable (the service did not answer; retryable); RATE_LIMITED after three requests in an hour. Game plane: send the app-scoped token for this app to the app’s datacenter.
   """
   requestParentalConsent(
     """The app."""
@@ -10220,7 +10228,7 @@ type Mutation {
     idempotencyKey: String
   ): AppSharedSubscription!
   """
-  Reserve capacity for a shared app. A reservation is a FLOOR, not a ceiling: the platform provisions and holds a minimum for you and does not limit what you may use beyond it. Billed monthly from the org wallet whether or not it is used; upgrades are prorated for the current month. Note that the ~1 MB/s free-tier shaping is lifted by funding a wallet, not by reserving. Requires 'manage_billing' on the app's org.
+  Reserve capacity for a shared app. A reservation is a FLOOR, not a ceiling: the platform provisions and holds a minimum for you and does not limit what you may use beyond it. Billed monthly from the org wallet whether or not it is used; upgrades are prorated for the current month. Requires 'manage_billing' on the app's org.
   """
   setAppReservedThroughput(
     """Org, app, and desired reserved throughput in bytes/s."""
@@ -11778,7 +11786,7 @@ input RegisterUserInput {
   """
   attestAgeOfMajority: Boolean
   """
-  Birth date, YYYY-MM-DD (YYYY-MM is accepted too); only the year and month are kept, and the age is counted from the last day of that month. Sent with country. Required on a browser signup once the platform admits players under 18 (AGE_REQUIRED without it); a request with no Origin may omit it and gives it later with recordPlayerAge. Under 13, or under the minimum age where the player is, the signup is refused with AGE_REQUIREMENT_NOT_MET (it names no age) and no account is made; for 24 hours afterwards the same client (address and user agent) is refused AGE_REQUIREMENT_NOT_MET whatever it sends.
+  Birth date, YYYY-MM-DD (YYYY-MM is accepted too); only the year and month are kept, and the age is counted from the last day of that month. Sent with country. Required on a browser signup once the platform admits players under 18 (AGE_REQUIRED without it); a request with no Origin may omit it and gives it later with recordPlayerAge. Under 13, or under the minimum age where the player is, the signup is refused with AGE_REQUIREMENT_NOT_MET (it names no age) and no account is made; afterwards the same client is refused AGE_REQUIREMENT_NOT_MET whatever it sends: for 24 hours a device that sent the x-ck-device-id header (an opaque random id the client keeps), else for an hour the same address and user agent.
   """
   birthDate: String
   """
@@ -12019,6 +12027,10 @@ input UpdateAppInput {
   The youngest age the app admits, 13 to 18. It only ever raises the platform's minimum (18 until players 13 and over are admitted, then 13), never lowers it; younger players are refused AGE_REQUIREMENT_NOT_MET at their next mint or refresh. null returns the app to the platform's minimum. Omit to leave unchanged.
   """
   minPlayerAge: Int
+  """
+  Seconds a realtime session may go without gameplay input before the replication server releases it with reason idle: 60 to 86400, or 0 to turn the timeout off. null returns the app to the platform default (900 seconds). Takes effect within about 15 seconds, for sessions already open too. Omit to leave unchanged.
+  """
+  idleTimeoutSeconds: Int
 }
 
 input AdmitAppCodeInput {
@@ -12428,7 +12440,7 @@ input SetAppReservedThroughputInput {
   """App to configure reserved realtime (UDP) capacity for."""
   appId: BigInt!
   """
-  Reserved sustained realtime capacity in bytes/s (decimal MB/s: 1_000_000 = 1 MB/s). 0 clears the reservation, which releases the provisioned floor and stops the monthly fee; it does not change how the app is shaped, because the ~1 MB/s free-tier cap is decided by whether the org can be charged rather than by whether it holds a reservation. A reservation buys capacity, not volume: the fee is charged in addition to metered usage and includes no data allowance.
+  Reserved sustained realtime capacity in bytes/s (decimal MB/s: 1_000_000 = 1 MB/s). 0 clears the reservation, which releases the provisioned floor and stops the monthly fee. A reservation buys capacity, not volume: the fee is charged in addition to metered usage and includes no data allowance.
   """
   reservedBytesPerSec: BigInt!
 }
@@ -14344,11 +14356,11 @@ Realtime lifecycle event delivered on the udpNotifications subscription. It is a
 """
 type RealtimeConnectionEvent {
   """
-  Lifecycle status: "failed" when the session could not be established or had to be torn down, or "draining" for the one advisory case (SERVER_DRAINING) where the stream stays open.
+  Lifecycle status: "failed" when the session could not be established or had to be torn down, "draining" for the one advisory case (SERVER_DRAINING) where the stream stays open, or "inactive" when the replication server released an idle session (IDLE_TIMEOUT).
   """
   status: String!
   """
-  Machine-readable failure reason. Branch on this (not on `message`). Known values: AUTH_REQUIRED — no valid bearer game token was presented on the WS connection_init / request; authenticate via the Management API and resubscribe (not retryable as-is). APP_ID_REQUIRED — the subscription was opened without an appId scope; udpNotifications must be app-scoped (game tokens are app-agnostic and one socket is shared across apps), so pass the app you are playing and resubscribe (not retryable as-is). UDP_PROXY_CONNECTION_FAILED — the proxy could not open or keep a UDP socket to the selected game server (transient/infrastructure); back off and resubscribe (retryable). `message` carries the specific underlying detail for this case. SERVER_DRAINING — this API instance is being taken out of service; the stream KEEPS WORKING, but you should re-run discovery (gameClientBootstrap or mintAppToken) and move your HTTP calls and your socket together to the instance it returns before this one stops. Reaches every client of the instance, including one behind the load balancer: a draining instance stops naming itself in discovery and expires the affinity cookie the balancer set, so the move lands elsewhere.
+  Machine-readable failure reason. Branch on this (not on `message`). Known values: AUTH_REQUIRED — no valid bearer game token was presented on the WS connection_init / request; authenticate via the Management API and resubscribe (not retryable as-is). APP_ID_REQUIRED — the subscription was opened without an appId scope; udpNotifications must be app-scoped (game tokens are app-agnostic and one socket is shared across apps), so pass the app you are playing and resubscribe (not retryable as-is). UDP_PROXY_CONNECTION_FAILED — the proxy could not open or keep a UDP socket to the selected game server (transient/infrastructure); back off and resubscribe (retryable). `message` carries the specific underlying detail for this case. SERVER_DRAINING — this API instance is being taken out of service; the stream KEEPS WORKING, but you should re-run discovery (gameClientBootstrap or mintAppToken) and move your HTTP calls and your socket together to the instance it returns before this one stops. Reaches every client of the instance, including one behind the load balancer: a draining instance stops naming itself in discovery and expires the affinity cookie the balancer set, so the move lands elsewhere. IDLE_TIMEOUT — the replication server released the session because the player sent no gameplay input for the app's idle timeout (App.effectiveIdleTimeoutSeconds); the stream then completes. Not retryable as-is: do not resubscribe until the player acts again, then subscribe as for a new session.
   """
   code: String!
   """
