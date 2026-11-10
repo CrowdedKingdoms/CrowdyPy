@@ -313,6 +313,13 @@ class AppsAPI(Domain):
         18 needs one, or its minors are refused ``SAFETY_MODERATOR_REQUIRED``
         (:func:`crowdypy.errors.safety_moderator_required_of`). ``None`` for a caller who is
         not a member of the app's organization.
+
+        ``idleTimeoutSeconds`` (ck-api v2.64.0) is how long a player's realtime session may go
+        without gameplay input (movement, edits, messages, voice, video; not heartbeats, and not
+        keyframes repeating an unchanged state) before the server releases it: ``None`` for the
+        platform's 15 minutes, ``0`` for never, else 60 to 86400. ``effectiveIdleTimeoutSeconds``
+        reads the result. A released connection reports ``ConnState.INACTIVE`` and does not
+        reconnect by itself.
         """
         result: dict[str, Any] = await self._request(
             ops.UPDATE_APP, {"appId": bigint(app_id), "input": input}
