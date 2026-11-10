@@ -110,6 +110,13 @@ class Player:
         await self.identity.aclose()
 
 
+# The age and country every throwaway account declares: an adult in the US. Since the platform
+# admits players from 13 (2026-11-04), an account that has declared no age is refused a gameplay
+# token (AGE_REQUIRED), although a sign-up with no Origin succeeds without one. Only the year and
+# month are kept. Tests about minors and about the age step pass their own.
+E2E_BIRTH_DATE = "1990-01"
+E2E_COUNTRY = "US"
+
 _REGISTER = (
     "mutation R($i: RegisterUserInput!) "
     "{ register(registerUserInput: $i) { token user { userId } } }"
@@ -161,12 +168,15 @@ async def identity_client(
     email: str, password: str | None = None
 ) -> tuple[crowdypy.AsyncCrowdyClient, str]:
     """Signed in: ``login`` with ``password``, otherwise ``register`` a fresh account that
-    has accepted the legal documents and attested its age, as a player ticking both boxes."""
+    has accepted the legal documents, attested its age and declared an adult's birth date and
+    country (``E2E_BIRTH_DATE``, ``E2E_COUNTRY``), as a player ticking both boxes."""
     client = crowdypy.AsyncCrowdyClient(http_url=CONFIG.api_url)
     provisioning = _env("CROWDY_E2E_PROVISIONING_TOKEN")
     if not password and provisioning:
         try:
-            token, user_id = await register_with_provisioning_token(email, provisioning)
+            token, user_id = await register_with_provisioning_token(
+                email, provisioning, birthDate=E2E_BIRTH_DATE, country=E2E_COUNTRY
+            )
         except BaseException:
             await client.aclose()
             raise
@@ -177,7 +187,12 @@ async def identity_client(
             await client.auth.login(email, password)
             if password
             else await client.auth.register(
-                email, derive_password(email), accept_legal=True, attest_age_of_majority=True
+                email,
+                derive_password(email),
+                accept_legal=True,
+                attest_age_of_majority=True,
+                birth_date=E2E_BIRTH_DATE,
+                country=E2E_COUNTRY,
             )
         )
     except BaseException:

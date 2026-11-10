@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: ee26256b449b702d4890883f3fb016a4e7f6a73c92aa5be9d5d51b7aff85dc08
+schema.gql sha256: 8c233b108ae0f162b4a9214ab30c64b4b1fafb078d9b0a64b25af9833e7d416a
 """
 
 from __future__ import annotations
@@ -1189,7 +1189,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'replay_logging_records_voice': 'replayLoggingRecordsVoice', 'replay_logging_records_video': 'replayLoggingRecordsVideo', 'claim_owner_keys': 'claimOwnerKeys', 'min_player_age': 'minPlayerAge'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'replay_logging_records_voice': 'replayLoggingRecordsVoice', 'replay_logging_records_video': 'replayLoggingRecordsVideo', 'claim_owner_keys': 'claimOwnerKeys', 'min_player_age': 'minPlayerAge', 'idle_timeout_seconds': 'idleTimeoutSeconds'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1203,6 +1203,7 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     replay_logging_records_video: bool | None | UnsetType = UNSET
     claim_owner_keys: list[str] | None | UnsetType = UNSET
     min_player_age: int | None | UnsetType = UNSET
+    idle_timeout_seconds: int | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):
