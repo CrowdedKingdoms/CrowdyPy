@@ -28,6 +28,12 @@ import crowdypy
 from crowdypy.graphql import graphql_endpoint
 
 
+# A fresh owner declares an adult in the US: since the platform admits players from 13, an
+# account with no age is refused a gameplay token (AGE_REQUIRED).
+_BIRTH_DATE = "1990-01"
+_COUNTRY = "US"
+
+
 async def _register_with_token(api_url: str, email: str, password: str, token: str) -> str:
     """``register`` with the provisioning token, which the SDK does not send; returns the session."""
     query = "mutation R($i: RegisterUserInput!) { register(registerUserInput: $i) { token } }"
@@ -37,6 +43,8 @@ async def _register_with_token(api_url: str, email: str, password: str, token: s
             "password": password,
             "acceptLegal": True,
             "attestAgeOfMajority": True,
+            "birthDate": _BIRTH_DATE,
+            "country": _COUNTRY,
         }
     }
     async with httpx.AsyncClient(timeout=60.0) as http:
@@ -67,8 +75,16 @@ async def provision(
             client.set_token(await _register_with_token(api_url, owner, password, provisioning))
         else:
             await client.auth.register(
-                owner, password, accept_legal=True, attest_age_of_majority=True
+                owner,
+                password,
+                accept_legal=True,
+                attest_age_of_majority=True,
+                birth_date=_BIRTH_DATE,
+                country=_COUNTRY,
             )
+        if not existing:
+            # An account accepts the current developer terms before it creates an org.
+            await client.auth.record_developer_consents(accept_developer_terms=True)
         org = (
             {"orgId": org_id}
             if org_id
