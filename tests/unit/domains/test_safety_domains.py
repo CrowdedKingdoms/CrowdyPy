@@ -420,12 +420,12 @@ async def test_territory_policies_read_the_regions(
 ) -> None:
     api.reply_with_root(
         [
-            {"countryCode": "DE", "regionCode": None, "status": "blocked", "minAge": 13},
+            {"countryCode": "CU", "regionCode": None, "status": "blocked", "minAge": 13},
             {"countryCode": "UA", "regionCode": "UA-43", "status": "blocked", "minAge": 13},
         ]
     )
     rows = await PlatformAPI(graphql).territory_policies()
-    assert [(r["countryCode"], r["regionCode"]) for r in rows] == [("DE", None), ("UA", "UA-43")]
+    assert [(r["countryCode"], r["regionCode"]) for r in rows] == [("CU", None), ("UA", "UA-43")]
     assert (api.last.operation_name, api.last.variables) == ("TerritoryPolicies", {})
     assert re.search(r"\{\s*countryCode\s+regionCode\s+status\s+minAge\s*\}", api.last.query)
 

@@ -245,8 +245,8 @@ def test_the_age_refusals_are_booleans_and_never_surface_an_age() -> None:
 
 def test_territory_and_minecraft_refusals_carry_their_detail() -> None:
     assert territory_not_supported_of(
-        refused(code="TERRITORY_NOT_SUPPORTED", country="DE")
-    ) == CrowdyTerritoryNotSupported("DE")
+        refused(code="TERRITORY_NOT_SUPPORTED", country="CU")
+    ) == CrowdyTerritoryNotSupported("CU")
     assert territory_not_supported_of(
         refused(code="TERRITORY_NOT_SUPPORTED", country="")
     ) == CrowdyTerritoryNotSupported(None)
