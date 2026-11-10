@@ -33,8 +33,9 @@ an app in the existing org, signed in as its org admin (`--owner-email`, `--org-
 password in `CROWDY_E2E_OWNER_PASSWORD`). The deployed tiers' org admins are in AWS Secrets
 Manager (`us-east-1`, `infra-cp/<tier>/org-admin/...`).
 
-Registration is rate-limited (5 an hour per address, 30 per IP), so a run registers each
-player once and signs it in for the later suites.
+Registration is rate-limited to 5 an hour per email address (there has been no per-IP limit
+since ck-api v2.63.0), so a run registers each player once and signs it in for the later
+suites.
 
 ## Suites
 
