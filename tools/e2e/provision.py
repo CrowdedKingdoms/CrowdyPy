@@ -27,7 +27,6 @@ import httpx
 import crowdypy
 from crowdypy.graphql import graphql_endpoint
 
-
 # A fresh owner declares an adult in the US: since the platform admits players from 13, an
 # account with no age is refused a gameplay token (AGE_REQUIRED).
 _BIRTH_DATE = "1990-01"
