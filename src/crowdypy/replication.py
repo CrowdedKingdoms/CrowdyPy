@@ -155,6 +155,7 @@ _HANDLER_KEYS: dict[int, str] = {
     MessageType.CLIENT_AUDIO_NOTIFICATION: "audio",
     MessageType.CLIENT_VIDEO_NOTIFICATION: "video",
     MessageType.ACTOR_LEFT_NOTIFICATION: "actor_left",
+    MessageType.CHUNK_CHANGED_NOTIFICATION: "chunk_changed",
     MessageType.CLIENT_TEXT_NOTIFICATION: "text",
     MessageType.CLIENT_EVENT_NOTIFICATION: "client_event",
     MessageType.SERVER_EVENT_NOTIFICATION: "server_event",
@@ -207,6 +208,11 @@ class Notification:
     @property
     def left_reason(self) -> int:
         """An actor-left's reason (0 STALE)."""
+        return self.extras[0]
+
+    @property
+    def updated_at_ms(self) -> int:
+        """A chunk-changed's new ``updatedAt`` (epoch ms): read the chunk again."""
         return self.extras[0]
 
     @property
@@ -825,7 +831,8 @@ class _ConnectionCore:
         self, handlers: Mapping[str, Callable[[Notification], Any]]
     ) -> Callable[[], None]:
         """Call ``handlers[name](notification)`` for each event: ``actor_update``,
-        ``voxel_update``, ``audio``, ``video``, ``actor_left``, ``text``, ``client_event``,
+        ``voxel_update``, ``audio``, ``video``, ``actor_left``, ``chunk_changed`` (a chunk
+        replaced as a whole: read it again), ``text``, ``client_event``,
         ``server_event``, ``generic_spatial``, ``single_actor_message``, ``channel_message``,
         ``channel_audio``, ``generic_error``, ``status``, and ``any`` (every event but
         status). Returns the unsubscribe function. One object per event: prefer batches on a

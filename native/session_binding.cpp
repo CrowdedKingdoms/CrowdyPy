@@ -178,6 +178,13 @@ class PySession {
       e.a = reason;
       events_.push_back(std::move(e));
     };
+    // The same row the connection's own handler gives, so `chunk_changed` reaches subscribers
+    // whether or not a session is attached.
+    config.onChunkChanged = [this, app = std::strtoll(appId.c_str(), nullptr, 10)](
+                                const wire::ChunkCoord& chunk, std::int64_t updatedAtMs) {
+      conn_.rowsLocked().push(static_cast<std::uint8_t>(wire::MessageType::ChunkChangedNotification),
+                              app, chunk, nullptr, 0, 0, {updatedAtMs, 0, 0, 0}, {});
+    };
     {
       std::lock_guard lock(conn_.consumerMutex());
       session::WorldSessionServices services;

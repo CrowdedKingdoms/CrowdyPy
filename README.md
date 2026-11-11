@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.29.0: reconnect commands verify, bound control frames, and `chunk_changed`.** A server's `COMMAND_RECONNECT` verifies again; against replication servers v0.45.0 the reconnect and release frames carry a per-assignment nonce under their HMAC, so one captured earlier is refused (`stats()["stale_bound_control"]`); `chunk_changed` reports a chunk a hub's or mod's `world.set_chunk` replaced. CrowdyJS 18.29.0 and CrowdyCPP 0.81.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.28.0: region reads.** `chunks.by_distance()` and `voxels.list_by_distance()` take a box (`lowChunk`, `highChunk`) as well as a cube, pages are stable and answer the paging applied, `since` filters a chunk read, `voxels.list()` pages, and `game_apps.nearby_grids()` returns your own `permissionKeys`. Needs ck-api v2.67.0. CrowdyJS 18.28.0 and CrowdyCPP 0.80.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.27.0: a replayed idle release cannot end a playing player's session.** An idle release that arrives within a minute of this client's own gameplay input reconnects instead of going `ConnState.INACTIVE` (`idle_release_guard_ms`, counted in `stats()["idle_releases_after_input"]`), and a reassignment left over from the session that ended no longer reassigns the next one. The native chunk store keeps unechoed local edits over a stored copy. CrowdyJS 18.27.0 and CrowdyCPP 0.79.0. See [MIGRATION.md](MIGRATION.md).

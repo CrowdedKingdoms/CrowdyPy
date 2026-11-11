@@ -3,6 +3,29 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.29.0
+
+CrowdyJS 18.29.0 and CrowdyCPP 0.81.0. It needs nothing new on the tier; the bound frames and
+`chunk_changed` come from replication servers v0.45.0.
+
+- **A server's reconnect command is honoured.** The native verifier had computed the HMAC of
+  `COMMAND_RECONNECT` (22) over the type byte and the game token, while the replication servers
+  sign the type byte alone, so no reconnect command ever verified: each counted in
+  `stats()["hmac_failures"]` and the client stayed until its watchdog moved it.
+  `wire.verify_command_reconnect` checks the servers' form.
+- **Reconnect and release frames are bound to the assignment.** Each assignment draws a random
+  8-byte nonce, which the capabilities message carries; a v0.45.0 server sends
+  `COMMAND_RECONNECT_BOUND` (44) and `COMMAND_SESSION_RELEASED_BOUND` (45) with it inside the
+  HMAC. One carrying another assignment's nonce, captured earlier and sent again, is dropped and
+  counted in `stats()["stale_bound_control"]`. A verified bound idle release is final at once;
+  `idle_release_guard_ms` applies only to the legacy 28, which older servers and the Game API's
+  relay still send (the client cannot tell an older server from a replay, so it still accepts
+  them).
+- **`chunk_changed`** (handler name, `MessageType.CHUNK_CHANGED_NOTIFICATION`, 146): a chunk near
+  the player was replaced as a whole by a hub's or mod's `world.set_chunk`;
+  `notification.updated_at_ms` is its new `updatedAt`. Read it again. It arrives with or without a
+  world session attached.
+
 ## 0.28.0
 
 CrowdyJS 18.28.0 and CrowdyCPP 0.80.0. **It needs ck-api v2.67.0**: `game_apps.nearby_grids()`

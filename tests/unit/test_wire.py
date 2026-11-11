@@ -35,8 +35,10 @@ CPP_GOLDEN_SPATIAL = bytes.fromhex(
     + CPP_UUID.hex()
     + "deadbeef43ecd468d2593f17f3fb06368a2b6f4732fc2da165acf4ca2bfe16396c43362a15cd5b07000000002a"
 )
+# COMMAND_RECONNECT as the replication servers and the Game API's proxy sign it: the HMAC is
+# over the type byte alone (CrowdyCPP 0.81.0; its earlier golden appended the token).
 CPP_GOLDEN_RECONNECT = bytes.fromhex(
-    "16748a0e416baa63befba6ff5f52611cc093855e04e60ac057e14e8fbe198281e2"
+    "16c80d2cee8977578129f7295001cd1bea65dd11be3f518560529cb298ce5fc42b"
 )
 
 
@@ -93,6 +95,10 @@ def test_hmac_is_the_documented_scheme() -> None:
 def test_crowdycpp_golden_reconnect() -> None:
     assert wire.verify_command_reconnect(CPP_TOKEN, CPP_GOLDEN_RECONNECT)
     assert not wire.verify_command_reconnect(JS_TOKEN, CPP_GOLDEN_RECONNECT)
+    signed_with_the_token_appended = (
+        bytes([22]) + hmac.new(CPP_TOKEN, bytes([22]) + CPP_TOKEN, hashlib.sha256).digest()
+    )
+    assert not wire.verify_command_reconnect(CPP_TOKEN, signed_with_the_token_appended)
 
 
 # CrowdyCPP tests/wire_test.cpp testRangedChannelGolden: token "A" x 64, gameTokenId 555,
