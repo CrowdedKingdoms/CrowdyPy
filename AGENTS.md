@@ -131,7 +131,10 @@ idle timeout, with `COMMAND_SESSION_RELEASED` reason 5. CrowdyCPP verifies and h
 connection reports `ConnState.INACTIVE` (6), which nothing reconnects; a game calls
 `client.udp.connect()` on the player's next input. Status rows carry the state as a number, so
 `ConnState` must name every value CrowdyCPP's `replication::ConnState` has or `ConnState(...)`
-raises. Since 0.27.0 (CrowdyCPP 0.79.0) an idle release within `idle_release_guard_ms` (60 s) of
+raises. Since 0.29.0 (CrowdyCPP 0.81.0) a capabilities message carries the assignment's control
+nonce and a v0.45.0 server sends the bound 44/45 forms: a test that wants a final bound release reads
+the nonce from the client's CLIENT_CAPABILITIES (`test_replication.py`, `bound_release`). Since
+0.27.0 (CrowdyCPP 0.79.0) an idle release within `idle_release_guard_ms` (60 s) of
 the client's own gameplay input reconnects instead (a captured release frame verifies again);
 a test that wants a final release teaches the fake server the address with a heartbeat, not an
 actor update.

@@ -185,6 +185,12 @@ void WorldSession::installHandlers() {
   if (config_.onText) handlers.text = config_.onText;
   if (config_.onGenericSpatial) handlers.genericSpatial = config_.onGenericSpatial;
   if (config_.onChannelAudio) handlers.channelAudio = config_.onChannelAudio;
+  if (config_.onChunkChanged) {
+    handlers.chunkChanged = [this](const replication::SpatialNotification& n,
+                                   std::int64_t updatedAtMs) {
+      config_.onChunkChanged(n.chunk, updatedAtMs);
+    };
+  }
   // The server's departure notice removes the actor now (onLeave fires from the
   // store) instead of after the staleAfterMs reap, then the game is told too.
   handlers.actorLeft = [this](const replication::SpatialNotification& n, std::uint8_t reason) {

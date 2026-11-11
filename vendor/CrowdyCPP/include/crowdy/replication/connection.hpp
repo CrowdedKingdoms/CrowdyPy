@@ -298,6 +298,9 @@ class Connection {
     /// Verified idle releases that arrived within Config::idleReleaseGuardMs of this
     /// client's own gameplay input; each reassigned instead of going Inactive.
     std::uint64_t idleReleasesAfterInput = 0;
+    /// Bound control frames (44, 45) carrying another assignment's nonce, dropped: a
+    /// frame captured earlier and sent again.
+    std::uint64_t staleBoundControl = 0;
     std::int64_t lastServerEpochMs = 0;
     /// Messages sent, by wire opcode (actor/voxel/audio/text/event/channel/
     /// heartbeat requests).
@@ -413,6 +416,9 @@ class Connection {
   /// Set by the receive path on a verified idle release; housekeeping goes Inactive.
   std::atomic<bool> idleReleased_{false};
   std::atomic<bool> reconnectRequested_{false};
+  /// This assignment's BOUND_CONTROL nonce, drawn in doAssign() and sent with
+  /// CLIENT_CAPABILITIES; 0 when no random bytes were available (the bit is not sent).
+  std::atomic<std::uint64_t> controlNonce_{0};
 
   /// Monotonic ms of the last send that counts as gameplay input (0: none yet).
   std::atomic<std::int64_t> lastGameplayMs_{0};

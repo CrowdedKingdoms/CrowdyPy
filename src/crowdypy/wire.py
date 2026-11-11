@@ -90,6 +90,14 @@ class MessageType(IntEnum):
     #: The connection handles it; see :class:`ReleaseReason`.
     COMMAND_SESSION_RELEASED = 28
     CLIENT_CAPABILITIES = 29
+    #: ``[44][8-byte nonce][32-byte HMAC over the first 9 bytes]``: COMMAND_RECONNECT bound to
+    #: the assignment's nonce, which the capabilities message carries (replication server
+    #: v0.45.0). The connection handles it; one with another assignment's nonce is counted in
+    #: ``stats()["stale_bound_control"]`` and dropped.
+    COMMAND_RECONNECT_BOUND = 44
+    #: ``[45][reason][8-byte nonce][32-byte HMAC over the first 10 bytes]``: the bound
+    #: COMMAND_SESSION_RELEASED. A verified idle release is final, without the idle guard.
+    COMMAND_SESSION_RELEASED_BOUND = 45
     MESSAGE_BUNDLE_SIGNED = 30
     CHANNEL_MESSAGE_RANGED_REQUEST = 32
     CHANNEL_AUDIO_REQUEST = 35
@@ -109,6 +117,9 @@ class MessageType(IntEnum):
     CLIENT_VIDEO_PACKET = 143
     CLIENT_VIDEO_NOTIFICATION = 144
     ACTOR_LEFT_NOTIFICATION = 145
+    #: A chunk near the player was replaced as a whole (a hub's or mod's ``world.set_chunk``);
+    #: the payload is its new ``updatedAt`` in epoch milliseconds (replication server v0.45.0).
+    CHUNK_CHANGED_NOTIFICATION = 146
 
 
 class ReleaseReason(IntEnum):
