@@ -60,6 +60,7 @@ _LAZY: dict[str, str] = {
     "APP_PAUSED_CODE": "crowdypy.errors",
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
     "ASSERTION_REJECTED_CODE": "crowdypy.errors",
+    "EMAIL_CONFIRMATION_REQUIRED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
@@ -147,6 +148,7 @@ _LAZY: dict[str, str] = {
     "MinecraftChallenge": "crowdypy.domains.portal",
     "PortalConsentRequiredError": "crowdypy.domains.portal",
     "default_hosted_sign_in_url": "crowdypy.domains.portal",
+    "is_email_confirmation_required_error": "crowdypy.domains.portal",
     "is_hosted_sign_in_required_error": "crowdypy.domains.portal",
     "is_legal_acceptance_required_error": "crowdypy.domains.portal",
     "PlayerAge": "crowdypy.domains.auth",
@@ -412,6 +414,9 @@ if TYPE_CHECKING:
         default_hosted_sign_in_url as default_hosted_sign_in_url,
     )
     from crowdypy.domains.portal import (
+        is_email_confirmation_required_error as is_email_confirmation_required_error,
+    )
+    from crowdypy.domains.portal import (
         is_hosted_sign_in_required_error as is_hosted_sign_in_required_error,
     )
     from crowdypy.domains.portal import (
@@ -482,6 +487,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         ASSERTION_REJECTED_CODE as ASSERTION_REJECTED_CODE,
+    )
+    from crowdypy.errors import (
+        EMAIL_CONFIRMATION_REQUIRED_CODE as EMAIL_CONFIRMATION_REQUIRED_CODE,
     )
     from crowdypy.errors import (
         GROUP_MEMBER_BANNED_CODE as GROUP_MEMBER_BANNED_CODE,

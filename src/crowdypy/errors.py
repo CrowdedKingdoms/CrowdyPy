@@ -26,6 +26,7 @@ __all__ = [
     "APP_PAUSED_CODE",
     "APP_UNAVAILABLE_CODE",
     "ASSERTION_REJECTED_CODE",
+    "EMAIL_CONFIRMATION_REQUIRED_CODE",
     "GROUP_MEMBER_BANNED_CODE",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE",
@@ -116,6 +117,10 @@ ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE = "ORG_LEGAL_ACCEPTANCE_REQUIRED"
 #: player documents or the app's own, listed in ``extensions.missingDocuments``; see
 #: :func:`legal_acceptance_required_of`.
 LEGAL_ACCEPTANCE_REQUIRED_CODE = "LEGAL_ACCEPTANCE_REQUIRED"
+#: A password account made since 2026-11-11 has not confirmed its email (HTTP 403, ck-api
+#: v2.65.0), at a token's mint, portal code or refresh; see
+#: :func:`crowdypy.domains.portal.is_email_confirmation_required_error`.
+EMAIL_CONFIRMATION_REQUIRED_CODE = "EMAIL_CONFIRMATION_REQUIRED"
 #: The player's age is not known (HTTP 403), at a token's mint or refresh, or the developer
 #: documents for an account with no age; see :func:`age_required_of`.
 AGE_REQUIRED_CODE = "AGE_REQUIRED"

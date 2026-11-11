@@ -46,6 +46,7 @@ __all__ = [
     "PortalAPI",
     "PortalConsentRequiredError",
     "default_hosted_sign_in_url",
+    "is_email_confirmation_required_error",
     "is_hosted_sign_in_required_error",
     "is_legal_acceptance_required_error",
 ]
@@ -214,6 +215,25 @@ def is_legal_acceptance_required_error(error: object) -> bool:
             return True
     # Not the organization's ORG_LEGAL_ACCEPTANCE_REQUIRED: no player clickwrap answers that.
     return re.search(r"(^|[^A-Z_])LEGAL_ACCEPTANCE_REQUIRED", str(error)) is not None
+
+
+def is_email_confirmation_required_error(error: object) -> bool:
+    """``EMAIL_CONFIRMATION_REQUIRED`` (ck-api v2.65.0): a password account made since
+    2026-11-11 has not confirmed its email address, so no gameplay token is issued
+    (:meth:`PortalAPI.mint_app_token`, :meth:`PortalAPI.create_authorization_code`,
+    :meth:`PortalAPI.refresh`). Retrying cannot succeed: ask the player to open the emailed
+    link, offer ``auth.resend_confirmation_email(email)``, then mint again. Accounts made
+    before then and players an organization manages are not asked."""
+    code = getattr(error, "code", None)
+    if code == "EMAIL_CONFIRMATION_REQUIRED":
+        return True
+    extensions = getattr(error, "extensions", None)
+    if isinstance(extensions, dict) and extensions.get("code") == "EMAIL_CONFIRMATION_REQUIRED":
+        return True
+    for entry in getattr(error, "graphql_errors", None) or ():
+        if (entry.get("extensions") or {}).get("code") == "EMAIL_CONFIRMATION_REQUIRED":
+            return True
+    return "EMAIL_CONFIRMATION_REQUIRED" in str(error)
 
 
 _APP_TOKEN_FIELDS = (
