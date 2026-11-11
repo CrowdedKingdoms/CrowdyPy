@@ -1,8 +1,10 @@
 #include "crowdy/session/world_session.hpp"
 
 #include <chrono>
+#include <optional>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 
 #include "crowdy/client.hpp"
 #include "crowdy/core/base64.hpp"
@@ -11,39 +13,63 @@ namespace crowdy::session {
 
 namespace {
 
+StoredChunk storedChunkOf(const graphql::Json& chunkJson) {
+  StoredChunk chunk;
+  chunk.coord = {chunkJson["coordinates"]["x"].asBigInt(), chunkJson["coordinates"]["y"].asBigInt(),
+                 chunkJson["coordinates"]["z"].asBigInt()};
+  auto voxels = core::base64Decode(chunkJson["voxels"].asStringView());
+  if (voxels) chunk.voxels.assign(voxels->begin(), voxels->end());
+  chunkJson["voxelStates"].forEach([&](graphql::Json entry) {
+    StoredVoxelState voxel;
+    voxel.x = static_cast<int>(entry["voxelCoord"]["x"].asInt64(-1));
+    voxel.y = static_cast<int>(entry["voxelCoord"]["y"].asInt64(-1));
+    voxel.z = static_cast<int>(entry["voxelCoord"]["z"].asInt64(-1));
+    voxel.voxelType = static_cast<std::int16_t>(entry["voxelType"].asInt64());
+    // A state that is not base64 is dropped; the type still applies.
+    if (auto state = core::base64Decode(entry["state"].asStringView())) {
+      voxel.state.assign(state->begin(), state->end());
+    }
+    chunk.voxelStates.push_back(std::move(voxel));
+  });
+  chunk.voxelStatesTruncated = chunkJson["voxelStatesTruncated"].asBool();
+  return chunk;
+}
+
 /// IChunkSource over the Game API's chunks surface: the store's behaviour before
 /// the source became injectable.
 class ChunksApiSource final : public IChunkSource {
  public:
   explicit ChunksApiSource(domains::ChunksAPI& api) : api_(api) {}
 
+  /// Asks for the whole cube in one page: without a limit the server returns at most
+  /// 1,000 chunks, and range 8 holds 4,913. A server that answers with a lower limit
+  /// is paged by the limit it echoes; a chunk on two pages is kept once.
   std::vector<StoredChunk> chunksAround(const std::string& appId, const ChunkCoord& center,
                                         int distance) override {
-    graphql::Json page =
-        api_.byDistance(appId, domains::ChunkRef{center.x, center.y, center.z}, distance);
+    const std::int64_t side = 2 * static_cast<std::int64_t>(distance) + 1;
+    const std::int64_t cube = side * side * side;
     std::vector<StoredChunk> out;
-    page["chunks"].forEach([&](graphql::Json chunkJson) {
-      StoredChunk chunk;
-      chunk.coord = {chunkJson["coordinates"]["x"].asBigInt(),
-                     chunkJson["coordinates"]["y"].asBigInt(),
-                     chunkJson["coordinates"]["z"].asBigInt()};
-      auto voxels = core::base64Decode(chunkJson["voxels"].asStringView());
-      if (voxels) chunk.voxels.assign(voxels->begin(), voxels->end());
-      chunkJson["voxelStates"].forEach([&](graphql::Json entry) {
-        StoredVoxelState voxel;
-        voxel.x = static_cast<int>(entry["voxelCoord"]["x"].asInt64(-1));
-        voxel.y = static_cast<int>(entry["voxelCoord"]["y"].asInt64(-1));
-        voxel.z = static_cast<int>(entry["voxelCoord"]["z"].asInt64(-1));
-        voxel.voxelType = static_cast<std::int16_t>(entry["voxelType"].asInt64());
-        // A state that is not base64 is dropped; the type still applies.
-        if (auto state = core::base64Decode(entry["state"].asStringView())) {
-          voxel.state.assign(state->begin(), state->end());
-        }
-        chunk.voxelStates.push_back(std::move(voxel));
+    std::unordered_set<ChunkCoord, ChunkCoordHash> seen;
+    for (std::int64_t skip = 0; skip < cube;) {
+      graphql::Json page = api_.byDistance(
+          appId, domains::ChunkRef{center.x, center.y, center.z}, distance, cube - skip, skip);
+      std::size_t rows = 0;
+      page["chunks"].forEach([&](graphql::Json chunkJson) {
+        ++rows;
+        StoredChunk chunk = storedChunkOf(chunkJson);
+        if (seen.insert(chunk.coord).second) out.push_back(std::move(chunk));
       });
-      out.push_back(std::move(chunk));
-    });
+      const std::int64_t limit = page["limit"].asInt64(cube - skip);
+      if (rows == 0 || limit <= 0 || static_cast<std::int64_t>(rows) < limit) break;
+      skip += static_cast<std::int64_t>(rows);
+    }
     return out;
+  }
+
+  std::optional<StoredChunk> chunkAt(const std::string& appId, const ChunkCoord& coord) override {
+    graphql::Json chunk = api_.get(appId, domains::ChunkRef{coord.x, coord.y, coord.z});
+    if (!chunk.isObject()) return std::nullopt;
+    return storedChunkOf(chunk);
   }
 
   graphql::GraphQLOutcome writeChunk(const std::string& appId, const ChunkCoord& coord,
@@ -244,31 +270,51 @@ void WorldSession::dispose() {
 // ChunkStore GraphQL paths (here to keep the header free of domain includes)
 // ---------------------------------------------------------------------------
 
+void ChunkStore::applyStored(const StoredChunk& stored, std::int64_t nowMs) {
+  ChunkData& c = chunks_[stored.coord];
+  c.coord = stored.coord;
+  c.storedOnServer = true;
+  c.hydratedAtMs = nowMs;
+  c.voxelStatesTruncated = stored.voxelStatesTruncated;
+  if (stored.voxels.size() == c.voxels.size()) {
+    std::memcpy(c.voxels.data(), stored.voxels.data(), c.voxels.size());
+  }
+  for (const StoredVoxelState& entry : stored.voxelStates) {
+    if (!fitsInt16(entry.x) || !fitsInt16(entry.y) || !fitsInt16(entry.z)) continue;
+    putVoxel(c, entry.x, entry.y, entry.z, entry.voxelType,
+             Bytes(entry.state.data(), entry.state.size()));
+  }
+  reapplyPending(c);
+  touch(c);
+}
+
 std::size_t ChunkStore::ensureAround(const ChunkCoord& center, int distance) {
   if (!source_) return 0;
   // The durable byDistance query accepts a Chebyshev radius of 1-8.
   if (distance < 1) distance = 1;
   if (distance > 8) distance = 8;
   std::vector<StoredChunk> stored = source_->chunksAround(appId_, center, distance);
-  std::size_t hydrated = 0;
+  std::size_t applied = 0;
   const std::int64_t nowMs = core::systemClock().monotonicMillis();
   for (const StoredChunk& chunk : stored) {
-    ChunkData& c = chunks_[chunk.coord];
-    c.coord = chunk.coord;
-    c.storedOnServer = true;
-    c.hydratedAtMs = nowMs;
-    if (chunk.voxels.size() == c.voxels.size()) {
-      std::memcpy(c.voxels.data(), chunk.voxels.data(), c.voxels.size());
-    }
-    for (const StoredVoxelState& entry : chunk.voxelStates) {
-      if (!fitsInt16(entry.x) || !fitsInt16(entry.y) || !fitsInt16(entry.z)) continue;
-      putVoxel(c, entry.x, entry.y, entry.z, entry.voxelType,
-               Bytes(entry.state.data(), entry.state.size()));
-    }
-    touch(c);
-    ++hydrated;
+    const ChunkData* cached = find(chunk.coord);
+    if (cached && cached->hydratedAtMs > 0) continue;
+    applyStored(chunk, nowMs);
+    ++applied;
   }
-  return hydrated;
+  return applied;
+}
+
+std::size_t ChunkStore::hydrate(const ChunkCoord& coord) {
+  if (!source_) return 0;
+  const ChunkData* cached = find(coord);
+  if (cached && cached->dirty) return 0;
+  std::optional<StoredChunk> stored = source_->chunkAt(appId_, coord);
+  if (!stored) return 0;
+  cached = find(coord);
+  if (cached && cached->dirty) return 0;
+  applyStored(*stored, core::systemClock().monotonicMillis());
+  return 1;
 }
 
 namespace {

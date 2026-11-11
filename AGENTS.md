@@ -131,7 +131,10 @@ idle timeout, with `COMMAND_SESSION_RELEASED` reason 5. CrowdyCPP verifies and h
 connection reports `ConnState.INACTIVE` (6), which nothing reconnects; a game calls
 `client.udp.connect()` on the player's next input. Status rows carry the state as a number, so
 `ConnState` must name every value CrowdyCPP's `replication::ConnState` has or `ConnState(...)`
-raises.
+raises. Since 0.27.0 (CrowdyCPP 0.79.0) an idle release within `idle_release_guard_ms` (60 s) of
+the client's own gameplay input reconnects instead (a captured release frame verifies again);
+a test that wants a final release teaches the fake server the address with a heartbeat, not an
+actor update.
 
 ## Email confirmation (0.26.0)
 

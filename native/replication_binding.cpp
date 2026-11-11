@@ -231,7 +231,8 @@ void register_replication(nb::module_& m) {
              int sessionReadyWaitMs, std::int64_t refreshLeadMs, bool verifyNotifications,
              bool advertiseCapabilities, std::int64_t advertiseIntervalMs,
              std::int64_t watchdogSilenceMs, std::size_t ringCapacity, int recvBuffer,
-             int sendBuffer, bool bundleSends, int bundleWindowMs, std::int64_t providerTimeoutMs) {
+             int sendBuffer, bool bundleSends, int bundleWindowMs, std::int64_t providerTimeoutMs,
+             std::int64_t idleReleaseGuardMs) {
             ConnectionOptions o;
             o.appId = appId;
             o.manualPump = manualPump;
@@ -247,6 +248,7 @@ void register_replication(nb::module_& m) {
             o.socketSendBufferBytes = sendBuffer;
             o.bundleSends = bundleSends;
             o.bundleWindowMs = bundleWindowMs;
+            o.idleReleaseGuardMs = idleReleaseGuardMs;
             new (self) PyConnection(o, token, gameTokenId, expiresAtMs, providerTimeoutMs);
           },
           nb::arg("app_id"), nb::arg("token"), nb::arg("game_token_id"),
@@ -257,7 +259,8 @@ void register_replication(nb::module_& m) {
           nb::arg("watchdog_silence_ms") = 0, nb::arg("ring_capacity") = 4096,
           nb::arg("socket_recv_buffer_bytes") = 1 << 20,
           nb::arg("socket_send_buffer_bytes") = 1 << 20, nb::arg("bundle_sends") = true,
-          nb::arg("bundle_window_ms") = 1, nb::arg("provider_timeout_ms") = 30000)
+          nb::arg("bundle_window_ms") = 1, nb::arg("provider_timeout_ms") = 30000,
+          nb::arg("idle_release_guard_ms") = 60 * 1000)
       .def_prop_ro("bridge", &PyConnection::bridge, nb::rv_policy::reference_internal)
       .def("connect", &PyConnection::connect)
       .def("disconnect", &PyConnection::disconnect)
