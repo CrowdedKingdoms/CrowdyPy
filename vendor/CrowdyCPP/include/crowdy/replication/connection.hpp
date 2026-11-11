@@ -295,6 +295,9 @@ class Connection {
     std::uint64_t malformed = 0;
     std::uint64_t ringDropped = 0;
     std::uint64_t reconnects = 0;
+    /// Verified idle releases that arrived within Config::idleReleaseGuardMs of this
+    /// client's own gameplay input; each reassigned instead of going Inactive.
+    std::uint64_t idleReleasesAfterInput = 0;
     std::int64_t lastServerEpochMs = 0;
     /// Messages sent, by wire opcode (actor/voxel/audio/text/event/channel/
     /// heartbeat requests).
@@ -410,6 +413,22 @@ class Connection {
   /// Set by the receive path on a verified idle release; housekeeping goes Inactive.
   std::atomic<bool> idleReleased_{false};
   std::atomic<bool> reconnectRequested_{false};
+
+  /// Monotonic ms of the last send that counts as gameplay input (0: none yet).
+  std::atomic<std::int64_t> lastGameplayMs_{0};
+  /// The last actor-update payload hash per actor this session, so a keyframe that
+  /// repeats an unchanged state is not input. A lookup that misses counts as a change.
+  struct ActorStateHash {
+    core::ActorUuid uuid{};
+    std::uint64_t hash = 0;
+    bool used = false;
+  };
+  std::array<ActorStateHash, 8> actorStateHashes_{};
+  std::size_t actorStateNext_ = 0;
+  std::mutex actorStateMutex_;
+  void noteGameplaySend(wire::MessageType type, const SpatialSend& p);
+  bool actorStateChanged(const SpatialSend& p);
+  bool idleReleaseFollowsInput() const;
   /// Set when onEventsReady fired; poll() clears it before draining, so an
   /// event queued during or after a drain signals again.
   std::atomic<bool> eventsSignalled_{false};
