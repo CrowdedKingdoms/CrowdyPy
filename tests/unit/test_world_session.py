@@ -236,25 +236,24 @@ def test_voxels_inboxes_events_and_errors(world: Any) -> None:
     assert texts == [b"forwarded"]
 
 
-def test_local_edits_replicate_and_queue_for_write_back(world: Any) -> None:
+def test_local_edits_replicate_and_wait_for_their_echo(world: Any) -> None:
     server, _, session = world
     session.self.join((0, 0, 0), b"x")
     server.recv()
     session.chunks.seed((4, 4, 4), bytes(4096), write_back=False)
     assert session.chunks.pending_write_backs == 0
-    sequence = session.chunks.set_voxel((4, 4, 4), 1, 1, 1, 5, b"meta")
+    edit = session.chunks.set_voxel((4, 4, 4), 1, 1, 1, 5, b"meta")
+    assert edit >= 1
     sent = server.recv()
-    assert (sent.type, sent.chunk, sent.sequence) == (
-        MessageType.VOXEL_UPDATE_REQUEST,
-        (4, 4, 4),
-        sequence,
-    )
+    assert (sent.type, sent.chunk) == (MessageType.VOXEL_UPDATE_REQUEST, (4, 4, 4))
     assert wire.parse_voxel_payload(sent.payload) == (1, 1, 1, 5, b"meta")
     assert session.chunks.voxel_type_at((4, 4, 4), 1, 1, 1) == 5
-    assert session.chunks.pending_write_backs == 1
+    # The server records a realtime edit: nothing to write back; it waits for its echo.
+    assert session.chunks.pending_write_backs == 0
+    assert session.chunks.edits_in_flight == 1
     chunk = session.chunks.get((4, 4, 4))
     assert chunk is not None
-    assert chunk.dirty
+    assert not chunk.dirty
 
 
 def test_engine_lanes_split_mobs_from_players_natively(world: Any) -> None:
@@ -470,3 +469,28 @@ def test_set_voxel_refuses_an_edit_that_does_not_fit_before_applying_it(chunk: A
     meta = session.chunks.get(at)
     assert meta is not None
     assert not meta.dirty
+
+
+def test_a_refused_edit_is_undone_and_reported(world: Any) -> None:
+    # CrowdyCPP 0.82.0: a GENERIC_ERROR for an edit's sequence number undoes it.
+    server, _, session = world
+    session.self.join((0, 0, 0), b"x")
+    server.recv()
+    session.chunks.seed((4, 4, 4), bytes(4096), write_back=False)
+    refusals: list[Any] = []
+    session.chunks.on_edit_refused(refusals.append)
+    edit = session.chunks.set_voxel((4, 4, 4), 1, 2, 3, 5)
+    sent = server.recv()
+    assert session.chunks.voxel_type_at((4, 4, 4), 1, 2, 3) == 5
+    server.sock.sendto(bytes([MessageType.GENERIC_ERROR, sent.sequence, 7]), server.client)
+    tick_until(session, lambda: refusals)
+    refusal = refusals[0]
+    assert (refusal.coord, refusal.voxel, refusal.voxel_type) == ((4, 4, 4), (1, 2, 3), 5)
+    assert (refusal.reason, refusal.restored, refusal.error_code, refusal.edit_id) == (
+        "refused",
+        True,
+        7,
+        edit,
+    )
+    assert session.chunks.voxel_type_at((4, 4, 4), 1, 2, 3) == 0
+    assert session.chunks.edits_in_flight == 0
