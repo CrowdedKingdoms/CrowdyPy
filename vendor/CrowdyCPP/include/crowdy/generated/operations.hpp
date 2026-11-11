@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: 0e6d2907035f4b52f9b9856079c91709eaab5fb1c74b79f11cb3dfdd4ac47835
-// operations sha256: 23b463969cd35611a2ae27205d0884f39c28b07e208d05314fe6991ee976f6d0
+// schema.gql sha256: a79c17ee2f9143728ef96593b70ed7efc8c1a8188fd6b041ce447adf35668996
+// operations sha256: 004cb5807f8f859a8c07e2cf75930521350d242fdca088393b463aa5c300c05f
 
 #pragma once
 
@@ -6157,6 +6157,7 @@ query NearbyGrids($input: NearbyGridsInput!) {
       y
       z
     }
+    permissionKeys
   }
 }
 
@@ -6365,6 +6366,7 @@ inline constexpr std::string_view kNearbyGridsIsolatedDocument = R"gql(query Nea
       y
       z
     }
+    permissionKeys
   }
 })gql";
 inline constexpr std::string_view kNearbyGridsOperationName = "NearbyGrids";
