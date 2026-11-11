@@ -119,8 +119,8 @@ environment = { OPENSSL_ROOT_DIR = "C:/vcpkg/installed/x64-windows-static-md" }
 # --------------------------------------------------------------------------------------
 
 [tool.crowdypy.crowdyjs]
-version = "18.27.0"
-commit = "083656687dd7128fa06c569ffbc85d807e0b5174"
+version = "18.28.0"
+commit = "bc8b2b0737c0caf1486358c721123fa72fc1b955"
 
 [tool.crowdypy.crowdycpp]
 version = "0.79.0"
@@ -131,8 +131,8 @@ tree-sha256 = "e363f399578d63044706f89140e9ccd49b06d298adda1a5d515ce6409d4eb6be"
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
 # scripts/schema_sync.py, which records these hashes and re-derives them in CI.
 [tool.crowdypy.graphql]
-schema-sha256 = "2721890191ea5feb270ccbcce13042477779606fb53d2ee774aee8786a701c51"
-operations-sha256 = "5674dc512078159e57f8f06f582e996784e497de9430316c17197d575467d826"
+schema-sha256 = "77a5f321148142940ecc2f1d0b52a0b30d4e3d5918db5b19d1e978f688cd0c0c"
+operations-sha256 = "f2d61b107673668b345b29551c1979bbf93e34d5122c68cbd8a0d63ac59c25f9"
 
 # The SDL the docs site publishes. scripts/schema_drift.py compares the snapshot against it
 # on a schedule; nothing on the per-commit path reads the network.
