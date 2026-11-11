@@ -94,6 +94,17 @@ struct Config {
   /// Disabled by default (a lone player legitimately receives nothing).
   std::int64_t watchdogSilenceMs = 0;
 
+  /// An idle release (COMMAND_SESSION_RELEASED, reason Idle) that arrives within this
+  /// long of this client's own gameplay input reassigns instead of ending the session,
+  /// and counts in Stats::idleReleasesAfterInput. A genuine idle release cannot follow
+  /// input the server counted, because the platform's shortest idle timeout is 60 s;
+  /// a frame captured from an earlier release and sent again can. Gameplay input is
+  /// what the server counts: actor updates whose payload changed, voxel edits, text,
+  /// events, generic spatial and single-actor messages, audio, video, and channel
+  /// publishes; never heartbeats or capability notices. 0 makes every verified idle
+  /// release final.
+  std::int64_t idleReleaseGuardMs = 60 * 1000;
+
   /// Capacity (events) of the net->game notification ring.
   std::size_t ringCapacity = 4096;
 

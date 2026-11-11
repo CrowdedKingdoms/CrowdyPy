@@ -7,6 +7,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -70,7 +71,11 @@ struct ChunkData {
   std::unordered_map<std::uint64_t, OverlayVoxel> overlay;
   bool storedOnServer = false;  ///< false = locally generated, pending write-back
   bool dirty = false;           ///< local edits not yet persisted
+  /// When the stored copy was last applied (0: never loaded from the durable store).
   std::int64_t hydratedAtMs = 0;
+  /// The server cut this chunk's recorded edits short (65,536 for one chunk, 262,144
+  /// across a bulk load): the rest are not in the cache. Read them with voxels().list.
+  bool voxelStatesTruncated = false;
 };
 
 /// Why the store stopped trying a chunk's write-back.
@@ -119,12 +124,14 @@ struct StoredChunk {
   /// Applied over `voxels` on load: each entry's type at its voxel, and its state
   /// (in the overlay for an entry the grid cannot hold).
   std::vector<StoredVoxelState> voxelStates;
+  /// The server cut `voxelStates` short; see ChunkData::voxelStatesTruncated.
+  bool voxelStatesTruncated = false;
 };
 
 /// Where a ChunkStore hydrates from and writes back to. The Game API's chunks
 /// surface is the default (the ChunksAPI constructor); an engine or a language
 /// binding supplies its own transport. Called on the thread that calls
-/// ensureAround(), tick(), pruneBeyond() and flush().
+/// ensureAround(), hydrate(), tick(), pruneBeyond() and flush().
 class IChunkSource {
  public:
   virtual ~IChunkSource() = default;
@@ -133,6 +140,15 @@ class IChunkSource {
   /// made there. May throw; the exception surfaces from ensureAround().
   virtual std::vector<StoredChunk> chunksAround(const std::string& appId,
                                                 const ChunkCoord& center, int distance) = 0;
+  /// The one stored chunk at `coord` with its `voxelStates`, or nullopt when it was
+  /// never stored. The default keeps `coord`'s chunk out of chunksAround(coord, 1);
+  /// the Game API's source reads that chunk alone. May throw, as chunksAround.
+  virtual std::optional<StoredChunk> chunkAt(const std::string& appId, const ChunkCoord& coord) {
+    for (StoredChunk& chunk : chunksAround(appId, coord, 1)) {
+      if (chunk.coord == coord) return std::move(chunk);
+    }
+    return std::nullopt;
+  }
   /// Persist one chunk's voxels. The outcome classifies a failure exactly as a
   /// ChunksAPI write does: refused (dropped after one attempt) or able to clear
   /// (retried with backoff).
@@ -191,13 +207,17 @@ class ChunkStore {
       : ChunkStore(conn, static_cast<IChunkSource*>(nullptr), std::move(appId),
                    std::move(options)) {}
 
-  /// Load every stored chunk within `distance` of `center` from the durable
-  /// store (one round trip). Each chunk's `voxelStates` go over its dense grid:
-  /// an entry's type at its voxel, and its state (an entry without one clears
-  /// the cached state there); an entry the grid cannot hold goes to the overlay.
-  /// Every voxel edit recorded for a chunk arrives only that way. Coordinates
-  /// already cached are refreshed. Does nothing without a durable store; the
-  /// source's errors propagate.
+  /// Load the stored chunks within `distance` (Chebyshev, clamped to 1-8) of
+  /// `center` from the durable store; the Game API's source asks for the whole
+  /// cube (4,913 chunks at range 8) and pages past any lower server limit. Each
+  /// chunk's `voxelStates` go over its dense grid: an entry's type at its voxel,
+  /// and its state (an entry without one clears the cached state there); an entry
+  /// the grid cannot hold goes to the overlay. Every voxel edit recorded for a
+  /// chunk arrives only that way. A chunk already loaded from the store keeps
+  /// what the cache holds, since realtime merges and local edits are newer than
+  /// the stored copy (hydrate() refreshes one). This client's edits the server has
+  /// not echoed yet are put back over a copy that is applied. Returns the chunks
+  /// applied. Does nothing without a durable store; the source's errors propagate.
   std::size_t ensureAround(const ChunkCoord& center, int distance);
 
   /// Look up a cached chunk (nullptr when absent).
@@ -206,9 +226,12 @@ class ChunkStore {
     return it == chunks_.end() ? nullptr : &it->second;
   }
 
-  /// Alias of ensureAround for one coordinate (loads/refreshes from the
+  /// Load or refresh one chunk from the durable store (the Game API's source reads
+  /// it alone, with getChunk), as ensureAround applies a chunk. A dirty chunk is
+  /// left alone, since its local edits are not written back yet. Returns 1 when a
+  /// stored copy was applied, 0 when there is none (never stored, dirty, or no
   /// durable store).
-  std::size_t hydrate(const ChunkCoord& coord) { return ensureAround(coord, 0); }
+  std::size_t hydrate(const ChunkCoord& coord);
 
   /// Snapshot of every cached chunk.
   std::vector<const ChunkData*> list() const {
@@ -344,7 +367,8 @@ class ChunkStore {
     if (seq.ok()) {
       rememberEdit(coord, voxelKey(static_cast<std::int16_t>(x), static_cast<std::int16_t>(y),
                                    static_cast<std::int16_t>(z)),
-                   PendingEdit{uuid, seq.value(), nowMs(), /*stale=*/!optimistic});
+                   PendingEdit{uuid, seq.value(), nowMs(), /*stale=*/!optimistic, voxelType,
+                               std::vector<std::uint8_t>(voxelState.begin(), voxelState.end())});
     }
     return seq;
   }
@@ -391,7 +415,32 @@ class ChunkStore {
     std::uint8_t sequence = 0;
     std::int64_t sentAtMs = 0;
     bool stale = false;
+    /// What it wrote, to put back over a stored copy read before the server had it.
+    std::int16_t voxelType = 0;
+    std::vector<std::uint8_t> state;
   };
+
+  /// Apply a stored copy to the cache (the grid, then each voxelStates entry), then
+  /// this client's unechoed edits of that chunk over it.
+  void applyStored(const StoredChunk& stored, std::int64_t nowMs);
+
+  /// Put the newest unexpired, non-stale pending edit of each voxel of `c` back.
+  void reapplyPending(ChunkData& c) {
+    auto chunk = pending_.find(c.coord);
+    if (chunk == pending_.end()) return;
+    std::vector<std::uint64_t> keys;
+    keys.reserve(chunk->second.size());
+    for (const auto& entry : chunk->second) keys.push_back(entry.first);
+    for (std::uint64_t key : keys) {
+      const std::vector<PendingEdit>* edits = livePending(c.coord, key);
+      if (!edits || edits->back().stale) continue;
+      const PendingEdit& edit = edits->back();
+      putVoxel(c, static_cast<std::int16_t>(static_cast<std::uint16_t>(key >> 32)),
+               static_cast<std::int16_t>(static_cast<std::uint16_t>(key >> 16)),
+               static_cast<std::int16_t>(static_cast<std::uint16_t>(key)), edit.voxelType,
+               Bytes(edit.state.data(), edit.state.size()));
+    }
+  }
   using PendingByVoxel = std::unordered_map<std::uint64_t, std::vector<PendingEdit>>;
 
   std::int64_t nowMs() const {
