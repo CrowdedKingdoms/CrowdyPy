@@ -603,8 +603,9 @@ class AuthAPI(Domain):
         return bool(await self._request(CONFIRM_EMAIL, {"token": token}))
 
     async def resend_confirmation_email(self, email: str) -> bool:
-        """Send the confirmation link again. Answers ``True`` whether or not the account
-        exists or is already confirmed."""
+        """Send the confirmation link again: the remedy for ``EMAIL_CONFIRMATION_REQUIRED``
+        (:func:`crowdypy.domains.portal.is_email_confirmation_required_error`, ck-api v2.65.0).
+        Answers ``True`` whether or not the account exists or is already confirmed."""
         return bool(await self._request(RESEND_CONFIRMATION_EMAIL, {"email": email}))
 
     async def change_password(self, current_password: str, new_password: str) -> bool:
