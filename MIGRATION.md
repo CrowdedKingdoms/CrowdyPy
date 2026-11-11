@@ -3,6 +3,28 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.28.0
+
+CrowdyJS 18.28.0 and CrowdyCPP 0.80.0. **It needs ck-api v2.67.0**: `game_apps.nearby_grids()`
+selects `permissionKeys`, which an older Game API refuses as a whole query.
+
+- **Region reads take a box.** `chunks.by_distance()` and `voxels.list_by_distance()` read either
+  a cube (`centerCoordinate` and `maxDistance`) or a box (`lowChunk` and `highChunk`, both
+  inclusive, in either order, at most 4,913 chunks). A box streams in only the slab a step
+  uncovers: at range 8 a step along one axis reads 289 chunks instead of 4,913.
+- **Pages are stable.** A cube comes nearest first and then by x, y, z, a box by x, y, z, so each
+  chunk is on exactly one page; the answer's `limit` and `skip` are the ones applied (1,000 and 0
+  by default), never null.
+- **`since` on `chunks.by_distance()`** keeps only chunks whose stored row was written at or after
+  it (`updateChunk`, `updateChunkState`, `updateChunkLods`). A voxel edit does not move it: read
+  edits with `voxels.list_by_distance()`'s `since`.
+- **`voxels.list()` pages**: `limit` (1-65,536, the default) and `skip`, ordered by position. It
+  was newest first and unbounded. `chunks.voxel_list()` is its first page.
+- **`game_apps.nearby_grids()` returns each grid's `permissionKeys` for the caller**, so a game can
+  grey out a build tool before an edit is refused. The grid that decides a voxel edit is the
+  smallest one covering its chunk (the lower `gridId` on a tie), and the edit needs
+  `update_voxel_data` there.
+
 ## 0.27.0
 
 CrowdyJS 18.27.0 and CrowdyCPP 0.79.0. It needs nothing new on the tier.
