@@ -133,6 +133,14 @@ connection reports `ConnState.INACTIVE` (6), which nothing reconnects; a game ca
 `ConnState` must name every value CrowdyCPP's `replication::ConnState` has or `ConnState(...)`
 raises.
 
+## Email confirmation (0.26.0)
+
+ck-api v2.65.0 refuses a gameplay token to a password account made since 2026-11-11 until it
+confirms its email (`EMAIL_CONFIRMATION_REQUIRED`). `is_email_confirmation_required_error`
+(`domains/portal.py`) mirrors CrowdyJS's `isEmailConfirmationRequiredError`, and
+`auth.resend_confirmation_email` is the remedy. The live e2e suites sign up with the tier's
+provisioning token, which the gate does not ask, so they need no change.
+
 ## Releasing
 
 The version lives in six places that `tests/unit/test_release_versions.py` holds together:

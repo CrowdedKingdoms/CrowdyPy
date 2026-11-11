@@ -3,6 +3,19 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.26.0
+
+CrowdyJS 18.27.0 and CrowdyCPP 0.78.0. It selects nothing ck-api v2.64.0 lacks.
+
+- **A password account made since 2026-11-11 gets no gameplay token until it confirms its
+  email** (ck-api v2.65.0): `portal.mint_app_token`, `create_authorization_code` and `refresh`
+  raise `EMAIL_CONFIRMATION_REQUIRED`, the player gate's last check. Accounts made before then
+  and players an organization manages are not asked.
+- **`crowdypy.is_email_confirmation_required_error(error)`** and
+  **`crowdypy.EMAIL_CONFIRMATION_REQUIRED_CODE`** are new. A client that signs players up with
+  `auth.register` checks it at the mint, tells the player to open the emailed link, offers
+  `auth.resend_confirmation_email(email)` (always `True`), then mints again.
+
 ## 0.25.0
 
 CrowdyJS 18.26.0 and CrowdyCPP 0.77.0. `apps.app()` and `apps.update()` select
