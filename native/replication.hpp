@@ -395,6 +395,7 @@ struct ConnectionOptions {
   bool advertiseCapabilities = true;
   std::int64_t advertiseIntervalMs = 15 * 1000;
   std::int64_t watchdogSilenceMs = 0;
+  std::int64_t idleReleaseGuardMs = 60 * 1000;
   std::size_t ringCapacity = 4096;
   int socketRecvBufferBytes = 1 << 20;
   int socketSendBufferBytes = 1 << 20;
@@ -430,6 +431,7 @@ class PyConnection {
     config.advertiseCapabilities = options.advertiseCapabilities;
     config.advertiseIntervalMs = options.advertiseIntervalMs;
     config.watchdogSilenceMs = options.watchdogSilenceMs;
+    config.idleReleaseGuardMs = options.idleReleaseGuardMs;
     config.ringCapacity = options.ringCapacity;
     config.socketRecvBufferBytes = options.socketRecvBufferBytes;
     config.socketSendBufferBytes = options.socketSendBufferBytes;
@@ -735,6 +737,7 @@ class PyConnection {
     d["malformed"] = s.malformed;
     d["ring_dropped"] = s.ringDropped;
     d["reconnects"] = s.reconnects;
+    d["idle_releases_after_input"] = s.idleReleasesAfterInput;
     d["last_server_epoch_ms"] = s.lastServerEpochMs;
     nb::dict sentByType;
     nb::dict receivedByType;

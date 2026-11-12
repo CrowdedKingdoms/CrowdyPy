@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.27.0: a replayed idle release cannot end a playing player's session.** An idle release that arrives within a minute of this client's own gameplay input reconnects instead of going `ConnState.INACTIVE` (`idle_release_guard_ms`, counted in `stats()["idle_releases_after_input"]`), and a reassignment left over from the session that ended no longer reassigns the next one. The native chunk store keeps unechoed local edits over a stored copy. CrowdyJS 18.27.0 and CrowdyCPP 0.79.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.26.0: a new account confirms its email.** Since ck-api v2.65.0 a password account made since 2026-11-11 gets no gameplay token until it opens the link `auth.register` emailed: minting raises `EMAIL_CONFIRMATION_REQUIRED`, which `crowdypy.is_email_confirmation_required_error` reads. Tell the player to check their inbox, offer `auth.resend_confirmation_email(email)`, then mint again. Accounts made before then and players an organization manages are not asked. CrowdyJS 18.27.0 and CrowdyCPP 0.78.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.25.0: a session released for idleness is final.** The replication server ends a session that sends no gameplay input for the app's idle timeout (15 minutes unless the app sets its own `idleTimeoutSeconds` with `apps.update()`; `0` turns it off), and the connection moves to `ConnState.INACTIVE` instead of reconnecting: call `client.udp.connect()` on the player's next input. It needs ck-api v2.64.0 on the tier. CrowdyJS 18.26.0 and CrowdyCPP 0.77.0. See [MIGRATION.md](MIGRATION.md).

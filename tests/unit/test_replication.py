@@ -307,7 +307,8 @@ def wait_for_state(connection: ReplicationConnection, want: ConnState) -> list[A
 def test_an_idle_release_is_final(server: FakeServer) -> None:
     provider = Provider(server)
     with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
-        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        # A heartbeat, not an update: it is not gameplay input, so the release below is final.
+        connection.send_heartbeat((0, 0, 0), ME)
         connection.flush_sends()
         server.recv()  # the server learns where the client is
         server.send(session_released(ReleaseReason.IDLE))
@@ -318,6 +319,36 @@ def test_an_idle_release_is_final(server: FakeServer) -> None:
         time.sleep(0.5)  # the watchdog and reassignment stay off
         assert connection.state == ConnState.INACTIVE
         assert provider.assigned == 1
+
+
+def test_an_idle_release_right_after_input_reassigns(server: FakeServer) -> None:
+    # CrowdyCPP 0.79.0: the frame carries nothing tied to the session, so a captured one verifies
+    # again. One within idle_release_guard_ms of this client's own input reassigns instead.
+    provider = Provider(server)
+    with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
+        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        connection.flush_sends()
+        server.recv()
+        server.send(session_released(ReleaseReason.IDLE))
+        deadline = time.monotonic() + 3
+        while provider.assigned < 2 and time.monotonic() < deadline:
+            connection.wait(0.05)
+            connection.poll()
+        assert provider.assigned == 2
+        assert connection.stats()["idle_releases_after_input"] == 1
+        assert connection.state != ConnState.INACTIVE
+
+    guardless = Provider(server)
+    with ReplicationConnection(
+        guardless, token(), app_id=7, idle_release_guard_ms=0, **QUIET
+    ) as connection:
+        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        connection.flush_sends()
+        server.recv()
+        server.send(session_released(ReleaseReason.IDLE))
+        wait_for_state(connection, ConnState.INACTIVE)
+        assert connection.state == ConnState.INACTIVE
+        assert guardless.assigned == 1
 
 
 def test_a_release_that_does_not_verify_is_ignored(server: FakeServer) -> None:
