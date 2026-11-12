@@ -3,6 +3,31 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.30.0
+
+CrowdyJS 18.30.0 and CrowdyCPP 0.82.0 (the ChunkStore rework). Box reads and `since` need ck-api
+v2.67.0. **Breaking** for code that keeps `set_voxel()`'s return value or relies on a realtime
+edit being written back.
+
+- **`ensure_around` reads only what the store does not hold**, as boxes (`lowChunk`/`highChunk`)
+  read in pages of the size the server applied; a chunk two pages return is applied once
+  (`duplicate_page_chunks`). A step along one axis at range 8 reads the 289 chunks it uncovers.
+  Range 0 reads one chunk. `CachedChunk` has `voxel_states_truncated` and `stored_at`.
+- **`set_voxel()` returns an edit id, is paced, and is not written back.** At most
+  `max_edits_in_flight` (128) are unanswered and `max_edits_per_second` (250) go out a second
+  (`chunk_options`); the rest wait, already shown (`queued_edits`, `edits_in_flight`). The server
+  records realtime edits, so the chunk is no longer queued for write-back (it was, whole).
+- **A refused edit is undone.** One the server refuses, the connection does not take, or whose
+  echo does not come back within `edit_timeout_ms` (10 s) puts the voxel back and reaches
+  `on_edit_refused` as a `VoxelEditRefusal` (`reason` `refused`, `not_sent` or `timeout`,
+  `restored`, `error_code`, `edit_id`).
+- **A replaced chunk is read again** (`chunk_changed`, `reload_replaced_chunks`), and a seed queued
+  for write-back gives way to it. **After the connection comes back**, `catch_up(since)` reads the
+  last area's rewritten chunks and those with edits since 30 s before the drop
+  (`catch_up_on_reconnect`).
+- A hydration replaces the chunk's states and overlay with the stored copy's and keeps this
+  client's unanswered edits over it (the native store's rule since CrowdyCPP 0.82.0).
+
 ## 0.29.0
 
 CrowdyJS 18.29.0 and CrowdyCPP 0.81.0. It needs nothing new on the tier; the bound frames and
