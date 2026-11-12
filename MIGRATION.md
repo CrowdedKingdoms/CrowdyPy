@@ -3,6 +3,25 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.27.0
+
+CrowdyJS 18.27.0 and CrowdyCPP 0.79.0. It needs nothing new on the tier.
+
+- **An idle release that arrives within a minute of this client's own gameplay input
+  reconnects instead of ending the session**, and counts in
+  `connection.stats()["idle_releases_after_input"]`. The release frame is signed over fixed
+  bytes only, so one captured earlier verifies again for as long as the app token lives; a
+  genuine one cannot follow input the server counted within the platform's shortest idle
+  timeout (60 s). Gameplay input is what the server counts: actor updates whose payload changed,
+  voxel edits, text, events, generic spatial and single-actor messages, audio, video and channel
+  publishes; never heartbeats or capability notices. `client.udp.connect(idle_release_guard_ms=0)`
+  makes every verified idle release final again.
+- **A reassignment asked for in the same pass as an idle release no longer reassigns the next
+  session right after `connect()`.**
+- **The native chunk store keeps this client's unechoed edits over a stored copy it applies**
+  (`ChunkStore.hydrate()`), so a copy read before the server recorded them does not undo them on
+  the native side.
+
 ## 0.26.0
 
 CrowdyJS 18.27.0 and CrowdyCPP 0.78.0. It selects nothing ck-api v2.64.0 lacks.

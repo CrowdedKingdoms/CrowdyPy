@@ -117,6 +117,12 @@ Status Connection::doAssign() {
   lastRecvMs_ = 0;
   lastSendMs_ = 0;
   lastCapsMs_ = 0;  // a new server knows nothing about us
+  {
+    // The new session's first update of each actor is a change, as it is to the server.
+    std::lock_guard lock(actorStateMutex_);
+    actorStateHashes_ = {};
+    actorStateNext_ = 0;
+  }
   return Errc::Ok;
 }
 
@@ -132,6 +138,11 @@ Status Connection::connect() {
     running_.store(false, std::memory_order_release);
     netThread_.join();
   }
+  // A reassignment asked for in the session that ended (a COMMAND_RECONNECT, the
+  // watchdog, TOKEN_EXPIRED in the same pass as an idle release) must not reassign
+  // the session this call is about to assign.
+  reconnectRequested_.store(false, std::memory_order_release);
+  idleReleased_.store(false, std::memory_order_release);
 
   setState(ConnState::Connecting);
   Status st = doAssign();
@@ -326,7 +337,53 @@ Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const Spatial
   if (!n.ok()) return n.error();
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
+  noteGameplaySend(type, p);
   return params.sequence;
+}
+
+void Connection::noteGameplaySend(MessageType type, const SpatialSend& p) {
+  switch (type) {
+    case MessageType::ActorUpdateRequest:
+      if (!actorStateChanged(p)) return;
+      break;
+    case MessageType::VoxelUpdateRequest:
+    case MessageType::ClientAudioPacket:
+    case MessageType::ClientTextPacket:
+    case MessageType::ClientEventNotification:
+    case MessageType::GenericSpatial1:
+    case MessageType::SingleActorMessage:
+    case MessageType::ClientVideoPacket:
+    case MessageType::ChannelMessageRequest:
+    case MessageType::ChannelMessageRangedRequest:
+    case MessageType::ChannelAudioRequest:
+      break;
+    default:
+      return;  // heartbeats and capability notices are not input
+  }
+  lastGameplayMs_.store(clock_.monotonicMillis(), std::memory_order_release);
+}
+
+bool Connection::actorStateChanged(const SpatialSend& p) {
+  std::uint64_t hash = 1469598103934665603ULL;  // FNV-1a over the payload
+  for (std::uint8_t byte : p.payload) hash = (hash ^ byte) * 1099511628211ULL;
+  std::lock_guard lock(actorStateMutex_);
+  for (ActorStateHash& entry : actorStateHashes_) {
+    if (entry.used && entry.uuid == p.uuid) {
+      const bool changed = entry.hash != hash;
+      entry.hash = hash;
+      return changed;
+    }
+  }
+  ActorStateHash& slot = actorStateHashes_[actorStateNext_];
+  actorStateNext_ = (actorStateNext_ + 1) % actorStateHashes_.size();
+  slot = ActorStateHash{p.uuid, hash, true};
+  return true;
+}
+
+bool Connection::idleReleaseFollowsInput() const {
+  if (config_.idleReleaseGuardMs <= 0) return false;
+  const std::int64_t last = lastGameplayMs_.load(std::memory_order_acquire);
+  return last > 0 && clock_.monotonicMillis() - last < config_.idleReleaseGuardMs;
 }
 
 Result<std::uint8_t> Connection::sendVoxelUpdate(const wire::ChunkCoord& chunk,
@@ -424,6 +481,7 @@ Result<std::uint8_t> Connection::sendChannelRequest(MessageType type, std::int64
   if (!n.ok()) return n.error();
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
+  noteGameplaySend(type, SpatialSend{});
   return params.sequence;
 }
 
@@ -452,6 +510,7 @@ Result<std::uint8_t> Connection::sendRangedChannelMessage(std::int64_t channelId
   if (!n.ok()) return n.error();
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
+  noteGameplaySend(MessageType::ChannelMessageRangedRequest, SpatialSend{});
   return params.sequence;
 }
 
@@ -511,7 +570,22 @@ void Connection::handleDatagram(Bytes datagram) {
       std::lock_guard lock(statsMutex_);
       ++stats_.hmacFailures;
     } else if (reason.value() == static_cast<std::uint8_t>(wire::ReleaseReason::Idle)) {
-      idleReleased_.store(true, std::memory_order_release);
+      if (idleReleaseFollowsInput()) {
+        // Unless that input was lost or refused, only a captured release sent again
+        // can follow it. A reassignment costs a reconnect; ending the session would
+        // stop a player who is playing.
+        {
+          std::lock_guard lock(statsMutex_);
+          ++stats_.idleReleasesAfterInput;
+        }
+        if (logger_.enabled(core::LogLevel::Warn)) {
+          logger_.log(core::LogLevel::Warn,
+                      "idle release right after this client's own input; reassigning instead");
+        }
+        reconnectRequested_.store(true, std::memory_order_release);
+      } else {
+        idleReleased_.store(true, std::memory_order_release);
+      }
     }
     return;
   }
@@ -637,6 +711,8 @@ std::size_t Connection::receiveBatch(int timeoutMs) {
 void Connection::housekeeping() {
   if (state() == ConnState::Inactive) return;
   if (idleReleased_.exchange(false, std::memory_order_acq_rel)) {
+    // The session is over, so a reassignment asked for in it is moot.
+    reconnectRequested_.store(false, std::memory_order_release);
     socket_.close();
     setState(ConnState::Inactive);
     return;
