@@ -3,6 +3,76 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.30.0
+
+CrowdyJS 18.30.0 and CrowdyCPP 0.82.0 (the ChunkStore rework). Box reads and `since` need ck-api
+v2.67.0. **Breaking** for code that keeps `set_voxel()`'s return value or relies on a realtime
+edit being written back.
+
+- **`ensure_around` reads only what the store does not hold**, as boxes (`lowChunk`/`highChunk`)
+  read in pages of the size the server applied; a chunk two pages return is applied once
+  (`duplicate_page_chunks`). A step along one axis at range 8 reads the 289 chunks it uncovers.
+  Range 0 reads one chunk. `CachedChunk` has `voxel_states_truncated` and `stored_at`.
+- **`set_voxel()` returns an edit id, is paced, and is not written back.** At most
+  `max_edits_in_flight` (128) are unanswered and `max_edits_per_second` (250) go out a second
+  (`chunk_options`); the rest wait, already shown (`queued_edits`, `edits_in_flight`). The server
+  records realtime edits, so the chunk is no longer queued for write-back (it was, whole).
+- **A refused edit is undone.** One the server refuses, the connection does not take, or whose
+  echo does not come back within `edit_timeout_ms` (10 s) puts the voxel back and reaches
+  `on_edit_refused` as a `VoxelEditRefusal` (`reason` `refused`, `not_sent` or `timeout`,
+  `restored`, `error_code`, `edit_id`).
+- **A replaced chunk is read again** (`chunk_changed`, `reload_replaced_chunks`), and a seed queued
+  for write-back gives way to it. **After the connection comes back**, `catch_up(since)` reads the
+  last area's rewritten chunks and those with edits since 30 s before the drop
+  (`catch_up_on_reconnect`).
+- A hydration replaces the chunk's states and overlay with the stored copy's and keeps this
+  client's unanswered edits over it (the native store's rule since CrowdyCPP 0.82.0).
+
+## 0.29.0
+
+CrowdyJS 18.29.0 and CrowdyCPP 0.81.0. It needs nothing new on the tier; the bound frames and
+`chunk_changed` come from replication servers v0.45.0.
+
+- **A server's reconnect command is honoured.** The native verifier had computed the HMAC of
+  `COMMAND_RECONNECT` (22) over the type byte and the game token, while the replication servers
+  sign the type byte alone, so no reconnect command ever verified: each counted in
+  `stats()["hmac_failures"]` and the client stayed until its watchdog moved it.
+  `wire.verify_command_reconnect` checks the servers' form.
+- **Reconnect and release frames are bound to the assignment.** Each assignment draws a random
+  8-byte nonce, which the capabilities message carries; a v0.45.0 server sends
+  `COMMAND_RECONNECT_BOUND` (44) and `COMMAND_SESSION_RELEASED_BOUND` (45) with it inside the
+  HMAC. One carrying another assignment's nonce, captured earlier and sent again, is dropped and
+  counted in `stats()["stale_bound_control"]`. A verified bound idle release is final at once;
+  `idle_release_guard_ms` applies only to the legacy 28, which older servers and the Game API's
+  relay still send (the client cannot tell an older server from a replay, so it still accepts
+  them).
+- **`chunk_changed`** (handler name, `MessageType.CHUNK_CHANGED_NOTIFICATION`, 146): a chunk near
+  the player was replaced as a whole by a hub's or mod's `world.set_chunk`;
+  `notification.updated_at_ms` is its new `updatedAt`. Read it again. It arrives with or without a
+  world session attached.
+
+## 0.28.0
+
+CrowdyJS 18.28.0 and CrowdyCPP 0.80.0. **It needs ck-api v2.67.0**: `game_apps.nearby_grids()`
+selects `permissionKeys`, which an older Game API refuses as a whole query.
+
+- **Region reads take a box.** `chunks.by_distance()` and `voxels.list_by_distance()` read either
+  a cube (`centerCoordinate` and `maxDistance`) or a box (`lowChunk` and `highChunk`, both
+  inclusive, in either order, at most 4,913 chunks). A box streams in only the slab a step
+  uncovers: at range 8 a step along one axis reads 289 chunks instead of 4,913.
+- **Pages are stable.** A cube comes nearest first and then by x, y, z, a box by x, y, z, so each
+  chunk is on exactly one page; the answer's `limit` and `skip` are the ones applied (1,000 and 0
+  by default), never null.
+- **`since` on `chunks.by_distance()`** keeps only chunks whose stored row was written at or after
+  it (`updateChunk`, `updateChunkState`, `updateChunkLods`). A voxel edit does not move it: read
+  edits with `voxels.list_by_distance()`'s `since`.
+- **`voxels.list()` pages**: `limit` (1-65,536, the default) and `skip`, ordered by position. It
+  was newest first and unbounded. `chunks.voxel_list()` is its first page.
+- **`game_apps.nearby_grids()` returns each grid's `permissionKeys` for the caller**, so a game can
+  grey out a build tool before an edit is refused. The grid that decides a voxel edit is the
+  smallest one covering its chunk (the lower `gridId` on a tie), and the edit needs
+  `update_voxel_data` there.
+
 ## 0.27.0
 
 CrowdyJS 18.27.0 and CrowdyCPP 0.79.0. It needs nothing new on the tier.
