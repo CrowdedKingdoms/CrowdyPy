@@ -51,10 +51,17 @@ class ChunksAPI(Domain):
     async def by_distance(
         self, input: inputs.GetChunksByDistanceInput | Mapping[str, Any]
     ) -> dict[str, Any]:
-        """Every chunk within ``maxDistance`` chunks (1-8) of ``centerCoordinate`` on each axis.
+        """The stored chunks of a region: a cube or a box, a page of them.
 
-        Paginated with ``limit`` (default 1000) and ``skip``, which the answer echoes.
-        ``BAD_USER_INPUT`` for a ``maxDistance`` outside 1-8. Read-only. A chunk's
+        A cube is ``centerCoordinate`` and ``maxDistance`` (1-8 chunks on each axis), nearest
+        first; a box is ``lowChunk`` and ``highChunk`` (inclusive, either order, at most 4,913
+        chunks), by x, y, z, for streaming in only the slab a step uncovers. Give one or the
+        other. Pages are stable (``limit``, default 1000, and ``skip``), and the answer's
+        ``limit`` and ``skip`` are the ones applied. ``since`` keeps only chunks whose stored row
+        was written at or after it (``updateChunk``, ``updateChunkState``,
+        ``updateChunkLods``; a voxel edit does not move it). Boxes, ``since`` and stable pages
+        need ck-api v2.67.0. ``BAD_USER_INPUT`` for a ``maxDistance`` outside 1-8, a box over
+        4,913 chunks, or a cube and a box together. Read-only. A chunk's
         ``voxelStatesTruncated`` is true when one call holds more recorded edits than it
         applies (262,144 across the call).
         """
@@ -64,9 +71,11 @@ class ChunksAPI(Domain):
     async def voxel_list(
         self, input: inputs.GetVoxelListInput | Mapping[str, Any]
     ) -> dict[str, Any]:
-        """The recorded voxel edits of one chunk, newest first: the edit log, not the grid.
+        """The recorded voxel edits of one chunk, by position: the edit log, not the grid.
 
-        Read-only; use :meth:`get` for the packed grid.
+        At most 65,536 of them: the first page of :meth:`VoxelsAPI.list`, which pages past
+        that (ck-api v2.67.0; before it the list was newest first and unbounded). Read-only;
+        use :meth:`get` for the packed grid.
         """
         result: dict[str, Any] = await self._request(ops.GET_VOXEL_LIST, {"input": input})
         return result

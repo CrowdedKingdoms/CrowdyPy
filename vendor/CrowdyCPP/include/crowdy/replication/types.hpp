@@ -202,6 +202,10 @@ struct Handlers {
   /// its last chunk). Emitted once; a later actorUpdate for the uuid is a rejoin.
   /// `reason`: 0 STALE (1 reserved).
   std::function<void(const SpatialNotification&, std::uint8_t reason)> actorLeft;
+  /// A chunk near you was replaced as a whole (a hub's or mod's world.set_chunk, Buddy
+  /// v0.45.0): read it again. `chunk` is the chunk; `updatedAtMs` its new updatedAt, so a
+  /// copy at least that new is current.
+  std::function<void(const SpatialNotification&, std::int64_t updatedAtMs)> chunkChanged;
   std::function<void(const SpatialNotification&)> text;
   std::function<void(const SpatialNotification&, const wire::EventPayloadView&)> clientEvent;
   std::function<void(const SpatialNotification&, const wire::EventPayloadView&)> serverEvent;

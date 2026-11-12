@@ -738,6 +738,7 @@ class PyConnection {
     d["ring_dropped"] = s.ringDropped;
     d["reconnects"] = s.reconnects;
     d["idle_releases_after_input"] = s.idleReleasesAfterInput;
+    d["stale_bound_control"] = s.staleBoundControl;
     d["last_server_epoch_ms"] = s.lastServerEpochMs;
     nb::dict sentByType;
     nb::dict receivedByType;
@@ -796,6 +797,9 @@ class PyConnection {
     };
     h.actorLeft = [this](const replication::SpatialNotification& n, std::uint8_t reason) {
       rows_.spatial(n, {reason, 0, 0, 0}, n.payload);
+    };
+    h.chunkChanged = [this](const replication::SpatialNotification& n, std::int64_t updatedAtMs) {
+      rows_.spatial(n, {updatedAtMs, 0, 0, 0}, n.payload);
     };
     auto event = [this](const replication::SpatialNotification& n, const wire::EventPayloadView& e) {
       rows_.spatial(n, {e.eventType, 0, 0, 0}, e.state);
