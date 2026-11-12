@@ -13,78 +13,6 @@ namespace crowdy::session {
 
 namespace {
 
-StoredChunk storedChunkOf(const graphql::Json& chunkJson) {
-  StoredChunk chunk;
-  chunk.coord = {chunkJson["coordinates"]["x"].asBigInt(), chunkJson["coordinates"]["y"].asBigInt(),
-                 chunkJson["coordinates"]["z"].asBigInt()};
-  auto voxels = core::base64Decode(chunkJson["voxels"].asStringView());
-  if (voxels) chunk.voxels.assign(voxels->begin(), voxels->end());
-  chunkJson["voxelStates"].forEach([&](graphql::Json entry) {
-    StoredVoxelState voxel;
-    voxel.x = static_cast<int>(entry["voxelCoord"]["x"].asInt64(-1));
-    voxel.y = static_cast<int>(entry["voxelCoord"]["y"].asInt64(-1));
-    voxel.z = static_cast<int>(entry["voxelCoord"]["z"].asInt64(-1));
-    voxel.voxelType = static_cast<std::int16_t>(entry["voxelType"].asInt64());
-    // A state that is not base64 is dropped; the type still applies.
-    if (auto state = core::base64Decode(entry["state"].asStringView())) {
-      voxel.state.assign(state->begin(), state->end());
-    }
-    chunk.voxelStates.push_back(std::move(voxel));
-  });
-  chunk.voxelStatesTruncated = chunkJson["voxelStatesTruncated"].asBool();
-  return chunk;
-}
-
-/// IChunkSource over the Game API's chunks surface: the store's behaviour before
-/// the source became injectable.
-class ChunksApiSource final : public IChunkSource {
- public:
-  explicit ChunksApiSource(domains::ChunksAPI& api) : api_(api) {}
-
-  /// Asks for the whole cube in one page: without a limit the server returns at most
-  /// 1,000 chunks, and range 8 holds 4,913. A server that answers with a lower limit
-  /// is paged by the limit it echoes; a chunk on two pages is kept once.
-  std::vector<StoredChunk> chunksAround(const std::string& appId, const ChunkCoord& center,
-                                        int distance) override {
-    const std::int64_t side = 2 * static_cast<std::int64_t>(distance) + 1;
-    const std::int64_t cube = side * side * side;
-    std::vector<StoredChunk> out;
-    std::unordered_set<ChunkCoord, ChunkCoordHash> seen;
-    for (std::int64_t skip = 0; skip < cube;) {
-      graphql::Json page = api_.byDistance(
-          appId, domains::ChunkRef{center.x, center.y, center.z}, distance, cube - skip, skip);
-      std::size_t rows = 0;
-      page["chunks"].forEach([&](graphql::Json chunkJson) {
-        ++rows;
-        StoredChunk chunk = storedChunkOf(chunkJson);
-        if (seen.insert(chunk.coord).second) out.push_back(std::move(chunk));
-      });
-      const std::int64_t limit = page["limit"].asInt64(cube - skip);
-      if (rows == 0 || limit <= 0 || static_cast<std::int64_t>(rows) < limit) break;
-      skip += static_cast<std::int64_t>(rows);
-    }
-    return out;
-  }
-
-  std::optional<StoredChunk> chunkAt(const std::string& appId, const ChunkCoord& coord) override {
-    graphql::Json chunk = api_.get(appId, domains::ChunkRef{coord.x, coord.y, coord.z});
-    if (!chunk.isObject()) return std::nullopt;
-    return storedChunkOf(chunk);
-  }
-
-  graphql::GraphQLOutcome writeChunk(const std::string& appId, const ChunkCoord& coord,
-                                     Bytes voxels) override {
-    graphql::JVal input;
-    input["appId"] = appId;
-    input["coordinates"] = domains::ChunkRef{coord.x, coord.y, coord.z}.toInput();
-    input["voxels"] = core::base64Encode(voxels);
-    return api_.updateOutcome(input);
-  }
-
- private:
-  domains::ChunksAPI& api_;
-};
-
 /// IHostElection over the Game API's host surface.
 class HostApiElection final : public IHostElection {
  public:
@@ -115,20 +43,11 @@ class HostApiElection final : public IHostElection {
 
 }  // namespace
 
-ChunkStore::ChunkStore(replication::Connection& conn, domains::ChunksAPI* chunksApi,
-                       std::string appId, Options options)
-    : conn_(conn), appId_(std::move(appId)), options_(std::move(options)) {
-  if (chunksApi) {
-    ownedSource_ = std::make_unique<ChunksApiSource>(*chunksApi);
-    source_ = ownedSource_.get();
-  }
-}
-
 WorldSession::WorldSession(std::shared_ptr<replication::Connection> conn, CrowdyClient* client,
                            WorldSessionConfig config)
     : conn_(std::move(conn)), config_(std::move(config)) {
   if (client) {
-    ownedChunkSource_ = std::make_unique<ChunksApiSource>(client->chunks());
+    ownedChunkSource_ = makeGameApiChunkSource(client->chunks(), &client->voxels());
     ownedHost_ = std::make_unique<HostApiElection>(*client);
     host_ = ownedHost_.get();
   }
@@ -151,6 +70,8 @@ void WorldSession::init(IChunkSource* chunks) {
   self_ = std::make_unique<LocalActorStore>(*conn_, uuid_, config_.self);
   actors_ = std::make_unique<RemoteActorStore>(uuid_, config_.actors);
   chunks_ = std::make_unique<ChunkStore>(*conn_, chunks, config_.appId, config_.chunks);
+  chunks_->recordSendsTo(
+      [this](std::uint8_t sequence) { errors_.recordSend(sequence, SendKind::VoxelUpdate, uuid_); });
   installHandlers();
 }
 
@@ -185,12 +106,12 @@ void WorldSession::installHandlers() {
   if (config_.onText) handlers.text = config_.onText;
   if (config_.onGenericSpatial) handlers.genericSpatial = config_.onGenericSpatial;
   if (config_.onChannelAudio) handlers.channelAudio = config_.onChannelAudio;
-  if (config_.onChunkChanged) {
-    handlers.chunkChanged = [this](const replication::SpatialNotification& n,
-                                   std::int64_t updatedAtMs) {
-      config_.onChunkChanged(n.chunk, updatedAtMs);
-    };
-  }
+  handlers.chunkChanged = [this](const replication::SpatialNotification& n,
+                                 std::int64_t updatedAtMs) {
+    chunks_->ingestChunkChanged(n.chunk, updatedAtMs);
+    if (config_.onChunkChanged) config_.onChunkChanged(n.chunk, updatedAtMs);
+  };
+  handlers.status = [this](replication::ConnState state) { chunks_->connectionState(state); };
   // The server's departure notice removes the actor now (onLeave fires from the
   // store) instead of after the staleAfterMs reap, then the game is told too.
   handlers.actorLeft = [this](const replication::SpatialNotification& n, std::uint8_t reason) {
@@ -203,6 +124,7 @@ void WorldSession::installHandlers() {
     const auto now = core::systemClock().monotonicMillis();
     self_->recordError(e, now);
     errors_.ingest(e, now);
+    chunks_->ingestError(e);
   };
   handlers.channelMessage = [this](const replication::ChannelNotification& n) {
     InboxMessage m;
@@ -243,7 +165,7 @@ void WorldSession::tick() {
     lastReapMs_ = nowMs;
   }
 
-  // 4) Durable chunk write-back (throttled).
+  // 4) The chunk store: adopt finished loads, send queued edits, write back (throttled).
   chunks_->tick(nowMs);
 
   // 5) Host heartbeat (a blocking call on this thread; opt out via interval 0).
@@ -270,183 +192,6 @@ void WorldSession::tick() {
 
 void WorldSession::dispose() {
   if (conn_) conn_->disconnect();
-}
-
-// ---------------------------------------------------------------------------
-// ChunkStore GraphQL paths (here to keep the header free of domain includes)
-// ---------------------------------------------------------------------------
-
-void ChunkStore::applyStored(const StoredChunk& stored, std::int64_t nowMs) {
-  ChunkData& c = chunks_[stored.coord];
-  c.coord = stored.coord;
-  c.storedOnServer = true;
-  c.hydratedAtMs = nowMs;
-  c.voxelStatesTruncated = stored.voxelStatesTruncated;
-  if (stored.voxels.size() == c.voxels.size()) {
-    std::memcpy(c.voxels.data(), stored.voxels.data(), c.voxels.size());
-  }
-  for (const StoredVoxelState& entry : stored.voxelStates) {
-    if (!fitsInt16(entry.x) || !fitsInt16(entry.y) || !fitsInt16(entry.z)) continue;
-    putVoxel(c, entry.x, entry.y, entry.z, entry.voxelType,
-             Bytes(entry.state.data(), entry.state.size()));
-  }
-  reapplyPending(c);
-  touch(c);
-}
-
-std::size_t ChunkStore::ensureAround(const ChunkCoord& center, int distance) {
-  if (!source_) return 0;
-  // The durable byDistance query accepts a Chebyshev radius of 1-8.
-  if (distance < 1) distance = 1;
-  if (distance > 8) distance = 8;
-  std::vector<StoredChunk> stored = source_->chunksAround(appId_, center, distance);
-  std::size_t applied = 0;
-  const std::int64_t nowMs = core::systemClock().monotonicMillis();
-  for (const StoredChunk& chunk : stored) {
-    const ChunkData* cached = find(chunk.coord);
-    if (cached && cached->hydratedAtMs > 0) continue;
-    applyStored(chunk, nowMs);
-    ++applied;
-  }
-  return applied;
-}
-
-std::size_t ChunkStore::hydrate(const ChunkCoord& coord) {
-  if (!source_) return 0;
-  const ChunkData* cached = find(coord);
-  if (cached && cached->dirty) return 0;
-  std::optional<StoredChunk> stored = source_->chunkAt(appId_, coord);
-  if (!stored) return 0;
-  cached = find(coord);
-  if (cached && cached->dirty) return 0;
-  applyStored(*stored, core::systemClock().monotonicMillis());
-  return 1;
-}
-
-namespace {
-
-bool isWriteBackRefusalCode(std::string_view code) {
-  static constexpr std::string_view kCodes[] = {
-      "FORBIDDEN",      "SCOPE_MISSING",   "NOT_ALLOWED",
-      "BAD_REQUEST",    "BAD_USER_INPUT",  "INVALID_REQUEST",
-      "GRAPHQL_VALIDATION_FAILED",         "NOT_FOUND",
-  };
-  for (std::string_view refused : kCodes) {
-    if (code == refused) return true;
-  }
-  return false;
-}
-
-bool isWriteBackRefusalStatus(int status) {
-  return status == 400 || status == 403 || status == 404 || status == 413 || status == 422;
-}
-
-/// Whether a failed write-back can succeed if sent again unchanged. A permission or
-/// validation refusal cannot; a busy platform, an expired session, a network drop, a
-/// timeout or a server error can. Mirrors CrowdyJS `writeBackRetryable`.
-bool writeBackRetryable(const graphql::GraphQLOutcome& out) {
-  switch (out.kind) {
-    case graphql::GraphQLErrorKind::Network:
-    case graphql::GraphQLErrorKind::Timeout:
-    case graphql::GraphQLErrorKind::Protocol:
-      return true;
-    case graphql::GraphQLErrorKind::Http:
-      return !isWriteBackRefusalStatus(out.httpStatus);
-    case graphql::GraphQLErrorKind::Cancelled:
-      // Whoever cancelled it decided; sending it again would overrule them.
-      return false;
-    case graphql::GraphQLErrorKind::GraphQL:
-      break;
-    case graphql::GraphQLErrorKind::None:
-      return true;
-  }
-  for (const auto& error : out.errors) {
-    if (error.code == "PLATFORM_BUSY" || error.code == "UNAUTHENTICATED") continue;
-    if (!error.retryable) return false;
-    if (isWriteBackRefusalCode(error.code)) return false;
-    if (error.httpStatus && isWriteBackRefusalStatus(*error.httpStatus)) return false;
-  }
-  return true;
-}
-
-}  // namespace
-
-ChunkStore::WriteBack ChunkStore::attemptWriteBack(ChunkData& chunk, std::int64_t nowMs,
-                                                   std::vector<ChunkWriteBackFailure>* dropped) {
-  graphql::GraphQLOutcome out =
-      source_->writeChunk(appId_, chunk.coord, Bytes(chunk.voxels.data(), chunk.voxels.size()));
-  if (out.ok()) {
-    forgetWriteBack(chunk.coord);
-    setDirty(chunk, false);
-    chunk.storedOnServer = true;
-    touch(chunk);
-    return WriteBack::Persisted;
-  }
-
-  const int attempts = writeBackAttempts_[chunk.coord] + 1;
-  const bool retryable = writeBackRetryable(out);
-  if (retryable && attempts < options_.writeBackAttempts) {
-    writeBackAttempts_[chunk.coord] = attempts;
-    writeBackDueAt_[chunk.coord] =
-        nowMs + (options_.writeBackBackoffMs << (attempts - 1));
-    return WriteBack::Retry;
-  }
-
-  forgetWriteBack(chunk.coord);
-  setDirty(chunk, false);
-  ChunkWriteBackFailure failure;
-  failure.coord = chunk.coord;
-  failure.reason = retryable ? ChunkWriteBackDrop::Exhausted : ChunkWriteBackDrop::Refused;
-  failure.attempts = attempts;
-  failure.error = std::move(out);
-  if (onWriteBackFailed_) onWriteBackFailed_(failure);
-  if (dropped) dropped->push_back(std::move(failure));
-  return WriteBack::Dropped;
-}
-
-ChunkFlushResult ChunkStore::flush() {
-  ChunkFlushResult result;
-  if (!source_) return result;
-  std::vector<ChunkCoord> dirty;
-  for (const auto& [coord, chunk] : chunks_) {
-    if (chunk.dirty) dirty.push_back(coord);
-  }
-  for (const ChunkCoord& coord : dirty) {
-    for (;;) {
-      auto it = chunks_.find(coord);
-      if (it == chunks_.end() || !it->second.dirty) break;
-      auto pending = writeBackAttempts_.find(coord);
-      if (pending != writeBackAttempts_.end() && pending->second > 0) {
-        const std::int64_t waitMs = options_.writeBackBackoffMs << (pending->second - 1);
-        if (options_.sleep) {
-          options_.sleep(waitMs);
-        } else {
-          std::this_thread::sleep_for(std::chrono::milliseconds(waitMs));
-        }
-      }
-      const WriteBack done = attemptWriteBack(it->second, lastTickMs_, &result.dropped);
-      if (done == WriteBack::Persisted) ++result.persisted;
-      if (done != WriteBack::Retry) break;
-    }
-  }
-  return result;
-}
-
-void ChunkStore::tick(std::int64_t nowMs) {
-  lastTickMs_ = nowMs;
-  if (!source_ || options_.writeBackIntervalMs <= 0) return;
-  if (nowMs - lastWriteBackMs_ < options_.writeBackIntervalMs) return;
-
-  // The first dirty chunk that is due: one waiting out a backoff does not hold up
-  // the others.
-  for (auto& [coord, chunk] : chunks_) {
-    if (!chunk.dirty) continue;
-    auto due = writeBackDueAt_.find(coord);
-    if (due != writeBackDueAt_.end() && due->second > nowMs) continue;
-    lastWriteBackMs_ = nowMs;
-    attemptWriteBack(chunk, nowMs, nullptr);
-    break;  // at most one chunk per interval
-  }
 }
 
 }  // namespace crowdy::session

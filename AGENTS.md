@@ -246,6 +246,13 @@ The replication system saturates the local network stack, so the binding
   16x16x16 one-byte grid cannot hold goes to `ChunkData::overlay`.
 - Do not write voxel types or states into the dense grid from Python. That bypasses the
   overlay, and the echo matching of local edits.
+- Since 0.30.0 (CrowdyCPP 0.82.0) the native store paces and undoes edits; the binding turns its
+  own I/O thread, reloads and reconnect catch-up off (`ioThread`, `reloadReplacedChunks`,
+  `catchUpOnReconnect` false), because the facade reads the durable store itself and runs
+  `catch_up` and the reload of a replaced chunk. A refused, unsent or timed-out edit reaches the
+  facade as an `EDIT_REFUSED` event row (`a` packs x/y/z as 16-bit fields, `c` the result,
+  `restored` and the error code, `epochMs` the edit id). Read a chunk through `forEachState`,
+  `forEachOverlay` and `grid()`: `ChunkData` keeps no public maps any more.
 - The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
   `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
   options CrowdyJS refuses.

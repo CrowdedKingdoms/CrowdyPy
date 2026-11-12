@@ -23,6 +23,7 @@ import functools
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from crowdypy import _native
@@ -30,6 +31,7 @@ from crowdypy._concurrency import run_soon
 from crowdypy.codecs import StateCodec, json_codec, raw_codec
 from crowdypy.domains._base import sleep
 from crowdypy.errors import CrowdyError
+from crowdypy.replication import ConnState
 from crowdypy.utils import decode_base64, encode_base64
 from crowdypy.wire import DecayRate, ErrorCode, assert_voxel_edit
 
@@ -57,6 +59,7 @@ __all__ = [
     "RemoteActorStore",
     "RoutedEvent",
     "SaveStateStore",
+    "VoxelEditRefusal",
     "WorldSessionCore",
     "create_world_session",
     "voxel_key",
@@ -84,6 +87,90 @@ def _chunk_input(coord: Coord) -> dict[str, str]:
 
 def _distance(a: Coord, b: Coord) -> int:
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[2] - b[2]))
+
+
+#: Chunks one region read asks for per page.
+_PAGE_SIZE = 1000
+#: The largest box a region read covers (17^3, the cube ``maxDistance`` 8 reads).
+_MAX_BOX_CHUNKS = 17**3
+#: A load needing more boxes than this reads their bounding box instead.
+_MAX_BOXES = 8
+#: How far before the connection dropped a catch-up starts, for the client's and server's clocks.
+_CATCH_UP_MARGIN_MS = 30_000
+
+Box = tuple[Coord, Coord]
+
+
+def _bounds(coords: Sequence[Coord]) -> Box:
+    lo = (min(c[0] for c in coords), min(c[1] for c in coords), min(c[2] for c in coords))
+    hi = (max(c[0] for c in coords), max(c[1] for c in coords), max(c[2] for c in coords))
+    return lo, hi
+
+
+def _volume(box: Box) -> int:
+    lo, hi = box
+    return (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+
+
+def _in_box(coord: Coord, box: Box) -> bool:
+    lo, hi = box
+    return all(lo[i] <= coord[i] <= hi[i] for i in range(3))
+
+
+def _cover_with_boxes(coords: Sequence[Coord]) -> list[Box]:
+    """Boxes covering ``coords``, each at most twice as large as the chunks it holds, found by
+    cutting where the two halves' boxes are smallest (CrowdyJS's ``coverWithBoxes``): a step
+    uncovers one slab per axis moved, so it is one box per slab. A set too scattered for 8
+    boxes is read as its bounding box."""
+    boxes: list[Box] = []
+
+    def split(group: Sequence[Coord]) -> bool:
+        if not group:
+            return True
+        box = _bounds(group)
+        if _volume(box) <= _MAX_BOX_CHUNKS and _volume(box) <= 2 * len(group):
+            boxes.append(box)
+            return len(boxes) <= _MAX_BOXES
+        best: tuple[int, int, int] | None = None
+        for axis in range(3):
+            for cut in range(box[0][axis], box[1][axis]):
+                low = [c for c in group if c[axis] <= cut]
+                high = [c for c in group if c[axis] > cut]
+                if not low or not high:
+                    continue
+                cost = _volume(_bounds(low)) + _volume(_bounds(high))
+                if best is None or cost < best[0]:
+                    best = (cost, axis, cut)
+        if best is None:
+            boxes.append(box)
+            return len(boxes) <= _MAX_BOXES
+        _, axis, cut = best
+        return split([c for c in group if c[axis] <= cut]) and split(
+            [c for c in group if c[axis] > cut]
+        )
+
+    if split(coords):
+        return boxes
+    return [_bounds(coords)]
+
+
+def _iso_ms(value: Any) -> int | None:
+    """A stored row's ``updatedAt`` (an ISO time) as epoch ms; None when absent or unreadable."""
+    if not value:
+        return None
+    try:
+        text = str(value).replace("Z", "+00:00")
+        return int(datetime.fromisoformat(text).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _iso(epoch_ms: int) -> str:
+    return (
+        datetime.fromtimestamp(epoch_ms / 1000, UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def voxel_key(x: int, y: int, z: int) -> str:
@@ -145,10 +232,17 @@ class WorldSessionCore:
         self.app_id = str(app_id)
         self.client = client
         self.connection = connection
+        options = dict(chunk_options or {})
+        # Edit pacing lives in the native store (CrowdyCPP 0.82.0).
+        pacing = [
+            int(options.pop("max_edits_in_flight", 128)),
+            int(options.pop("max_edits_per_second", 250)),
+            int(options.pop("edit_timeout_ms", 10_000)),
+        ]
         self._native: Any = _s.WorldSession(
             connection.native, self.app_id, actor_uuid or "", send_hz, keyframe_interval_ms,
             heartbeat_interval_ms, distance, int(decay), stale_after_ms, history_size,
-            reap_interval_ms, voxel_send_distance,
+            reap_interval_ms, voxel_send_distance, *pacing,
         )  # fmt: skip
         self._timers: list[_Timer] = []
         self._dispose: list[Callable[[], Any]] = []
@@ -156,7 +250,7 @@ class WorldSessionCore:
         self._disposed = False
         self.self = LocalActorStore(self, actor_codec)
         self.actors = RemoteActorStore(self, actor_codec)
-        self.chunks = ChunkStore(self, **(chunk_options or {}))
+        self.chunks = ChunkStore(self, **options)
         self.errors = ErrorStore(self)
         self.direct_inbox = ActorInbox(self, inbox_codec)
         self.channel_inbox = ChannelInbox(self, inbox_codec)
@@ -246,6 +340,8 @@ class WorldSessionCore:
             self.actors._event(event)
         elif kind == _s.CHUNK_CHANGED:
             self.chunks._changed(_coord(event[3]))
+        elif kind == _s.EDIT_REFUSED:
+            self.chunks._edit_refused(event)
         elif kind == _s.ERROR:
             self.errors._event(event)
         elif kind == _s.CHANNEL_MESSAGE:
@@ -614,6 +710,11 @@ class CachedChunk:
     dirty: bool = False
     chunk_state: Any = None
     hydrated_states: dict[int, Any] = field(default_factory=dict)
+    #: The last hydration got only part of the chunk's recorded edits (the server returns at
+    #: most 262,144 per request).
+    voxel_states_truncated: bool = False
+    #: When the server last wrote the chunk's stored row (epoch ms), from the last read of it.
+    stored_at: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -643,9 +744,44 @@ class ChunkWriteBackFailure:
     attempts: int
 
 
+@dataclass(frozen=True, slots=True)
+class VoxelEditRefusal:
+    """An edit the store undid or could not send: ``reason`` is ``refused`` (the server's
+    ``error_code``; ``UNAUTHORIZED`` for a voxel the player may not edit), ``not_sent`` (the
+    connection did not take it) or ``timeout`` (no echo within ``edit_timeout_ms``; a store
+    that hydrates reads the chunk again, since the echo may only have been lost).
+    ``restored``: the voxel shows what it held before the edit (not when a newer edit of it is
+    what it shows)."""
+
+    coord: Coord
+    voxel: tuple[int, int, int]
+    voxel_type: int
+    reason: str
+    restored: bool
+    error_code: int
+    edit_id: int
+
+
+_EDIT_REASONS = {1: "refused", 2: "not_sent", 3: "timeout"}
+
+
+def _i16(value: int) -> int:
+    value &= 0xFFFF
+    return value - 0x10000 if value >= 0x8000 else value
+
+
 class ChunkStore:
     """A chunk and voxel cache: real-time voxel edits merge natively, local edits apply at
     once and replicate over UDP, and chunks load from and persist to the Game API.
+
+    Loads read only the chunks the store does not hold, as boxes paged by the size the server
+    applied (a step at range 8 reads the 289 chunks it uncovers). Edits are paced (at most
+    ``max_edits_in_flight``, 128, unanswered, and ``max_edits_per_second``, 250, sent); one
+    the server refuses, the connection does not take, or whose echo does not come back within
+    ``edit_timeout_ms`` is undone and reported to :meth:`on_edit_refused`. A ``chunk_changed``
+    (a hub's or mod's ``world.set_chunk``) reads the chunk again, and after the connection comes
+    back :meth:`catch_up` reads what changed meanwhile. Only seeded and generated chunks are
+    written back: the server records realtime edits.
 
     It is a helper for 16x16x16 chunks with one byte per voxel. Voxel positions and types are
     the app's signed 16-bit values, which the platform does not check: an edit the dense grid
@@ -666,6 +802,8 @@ class ChunkStore:
         hydrate_voxel_states: bool = False,
         on_missing: Callable[[Coord], Any] | None = None,
         write_back_interval_ms: int | None = 700,
+        reload_replaced_chunks: bool = True,
+        catch_up_on_reconnect: bool = True,
     ) -> None:
         self._session = session
         self._voxel_codec = voxel_state_codec
@@ -678,9 +816,20 @@ class ChunkStore:
         self._due: dict[Coord, int] = {}
         self._changed_listeners = _Listeners()
         self._failure_listeners = _Listeners()
+        self._refused_listeners = _Listeners()
         self._revision = 0
+        self._loading: set[Coord] = set()
+        self._reloading: set[Coord] = set()
+        self._duplicates = 0
+        self._last_area: tuple[Coord, int] | None = None
+        self._down_at: int | None = None
+        self._was_connected = False
         if write_back_interval_ms:
             session.on_dispose(session.every(write_back_interval_ms, self._persist_due))
+        if reload_replaced_chunks:
+            session.on_dispose(session.on("chunk_changed", self._on_replaced))
+        if catch_up_on_reconnect:
+            session.on_dispose(session.every(250, self._watch_connection))
 
     @property
     def revision(self) -> int:
@@ -690,6 +839,23 @@ class ChunkStore:
     @property
     def pending_write_backs(self) -> int:
         return len(self._queue)
+
+    @property
+    def edits_in_flight(self) -> int:
+        """Edits sent and not yet echoed, refused or timed out."""
+        result: int = self._session._native.edits_in_flight()
+        return result
+
+    @property
+    def queued_edits(self) -> int:
+        """Edits waiting for their turn to be sent (``max_edits_per_second``)."""
+        result: int = self._session._native.queued_edits()
+        return result
+
+    @property
+    def duplicate_page_chunks(self) -> int:
+        """Chunks a region read returned on two of its pages; each was applied once."""
+        return self._duplicates
 
     def get(self, chunk: Sequence[int | str]) -> CachedChunk | None:
         coord = _coord(chunk)
@@ -748,53 +914,212 @@ class ChunkStore:
     ) -> Callable[[], None]:
         return self._failure_listeners.add(listener)
 
-    async def ensure_around(self, center: Sequence[int | str], radius: int) -> None:
-        """Load every stored chunk within ``radius`` (Chebyshev) of ``center`` in one request;
-        a requested chunk the server has never stored is ``missing`` (and goes to
-        ``on_missing``, the worldgen hook, when configured).
+    def on_edit_refused(self, listener: Callable[[VoxelEditRefusal], Any]) -> Callable[[], None]:
+        """Subscribe to the edits the store undid or could not send (see
+        :class:`VoxelEditRefusal`). A refusal is matched to its edit by the one-byte sequence
+        number every send of the connection shares, so it is best effort: an edit undone for
+        another send's refusal comes back with its echo."""
+        return self._refused_listeners.add(listener)
 
-        A chunk already loaded keeps what the store holds for it when a later bulk load
-        returns it again: its stored ``voxels`` carry none of the edits hydration and
-        realtime merges applied. Prune it to load it afresh."""
+    async def ensure_around(self, center: Sequence[int | str], radius: int) -> None:
+        """Load the stored chunks within ``radius`` (Chebyshev, 0-8) of ``center`` the store does
+        not hold yet, as boxes (``lowChunk``/``highChunk``, ck-api v2.67.0) read in pages of the
+        size the server says it applied; a chunk two pages return is applied once and counted
+        in :attr:`duplicate_page_chunks`. A requested chunk the server has never stored is
+        ``missing`` (and goes to ``on_missing``, the worldgen hook, when configured).
+
+        A chunk already loaded keeps what the store holds for it: prune it to load it afresh."""
         middle = _coord(center)
+        reach = max(0, min(8, int(radius)))
+        self._last_area = (middle, reach)
         around = [
             (middle[0] + dx, middle[1] + dy, middle[2] + dz)
-            for dx in range(-radius, radius + 1)
-            for dy in range(-radius, radius + 1)
-            for dz in range(-radius, radius + 1)
+            for dx in range(-reach, reach + 1)
+            for dy in range(-reach, reach + 1)
+            for dz in range(-reach, reach + 1)
         ]
-        wanted = [c for c in around if c not in self._meta or self._meta[c].load_state == "failed"]
+        wanted = [
+            c
+            for c in around
+            if c not in self._loading
+            and (c not in self._meta or self._meta[c].load_state == "failed")
+        ]
         returned: set[Coord] = set()
         if wanted:
+            asked = set(wanted)
+            pending = set(wanted)
+            self._loading.update(wanted)
             try:
-                response = await self._when_not_busy(
-                    lambda: self._session.client.chunks.by_distance(
-                        {
-                            "appId": self._session.app_id,
-                            "centerCoordinate": _chunk_input(middle),
-                            "maxDistance": max(1, min(8, radius)),
-                            "limit": (2 * radius + 1) ** 3,
-                        }
-                    )
-                )
+                for box in _cover_with_boxes(wanted):
+                    for row in await self._read_box(box):
+                        coord = _coord(row["coordinates"])
+                        known = self._meta.get(coord)
+                        if coord not in asked or (
+                            known is not None and (known.load_state == "loaded" or known.dirty)
+                        ):
+                            continue
+                        returned.add(coord)
+                        self._apply_server_chunk(
+                            coord, row.get("voxels"), row.get("chunkState"), row.get("updatedAt")
+                        )
+                    for coord in [c for c in pending if _in_box(c, box)]:
+                        pending.discard(coord)
+                        if coord not in returned:
+                            self._mark_missing(coord)
             except Exception:
-                for coord in wanted:
+                for coord in pending:
                     self._entry(coord).load_state = "failed"
                 raise
-            for row in response.get("chunks") or []:
-                coord = _coord(row["coordinates"])
-                # The cube around a new center includes chunks loaded from an earlier one.
-                known = self._meta.get(coord)
-                if known is not None and known.load_state == "loaded":
-                    continue
-                returned.add(coord)
-                self._apply_server_chunk(coord, row.get("voxels"), row.get("chunkState"))
-            for coord in wanted:
-                if coord not in returned:
-                    self._mark_missing(coord)
+            finally:
+                self._loading.difference_update(wanted)
         if self._hydrate_states:
             for coord in [c for c in returned if not self._meta[c].hydrated]:
                 await self._when_not_busy(functools.partial(self.hydrate, coord))
+
+    async def _read_box(self, box: Box, since: str | None = None) -> builtins.list[Any]:
+        """Every stored chunk of a box, page by page; a page shorter than the size the server
+        applied is the last."""
+        lo, hi = box
+        rows: builtins.list[Any] = []
+        seen: set[Coord] = set()
+        skip = 0
+        while True:
+            request = {
+                "appId": self._session.app_id,
+                "lowChunk": _chunk_input(lo),
+                "highChunk": _chunk_input(hi),
+                "limit": _PAGE_SIZE,
+                "skip": skip,
+                **({"since": since} if since else {}),
+            }
+            page = await self._when_not_busy(
+                functools.partial(self._session.client.chunks.by_distance, request)
+            )
+            chunks = page.get("chunks") or []
+            for row in chunks:
+                coord = _coord(row["coordinates"])
+                if coord in seen:
+                    self._duplicates += 1
+                    continue
+                seen.add(coord)
+                rows.append(row)
+            applied = int(page.get("limit") or _PAGE_SIZE)
+            if len(chunks) < applied or applied <= 0:
+                return rows
+            skip = int(page.get("skip") or skip) + applied
+
+    async def catch_up(self, since: datetime | str) -> None:
+        """Read what changed since ``since`` in the last area :meth:`ensure_around` loaded: the
+        chunks whose stored row was written since then (``updateChunk``, ``world.set_chunk``)
+        and those with voxel edits recorded since then (``voxels.list_by_distance``) are read
+        again. The store calls it when the connection comes back, from 30 s before it dropped.
+        Needs ck-api v2.67.0."""
+        if self._last_area is None:
+            return
+        middle, reach = self._last_area
+        box: Box = (
+            (middle[0] - reach, middle[1] - reach, middle[2] - reach),
+            (middle[0] + reach, middle[1] + reach, middle[2] + reach),
+        )
+        iso = since if isinstance(since, str) else _iso(int(since.timestamp() * 1000))
+        stale: set[Coord] = set()
+        for row in await self._read_box(box, iso):
+            coord = _coord(row["coordinates"])
+            meta = self._meta.get(coord)
+            stored = _iso_ms(row.get("updatedAt"))
+            if meta is None or meta.dirty or meta.load_state != "loaded":
+                continue
+            if stored is not None and meta.stored_at is not None and meta.stored_at >= stored:
+                continue
+            stale.add(coord)
+        voxels = getattr(self._session.client, "voxels", None)
+        if voxels is not None:
+            skip = 0
+            while True:
+                request = {
+                    "appId": self._session.app_id,
+                    "lowChunk": _chunk_input(box[0]),
+                    "highChunk": _chunk_input(box[1]),
+                    "since": iso,
+                    "limit": _PAGE_SIZE,
+                    "skip": skip,
+                }
+                page = await self._when_not_busy(
+                    functools.partial(voxels.list_by_distance, request)
+                )
+                groups = page.get("chunks") or []
+                for group in groups:
+                    coord = _coord(group["coordinates"])
+                    meta = self._meta.get(coord)
+                    if meta is not None and not meta.dirty and meta.load_state == "loaded":
+                        stale.add(coord)
+                applied = int(page.get("limit") or _PAGE_SIZE)
+                if len(groups) < applied or applied <= 0:
+                    break
+                skip = int(page.get("skip") or skip) + applied
+        for coord in sorted(stale):
+            await self._reload(coord)
+
+    async def _reload(self, coord: Coord) -> None:
+        """Read one chunk again; a read already running for it is not doubled."""
+        if coord in self._reloading:
+            return
+        self._reloading.add(coord)
+        try:
+            await self._when_not_busy(functools.partial(self.hydrate, coord))
+        except Exception:
+            meta = self._meta.get(coord)
+            if meta is not None:
+                meta.hydrated = False
+        finally:
+            self._reloading.discard(coord)
+
+    def _on_replaced(self, notification: Any) -> None:
+        coord = _coord(notification.chunk)
+        meta = self._meta.get(coord)
+        if meta is None:
+            return
+        updated = int(notification.updated_at_ms)
+        if meta.stored_at is not None and updated > 0 and meta.stored_at >= updated:
+            return
+        if meta.dirty:
+            # The server's copy is newer than a seed waiting to be written back over it.
+            if coord in self._queue:
+                self._queue.remove(coord)
+            self._forget(coord)
+            meta.dirty = False
+        run_soon(functools.partial(self._reload, coord))
+
+    async def _watch_connection(self) -> None:
+        connected = self._session.connection.state == ConnState.CONNECTED
+        if connected:
+            down, self._down_at = self._down_at, None
+            if self._was_connected and down is not None:
+                await self.catch_up(_iso(down - _CATCH_UP_MARGIN_MS))
+            self._was_connected = True
+        elif self._was_connected and self._down_at is None:
+            self._down_at = _now_ms()
+
+    def _edit_refused(self, event: tuple[Any, ...]) -> None:
+        packed, voxel_type, outcome, edit_id = (
+            int(event[4]),
+            int(event[5]),
+            int(event[6]),
+            int(event[7]),
+        )
+        coord = _coord(event[3])
+        refusal = VoxelEditRefusal(
+            coord,
+            (_i16(packed >> 32), _i16(packed >> 16), _i16(packed)),
+            voxel_type,
+            _EDIT_REASONS.get(outcome & 0xFF, "refused"),
+            bool((outcome >> 8) & 1),
+            outcome >> 16,
+            edit_id,
+        )
+        self._refused_listeners.fire(refusal)
+        if refusal.reason == "timeout" and self._hydrate_states and coord in self._meta:
+            run_soon(functools.partial(self._reload, coord))
 
     async def hydrate(self, chunk: Sequence[int | str]) -> None:
         """Load one chunk in full: voxels, chunk state and per-voxel states.
@@ -831,6 +1156,9 @@ class ChunkStore:
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(full.get("chunkState"))
         meta.load_state = "loaded"
+        meta.voxel_states_truncated = bool(full.get("voxelStatesTruncated"))
+        meta.stored_at = _iso_ms(full.get("updatedAt"))
+        meta.hydrated_states.clear()
         for x, y, z, voxel_type, state in entries:
             if not _in_grid(x, y, z):
                 continue
@@ -854,34 +1182,34 @@ class ChunkStore:
         *,
         optimistic: bool = True,
     ) -> int:
-        """Apply an edit locally, replicate it, and queue the chunk for write-back. Returns
-        the send's sequence number.
+        """Apply an edit locally and replicate it. Returns the edit's id. Sends are paced
+        (``max_edits_in_flight``, ``max_edits_per_second``): the edit shows at once and goes out
+        in turn. One the server refuses, the connection does not take, or whose echo does not
+        come back in time is undone and reported to :meth:`on_edit_refused`. The server records
+        realtime edits, so the chunk is not queued for write-back.
 
         The position and type are the app's signed 16-bit values; one the dense grid cannot
         hold is kept in the :meth:`overlay`. The encoded state is at most 1,024 bytes. Raises
         ``ValueError`` for anything else, before anything changes or is sent. The server's
         echo of the edit is not applied again.
 
-        ``optimistic=False`` (CrowdyJS's ``optimistic: false``) changes nothing locally and
-        queues nothing for write-back: the edit is applied when the server's echo of it
-        arrives, so the cache holds only what the server accepted."""
+        ``optimistic=False`` (CrowdyJS's ``optimistic: false``) changes nothing locally: the
+        edit is applied when the server's echo of it arrives, so the cache holds only what the
+        server accepted."""
         coord = _coord(chunk)
         encoded = self._voxel_codec.encode(state) if state is not None else b""
         assert_voxel_edit((x, y, z), voxel_type, encoded)
-        sequence: int = self._session._native.set_voxel(
+        edit_id, sequence = self._session._native.set_voxel(
             *coord, x, y, z, voxel_type, encoded, optimistic
         )
-        self._session.track_send(
-            {"kind": "voxelUpdate", "sequence": sequence, "sent_at": _now_ms(),
-             "uuid": self._session.actor_uuid, "detail": {"chunk": coord, "x": x, "y": y, "z": z}}
-        )  # fmt: skip
-        if not optimistic:
-            return sequence
-        meta = self._entry(coord)
-        if meta.load_state in ("loading", "missing"):
-            meta.load_state = "seeded"
-        self.mark_dirty(coord)
-        return sequence
+        if sequence >= 0:
+            self._session.track_send(
+                {"kind": "voxelUpdate", "sequence": sequence, "sent_at": _now_ms(),
+                 "uuid": self._session.actor_uuid, "detail": {"chunk": coord, "x": x, "y": y, "z": z}}
+            )  # fmt: skip
+        self._entry(coord)
+        result: int = edit_id
+        return result
 
     def seed(self, chunk: Sequence[int | str], voxels: Any, *, write_back: bool = True) -> None:
         """Insert a generated chunk (4096 voxel types), queued for write-back by default."""
@@ -1007,7 +1335,11 @@ class ChunkStore:
                 attempt += 1
 
     def _apply_server_chunk(
-        self, coord: Coord, voxels: str | None, chunk_state: str | None
+        self,
+        coord: Coord,
+        voxels: str | None,
+        chunk_state: str | None,
+        updated_at: str | None = None,
     ) -> None:
         if voxels:
             raw = decode_base64(voxels)
@@ -1016,6 +1348,7 @@ class ChunkStore:
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(chunk_state)
         meta.load_state = "loaded"
+        meta.stored_at = _iso_ms(updated_at)
         self._touch(meta)
 
     def _decode_chunk_state(self, encoded: str | None) -> Any:
