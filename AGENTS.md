@@ -131,7 +131,10 @@ idle timeout, with `COMMAND_SESSION_RELEASED` reason 5. CrowdyCPP verifies and h
 connection reports `ConnState.INACTIVE` (6), which nothing reconnects; a game calls
 `client.udp.connect()` on the player's next input. Status rows carry the state as a number, so
 `ConnState` must name every value CrowdyCPP's `replication::ConnState` has or `ConnState(...)`
-raises. Since 0.27.0 (CrowdyCPP 0.79.0) an idle release within `idle_release_guard_ms` (60 s) of
+raises. Since 0.29.0 (CrowdyCPP 0.81.0) a capabilities message carries the assignment's control
+nonce and a v0.45.0 server sends the bound 44/45 forms: a test that wants a final bound release reads
+the nonce from the client's CLIENT_CAPABILITIES (`test_replication.py`, `bound_release`). Since
+0.27.0 (CrowdyCPP 0.79.0) an idle release within `idle_release_guard_ms` (60 s) of
 the client's own gameplay input reconnects instead (a captured release frame verifies again);
 a test that wants a final release teaches the fake server the address with a heartbeat, not an
 actor update.
@@ -243,6 +246,13 @@ The replication system saturates the local network stack, so the binding
   16x16x16 one-byte grid cannot hold goes to `ChunkData::overlay`.
 - Do not write voxel types or states into the dense grid from Python. That bypasses the
   overlay, and the echo matching of local edits.
+- Since 0.30.0 (CrowdyCPP 0.82.0) the native store paces and undoes edits; the binding turns its
+  own I/O thread, reloads and reconnect catch-up off (`ioThread`, `reloadReplacedChunks`,
+  `catchUpOnReconnect` false), because the facade reads the durable store itself and runs
+  `catch_up` and the reload of a replaced chunk. A refused, unsent or timed-out edit reaches the
+  facade as an `EDIT_REFUSED` event row (`a` packs x/y/z as 16-bit fields, `c` the result,
+  `restored` and the error code, `epochMs` the edit id). Read a chunk through `forEachState`,
+  `forEachOverlay` and `grid()`: `ChunkData` keeps no public maps any more.
 - The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
   `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
   options CrowdyJS refuses.
