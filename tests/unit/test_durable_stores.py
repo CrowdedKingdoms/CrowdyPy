@@ -175,8 +175,14 @@ async def test_chunks_hydrate_by_distance_and_write_back_with_refusals(setup: An
     session.chunks.on_write_back_failed(failures.append)
     await session.chunks.ensure_around((0, 0, 0), 1)
 
+    # One box read of what the store does not hold, in pages of 1,000 (ck-api v2.67.0).
     request = api.calls("getChunksByDistance")[0]["input"]
-    assert (request["maxDistance"], request["limit"]) == (1, 27)
+    assert (request["lowChunk"], request["highChunk"]) == (
+        {"x": "-1", "y": "-1", "z": "-1"},
+        {"x": "1", "y": "1", "z": "1"},
+    )
+    assert (request["limit"], request["skip"]) == (1000, 0)
+    assert "centerCoordinate" not in request
     loaded = session.chunks.get((0, 0, 0))
     assert loaded is not None
     assert loaded.load_state == "loaded"
@@ -337,4 +343,78 @@ async def test_pruning_keeps_a_dirty_chunks_states_and_overlay(setup: Any) -> No
     assert session.chunks.voxel_type_at(far, 2, 2, 2) == 4
     assert session.chunks.voxel_state_at(far, 2, 2, 2) == b"meta"
     assert session.chunks.voxel_type_at(far, 3, 3, 3) == 1
+    session.dispose()
+
+
+def stored_row(
+    x: int, fill: int = 1, updated_at: str = "2026-11-11T20:00:00.000Z"
+) -> dict[str, Any]:
+    return {
+        "coordinates": {"x": str(x), "y": "0", "z": "0"},
+        "voxels": encode_base64(bytes([fill]) * 4096),
+        "updatedAt": updated_at,
+    }
+
+
+async def test_a_step_reads_only_the_slab_it_uncovers_in_pages(setup: Any) -> None:
+    # CrowdyJS 18.30.0 / CrowdyCPP 0.82.0: only what the store does not hold, as boxes, paged by
+    # the size the server says it applied; a chunk two pages return is applied once.
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = [
+        {"limit": 2, "skip": 0, "chunks": [stored_row(-1), stored_row(0)]},
+        {"limit": 2, "skip": 2, "chunks": [stored_row(0), stored_row(1)]},
+        {"limit": 2, "skip": 4, "chunks": []},
+        {"limit": 1000, "skip": 0, "chunks": []},
+    ]
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 1)
+    assert [c["input"]["skip"] for c in api.calls("getChunksByDistance")] == [0, 2, 4]
+    assert session.chunks.duplicate_page_chunks == 1
+    loaded = session.chunks.get((1, 0, 0))
+    assert loaded is not None
+    assert loaded.load_state == "loaded"
+    assert loaded.stored_at == 1_794_427_200_000
+    await session.chunks.ensure_around((1, 0, 0), 1)
+    slab = api.calls("getChunksByDistance")[-1]["input"]
+    assert (slab["lowChunk"], slab["highChunk"]) == (
+        {"x": "2", "y": "-1", "z": "-1"},
+        {"x": "2", "y": "1", "z": "1"},
+    )
+    session.dispose()
+
+
+async def test_a_replaced_chunk_is_read_again_and_a_catch_up_reads_what_changed(setup: Any) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0)]}
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 1)
+
+    # chunkChanged (a hub's world.set_chunk): the store reads the chunk again, once.
+    api.roots["getChunk"] = {**stored_row(0, 4, "2026-11-11T21:00:00.000Z"), "voxelStates": []}
+
+    class Replaced:
+        chunk = (0, 0, 0)
+        updated_at_ms = 1_794_430_800_000
+
+    session.chunks._on_replaced(Replaced())
+    await until(lambda: session.chunks.voxel_type_at((0, 0, 0), 5, 5, 5) == 4)
+    session.chunks._on_replaced(Replaced())  # already that new
+    await asyncio.sleep(0.05)
+    assert len(api.calls("getChunk")) == 1
+
+    # A catch-up reads the rewritten chunks and the ones with edits since, and reads them again.
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 6, "2026-11-11T22:00:00.000Z")]}
+    api.roots["listVoxelUpdatesByDistance"] = {"limit": 1000, "skip": 0, "chunks": []}
+    api.roots["getChunk"] = {**stored_row(0, 6, "2026-11-11T22:00:00.000Z"), "voxelStates": []}
+    await session.chunks.catch_up("2026-11-11T21:30:00.000Z")
+    assert api.calls("getChunksByDistance")[-1]["input"]["since"] == "2026-11-11T21:30:00.000Z"
+    assert (
+        api.calls("listVoxelUpdatesByDistance")[-1]["input"]["since"] == "2026-11-11T21:30:00.000Z"
+    )
+    assert len(api.calls("getChunk")) == 2
+    assert session.chunks.voxel_type_at((0, 0, 0), 5, 5, 5) == 6
     session.dispose()

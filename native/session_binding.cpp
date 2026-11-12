@@ -51,6 +51,10 @@ struct SessionEvent {
     kDirectMessage,
     kEvent,
     kActorLeft,
+    /// An edit undone or not sent (CrowdyCPP 0.82.0): `chunk`; `a` the voxel (x, y, z as
+    /// 16-bit fields); `b` its type; `c` the result | restored << 8 | error code << 16;
+    /// `epochMs` the edit id.
+    kEditRefused,
   };
   int kind = 0;
   std::string lane;  // "" for the default lane
@@ -141,7 +145,8 @@ class PySession {
   PySession(PyConnection& conn, const std::string& appId, const std::string& actorUuid,
             int sendHz, std::int64_t keyframeIntervalMs, std::int64_t heartbeatIntervalMs,
             int distance, int decay, std::int64_t staleAfterMs, int historySize,
-            std::int64_t reapIntervalMs, int voxelSendDistance)
+            std::int64_t reapIntervalMs, int voxelSendDistance, int maxEditsInFlight,
+            int maxEditsPerSecond, std::int64_t editTimeoutMs)
       : conn_(conn) {
     session::WorldSessionConfig config;
     config.appId = appId;
@@ -155,6 +160,13 @@ class PySession {
     config.actors.historySize = historySize;
     config.chunks.writeBackIntervalMs = 0;  // durable write-back is the facade's
     config.chunks.voxelSendDistance = distance_arg(voxelSendDistance);
+    // The facade loads, re-reads and catches up itself; its staged source answers inline.
+    config.chunks.ioThread = false;
+    config.chunks.reloadReplacedChunks = false;
+    config.chunks.catchUpOnReconnect = false;
+    config.chunks.maxEditsInFlight = maxEditsInFlight;
+    config.chunks.maxEditsPerSecond = maxEditsPerSecond;
+    config.chunks.editTimeoutMs = editTimeoutMs;
     config.hostHeartbeatIntervalMs = 0;     // host election is the facade's
     config.reapIntervalMs = reapIntervalMs;
     auto forward = [this](const replication::SpatialNotification& n) {
@@ -178,6 +190,13 @@ class PySession {
       e.a = reason;
       events_.push_back(std::move(e));
     };
+    // The same row the connection's own handler gives, so `chunk_changed` reaches subscribers
+    // whether or not a session is attached.
+    config.onChunkChanged = [this, app = std::strtoll(appId.c_str(), nullptr, 10)](
+                                const wire::ChunkCoord& chunk, std::int64_t updatedAtMs) {
+      conn_.rowsLocked().push(static_cast<std::uint8_t>(wire::MessageType::ChunkChangedNotification),
+                              app, chunk, nullptr, 0, 0, {updatedAtMs, 0, 0, 0}, {});
+    };
     {
       std::lock_guard lock(conn_.consumerMutex());
       session::WorldSessionServices services;
@@ -187,6 +206,20 @@ class PySession {
     }
     conn_.attachSession(true);
     watchLane("");
+    session_->chunks().onEditRefused([this](const session::EditOutcome& o) {
+      SessionEvent e;
+      e.kind = SessionEvent::kEditRefused;
+      e.hasUuid = false;
+      e.chunk = o.coord;
+      e.a = (static_cast<std::int64_t>(static_cast<std::uint16_t>(o.x)) << 32) |
+            (static_cast<std::int64_t>(static_cast<std::uint16_t>(o.y)) << 16) |
+            static_cast<std::int64_t>(static_cast<std::uint16_t>(o.z));
+      e.b = o.voxelType;
+      e.c = static_cast<std::int64_t>(o.result) | (o.restored ? 1 << 8 : 0) |
+            (static_cast<std::int64_t>(o.errorCode) << 16);
+      e.epochMs = static_cast<std::int64_t>(o.editId);
+      events_.push_back(std::move(e));
+    });
     session_->chunks().onChunkChanged([this](const session::ChunkData& chunk) {
       if (!watchChunks_) return;
       SessionEvent e;
@@ -457,14 +490,15 @@ class PySession {
     const session::ChunkData* c = live().chunks().find(coord_of(x, y, z));
     if (!c) return std::nullopt;
     nb::dict states;
-    for (const auto& [index, state] : c->voxelStates)
+    c->forEachState([&](int index, const session::VoxelStateView& state) {
       states[nb::int_(index)] = nb::make_tuple(state.voxelType, blob(state.state));
+    });
     nb::list overlay;
-    for (const auto& [key, wide] : c->overlay)
-      overlay.append(
-          nb::make_tuple(wide.x, wide.y, wide.z, wide.voxel.voxelType, blob(wide.voxel.state)));
+    c->forEachOverlay([&](const session::OverlayVoxel& wide) {
+      overlay.append(nb::make_tuple(wide.x, wide.y, wide.z, wide.voxelType, blob(wide.state)));
+    });
     return nb::make_tuple(
-        nb::bytes(reinterpret_cast<const char*>(c->voxels.data()), c->voxels.size()), states,
+        nb::bytes(reinterpret_cast<const char*>(c->grid()), session::kChunkVolume), states,
         c->hydratedAtMs, overlay);
   }
 
@@ -512,25 +546,40 @@ class PySession {
   std::optional<nb::tuple> voxelStateAt(std::int64_t x, std::int64_t y, std::int64_t z, int vx,
                                         int vy, int vz) {
     std::lock_guard lock(conn_.consumerMutex());
-    const session::VoxelState* s = live().chunks().voxelStateAt(coord_of(x, y, z), vx, vy, vz);
+    const auto s = live().chunks().voxelStateAt(coord_of(x, y, z), vx, vy, vz);
     if (!s) return std::nullopt;
     return nb::make_tuple(s->voxelType, blob(s->state));
   }
 
-  int setVoxel(std::int64_t x, std::int64_t y, std::int64_t z, int vx, int vy, int vz,
-               int voxelType, nb::handle state, bool optimistic) {
+  /// Returns (edit id, the sequence number it went out with, or -1 while it waits its turn).
+  nb::tuple setVoxel(std::int64_t x, std::int64_t y, std::int64_t z, int vx, int vy, int vz,
+                     int voxelType, nb::handle state, bool optimistic) {
     BufferView body(state);
     const std::int16_t type = i16_arg(voxelType, "voxel type");
-    Result<std::uint8_t> result = Errc::InvalidArgument;
+    Result<std::uint64_t> result = Errc::InvalidArgument;
+    int sequence = -1;
     {
       nb::gil_scoped_release release;
       std::lock_guard lock(conn_.consumerMutex());
       auto& s = live();
       result = s.chunks().setVoxel(coord_of(x, y, z), vx, vy, vz, type, body.bytes(), s.actorUuid(),
                                    optimistic);
-      if (result.ok()) s.errors().recordSend(result.value(), session::SendKind::VoxelUpdate, s.actorUuid());
+      if (result.ok()) {
+        if (auto seq = s.chunks().sequenceOf(result.value())) sequence = *seq;
+      }
     }
-    return sent(result, "setVoxel");
+    if (!result.ok()) raise(result.error(), "setVoxel");
+    return nb::make_tuple(result.value(), sequence);
+  }
+
+  std::size_t editsInFlight() {
+    std::lock_guard lock(conn_.consumerMutex());
+    return live().chunks().editsInFlight();
+  }
+
+  std::size_t queuedEdits() {
+    std::lock_guard lock(conn_.consumerMutex());
+    return live().chunks().queuedEdits();
   }
 
   /// Insert a chunk the facade loaded from the durable store, or generated.
@@ -729,6 +778,7 @@ void register_session(nb::module_& m) {
   m.attr("DIRECT_MESSAGE") = static_cast<int>(SessionEvent::kDirectMessage);
   m.attr("EVENT") = static_cast<int>(SessionEvent::kEvent);
   m.attr("ACTOR_LEFT") = static_cast<int>(SessionEvent::kActorLeft);
+  m.attr("EDIT_REFUSED") = static_cast<int>(SessionEvent::kEditRefused);
   m.attr("MAX_STATE_BYTES") = session::kMaxStateBytes;
   m.attr("CHUNK_VOLUME") = session::kChunkVolume;
 
@@ -755,13 +805,15 @@ void register_session(nb::module_& m) {
 
   nb::class_<PySession>(m, "WorldSession")
       .def(nb::init<PyConnection&, const std::string&, const std::string&, int, std::int64_t,
-                    std::int64_t, int, int, std::int64_t, int, std::int64_t, int>(),
+                    std::int64_t, int, int, std::int64_t, int, std::int64_t, int, int, int,
+                    std::int64_t>(),
            nb::arg("connection"), nb::arg("app_id"), nb::arg("actor_uuid") = "",
            nb::arg("send_hz") = 5, nb::arg("keyframe_interval_ms") = 3000,
            nb::arg("heartbeat_interval_ms") = 2000, nb::arg("distance") = 8, nb::arg("decay") = 1,
            nb::arg("stale_after_ms") = 12000, nb::arg("history_size") = 2,
            nb::arg("reap_interval_ms") = 1000, nb::arg("voxel_send_distance") = 8,
-           nb::keep_alive<1, 2>())
+           nb::arg("max_edits_in_flight") = 128, nb::arg("max_edits_per_second") = 250,
+           nb::arg("edit_timeout_ms") = 10000, nb::keep_alive<1, 2>())
       .def("close", &PySession::close)
       .def("tick", &PySession::tick)
       .def("drain_events", &PySession::drainEvents)
@@ -808,6 +860,8 @@ void register_session(nb::module_& m) {
            nb::arg("distance"))
       .def("chunk_revision", &PySession::chunkRevision)
       .def("chunk_count", &PySession::chunkCount)
+      .def("edits_in_flight", &PySession::editsInFlight)
+      .def("queued_edits", &PySession::queuedEdits)
       .def("recent_errors", &PySession::recentErrors, nb::arg("limit") = SIZE_MAX)
       .def("error_total", &PySession::errorTotal)
       .def("clear_errors", &PySession::clearErrors)

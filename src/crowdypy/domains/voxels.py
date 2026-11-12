@@ -29,8 +29,10 @@ class VoxelsAPI(Domain):
     async def list(
         self, input: inputs.ListVoxelsInput | Mapping[str, Any]
     ) -> builtins.list[dict[str, Any]]:
-        """The recorded edits of one chunk, newest first; ``since`` keeps those at or after it.
+        """The recorded edits of one chunk, by position; ``since`` keeps those at or after it.
 
+        Pages with ``limit`` (1-65,536, the default) and ``skip`` (ck-api v2.67.0; before it the
+        list was newest first and unbounded). A page shorter than ``limit`` is the last.
         Read-only.
         """
         result: builtins.list[dict[str, Any]] = await self._request(
@@ -41,11 +43,14 @@ class VoxelsAPI(Domain):
     async def list_by_distance(
         self, input: inputs.ListVoxelUpdatesByDistanceInput | Mapping[str, Any]
     ) -> dict[str, Any]:
-        """Recorded edits of every chunk within ``maxDistance`` chunks (1-8) of a center chunk.
+        """Recorded edits of the chunks of a region, grouped per chunk.
 
-        Grouped per chunk by increasing distance and paginated over chunks, not voxels
-        (``limit`` default 1000, ``skip``); ``since`` bounds the edits. ``BAD_USER_INPUT`` for
-        a ``maxDistance`` outside 1-8. Read-only.
+        A cube (``centerCoordinate`` and ``maxDistance``, 1-8, by increasing distance) or a box
+        (``lowChunk`` and ``highChunk``, at most 4,913 chunks, by x, y, z; ck-api v2.67.0).
+        Paginated over chunks, not voxels (``limit`` default 1000, ``skip``); ``since`` bounds
+        the edits. It reads the edit log alone, so it returns edits in chunks whose grid was
+        never stored; for a box ``centerCoordinate`` is its middle chunk. ``BAD_USER_INPUT`` for
+        a ``maxDistance`` outside 1-8 or a box over 4,913 chunks. Read-only.
         """
         result: dict[str, Any] = await self._request(
             ops.LIST_VOXEL_UPDATES_BY_DISTANCE, {"input": input}

@@ -547,3 +547,61 @@ def test_threads_send_and_poll_one_connection_at_once(server: FakeServer) -> Non
         stats = connection.stats()
         assert stats["messages_sent"] == 8000
         assert stats["sends_failed"] == 0
+
+
+def test_a_chunk_changed_arrives_on_its_own_handler(server: FakeServer) -> None:
+    # Replication server v0.45.0: a chunk a hub's or mod's world.set_chunk replaced.
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        connection.send_heartbeat((0, 0, 0), ME)
+        connection.flush_sends()
+        server.recv()
+        server.notify(
+            MessageType.CHUNK_CHANGED_NOTIFICATION, OTHER, (1_794_400_000_321).to_bytes(8, "little")
+        )
+        events = [e for e in wait_for_rows(connection, 3) if e.type != STATUS]
+        assert [e.type for e in events] == [MessageType.CHUNK_CHANGED_NOTIFICATION]
+        assert (events[0].chunk, events[0].updated_at_ms) == ((1, 2, 3), 1_794_400_000_321)
+
+
+def bound_release(reason: int, nonce: bytes, key: str = TOKEN) -> bytes:
+    prefix = bytes([MessageType.COMMAND_SESSION_RELEASED_BOUND, reason]) + nonce
+    return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()
+
+
+def test_a_bound_release_from_another_assignment_is_refused_and_this_ones_is_final(
+    server: FakeServer,
+) -> None:
+    # CrowdyCPP 0.81.0: the capabilities carry a per-assignment nonce, which a v0.45.0 server
+    # puts inside the release's HMAC, so a release captured earlier and sent again is refused.
+    provider = Provider(server)
+    with ReplicationConnection(
+        provider, token(), app_id=7, **{**QUIET, "advertise_capabilities": True}
+    ) as connection:
+        nonce = None
+        deadline = time.monotonic() + 3
+        while nonce is None and time.monotonic() < deadline:
+            for message in server.messages():
+                if message[0] == MessageType.CLIENT_CAPABILITIES:
+                    payload = wire.parse_long_spatial(message).payload
+                    flags = int.from_bytes(payload[:4], "little")
+                    assert flags & 0b10, "kBoundControl"
+                    nonce = bytes(payload[4:12])
+        assert nonce is not None
+        assert len(nonce) == 8
+
+        connection.send_actor_update((0, 0, 0), ME, b"pose")
+        connection.flush_sends()
+        server.send(bound_release(ReleaseReason.IDLE, bytes(8) if nonce != bytes(8) else b"\1" * 8))
+        deadline = time.monotonic() + 3
+        while connection.stats()["stale_bound_control"] < 1 and time.monotonic() < deadline:
+            connection.wait(0.05)
+            connection.poll()
+        assert connection.stats()["stale_bound_control"] == 1
+        assert connection.state == ConnState.CONNECTED
+
+        # This assignment's own release is final, even right after this client's input.
+        server.send(bound_release(ReleaseReason.IDLE, nonce))
+        wait_for_state(connection, ConnState.INACTIVE)
+        assert connection.state == ConnState.INACTIVE
+        assert connection.stats()["idle_releases_after_input"] == 0
+        assert provider.assigned == 1

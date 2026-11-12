@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 2721890191ea5feb270ccbcce13042477779606fb53d2ee774aee8786a701c51
+schema.gql sha256: 60a0a7a81bd90cb0b5decd62dc58736d037e61043a64f93b6f94a35311f0c7a1
 """
 
 from __future__ import annotations
@@ -575,17 +575,20 @@ class GetChunkLodsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename
     lod_levels: list[int]
 
 
-class GetChunksByDistanceInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'center_coordinate': 'centerCoordinate', 'max_distance': 'maxDistance'}):
-    'Arguments for getChunksByDistance: selects chunks within a cubic (Chebyshev-distance) radius around a center chunk, with pagination.'
+class GetChunksByDistanceInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'center_coordinate': 'centerCoordinate', 'max_distance': 'maxDistance', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
+    'Arguments for getChunksByDistance: selects the stored chunks in a region, either a cube (centerCoordinate and maxDistance) or a box (lowChunk and highChunk), with pagination. A cube is ordered by Chebyshev distance from its center, then x, y, z; a box by x, y, z.'
     app_id: str
-    center_coordinate: ChunkCoordinatesInput
-    max_distance: int
+    center_coordinate: ChunkCoordinatesInput | None | UnsetType = UNSET
+    max_distance: int | None | UnsetType = UNSET
+    low_chunk: ChunkCoordinatesInput | None | UnsetType = UNSET
+    high_chunk: ChunkCoordinatesInput | None | UnsetType = UNSET
     limit: int | None | UnsetType = UNSET
     skip: int | None | UnsetType = UNSET
+    since: str | None | UnsetType = UNSET
 
 
 class GetVoxelListInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
-    'Arguments for getVoxelList: selects all recorded voxel edits for one chunk by app id and chunk coordinates.'
+    'Arguments for getVoxelList: selects the recorded voxel edits for one chunk by app id and chunk coordinates, by position and at most 65,536 of them (listVoxels pages past that).'
     app_id: str
     coordinates: ChunkCoordinatesInput
 
@@ -654,21 +657,25 @@ class LinkIdentityInput(msgspec.Struct, kw_only=True, omit_defaults=True):
     state: str
 
 
-class ListVoxelUpdatesByDistanceInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'center_coordinate': 'centerCoordinate', 'max_distance': 'maxDistance'}):
-    'Arguments for listVoxelUpdatesByDistance: selects recorded voxel edits across chunks within a cubic (Chebyshev) radius of a center chunk, grouped per chunk and ordered by increasing distance.'
+class ListVoxelUpdatesByDistanceInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'center_coordinate': 'centerCoordinate', 'max_distance': 'maxDistance', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
+    'Arguments for listVoxelUpdatesByDistance: selects recorded voxel edits across the chunks of a region, either a cube (centerCoordinate and maxDistance) or a box (lowChunk and highChunk), grouped per chunk. A cube is ordered by increasing Chebyshev distance, then x, y, z; a box by x, y, z. Edits are returned for chunks whose grid was never stored too.'
     app_id: str
-    center_coordinate: ChunkCoordinatesInput
-    max_distance: int
+    center_coordinate: ChunkCoordinatesInput | None | UnsetType = UNSET
+    max_distance: int | None | UnsetType = UNSET
+    low_chunk: ChunkCoordinatesInput | None | UnsetType = UNSET
+    high_chunk: ChunkCoordinatesInput | None | UnsetType = UNSET
     limit: int | None | UnsetType = UNSET
     skip: int | None | UnsetType = UNSET
     since: str | None | UnsetType = UNSET
 
 
 class ListVoxelsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
-    'Arguments for listVoxels: selects recorded voxel edits for one chunk, optionally only those at/after a timestamp.'
+    'Arguments for listVoxels: selects the recorded voxel edits of one chunk, ordered by voxel position (x, then y, then z), optionally only those at/after a timestamp, a page at a time.'
     app_id: str
     coordinates: ChunkCoordinatesInput
     since: str | None | UnsetType = UNSET
+    limit: int | None | UnsetType = UNSET
+    skip: int | None | UnsetType = UNSET
 
 
 class LodDataInput(msgspec.Struct, kw_only=True, omit_defaults=True):
@@ -718,7 +725,7 @@ class NearbyGridPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=Tru
 
 
 class NearbyGridsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'low_chunk': 'lowChunk', 'high_chunk': 'highChunk'}):
-    'Scan a region for grids. Player-safe: returns bounds only, no permission keys and no impersonation userId.'
+    "Scan a region for grids. Player-safe: returns each grid's bounds and the caller's own permission keys, and takes no userId."
     app_id: str
     low_chunk: ChunkCoordinatesInput
     high_chunk: ChunkCoordinatesInput

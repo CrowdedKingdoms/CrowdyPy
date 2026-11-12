@@ -71,9 +71,13 @@ class GameAppsAPI(Domain):
     async def nearby_grids(
         self, input: inputs.NearbyGridsInput | Mapping[str, Any]
     ) -> list[dict[str, Any]]:
-        """Every grid overlapping a chunk box: ids and bounds only, no permission keys.
+        """Every grid overlapping a chunk box: ids, bounds and your own ``permissionKeys``.
 
-        Player-safe: needs an app-scoped token for the app, not app-admin.
+        The keys are the caller's unexpired ones (ck-api v2.67.0; bounds only before). The grid
+        that decides a voxel edit is the smallest one covering its chunk (the lower ``gridId``
+        on a tie), and the edit needs ``update_voxel_data`` there. Player-safe: needs an
+        app-scoped token for the app, not app-admin; another user's keys are
+        :meth:`nearby_permissions`.
         """
         result: list[dict[str, Any]] = await self._request(ops.NEARBY_GRIDS, {"input": input})
         return result
