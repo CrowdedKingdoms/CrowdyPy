@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.31.0: hardening from CrowdyCPP 0.83.0.** MessagePack keys that are containers are refused (a nested key blew up memory), a NaN serialises as `null` in place, unchanged keyframes of many actors are not gameplay input, and a legacy reconnect command is paced (`legacy_reconnect_window_ms`). See [MIGRATION.md](MIGRATION.md).
+
 **v0.30.0: the ChunkStore rework.** `ensure_around` reads only what is missing, as boxes, paged; `set_voxel` is paced and returns an edit id, and an edit the server refuses or never echoes is undone (`on_edit_refused`); a replaced chunk is read again and a reconnect catches up; realtime edits are no longer written back. CrowdyJS 18.30.0 and CrowdyCPP 0.82.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.29.0: reconnect commands verify, bound control frames, and `chunk_changed`.** A server's `COMMAND_RECONNECT` verifies again; against replication servers v0.45.0 the reconnect and release frames carry a per-assignment nonce under their HMAC, so one captured earlier is refused (`stats()["stale_bound_control"]`); `chunk_changed` reports a chunk a hub's or mod's `world.set_chunk` replaced. CrowdyJS 18.29.0 and CrowdyCPP 0.81.0. See [MIGRATION.md](MIGRATION.md).

@@ -1,6 +1,7 @@
 #include "crowdy/session/chunk_store.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <string_view>
 
