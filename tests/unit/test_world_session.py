@@ -404,13 +404,13 @@ def test_the_echo_of_your_own_edit_is_applied_once(chunk: Any) -> None:
     assert len(changed) == 1, "the echo fired no second change"
     assert session.chunks.voxel_type_at(at, 1, 2, 3) == 7
 
-    # Another client's edit lands between yours and its echo: the echo restores yours, since
-    # the server ordered it last.
+    # Another client's edit lands between yours and its echo: it goes under your unanswered edit
+    # (0.32.0), and the echo confirms yours, since the server ordered it last.
     sequence = session.chunks.set_voxel(at, 1, 2, 3, 8)
     server.recv()
     voxel(server, OTHER, (1, 2, 3), 5, sequence)
     pump_until(session, connection, lambda: len(seen) == 2)
-    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 5
+    assert session.chunks.voxel_type_at(at, 1, 2, 3) == 8
     voxel(server, ME, (1, 2, 3), 8, sequence)
     pump_until(session, connection, lambda: len(seen) == 3)
     assert session.chunks.voxel_type_at(at, 1, 2, 3) == 8
