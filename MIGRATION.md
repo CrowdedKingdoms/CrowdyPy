@@ -3,6 +3,32 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.32.0
+
+Vendors CrowdyCPP 0.84.0 (ChunkStore v3, the Unreal team's B1 to B8) and syncs CrowdyJS 18.31.1's
+schema and operations. **Needs ck-api v2.69.0**: `client.chunks.get` selects each voxel state's
+`updatedAt`, which an older Game API refuses.
+
+- **The chunk store merges by the server's time.** Each voxel keeps the value the server confirmed
+  last and when (a stored row's `updatedAt`, an entry's, a notification's time, a recorded edit's
+  `createdAt`); a change older than the value held is dropped, and a time more than 5 minutes past
+  this machine's clock counts as 5 minutes ahead. `chunks.confirmed_at(chunk, x, y, z)` reads it.
+- **A change that arrives while a chunk loads is kept.** A bulk load and `hydrate` merge their copy
+  under what arrived meanwhile; a newer change stays. A bulk row used to replace the grid outright.
+- **Another client's edit goes under your unanswered edit**, which keeps showing until the server
+  answers; a refusal or a timeout shows that edit (`VoxelEditRefusal.restored` is true whenever the
+  voxel stopped showing yours). An echo matches by its value too: sender, sequence, voxel, type and
+  state.
+- **`catch_up(since, boxes=None)` covers every tracked chunk**, the never-stored (`missing`) ones
+  included, in boxes of at most 17^3, or the boxes you pass (more than 64 returns False); the edits
+  merge by their `createdAt` instead of re-reading each chunk. It returns whether anything was read.
+- **`evict(chunk)` and `prune_if(predicate)`** forget chunks for a view that is not a cube; a chunk
+  queued for write-back stays. **`hydrate` returns whether its copy was applied**: False for a chunk
+  never stored, or one evicted while the read was out.
+- **`stats()["bound_control_acks"]` and `["legacy_control_dropped"]`**: a realtime server v0.46.0
+  acknowledges the bound control frames (`MessageType.CONTROL_BOUND_ACK`, 46), and a legacy 22 or 28
+  on that assignment afterwards is dropped.
+
 ## 0.31.0
 
 Vendors CrowdyCPP 0.83.0 (the Unreal team's hardening, A1 to A6). Nothing new is needed on the tier.

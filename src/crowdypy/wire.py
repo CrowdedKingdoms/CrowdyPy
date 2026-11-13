@@ -98,6 +98,11 @@ class MessageType(IntEnum):
     #: ``[45][reason][8-byte nonce][32-byte HMAC over the first 10 bytes]``: the bound
     #: COMMAND_SESSION_RELEASED. A verified idle release is final, without the idle guard.
     COMMAND_SESSION_RELEASED_BOUND = 45
+    #: ``[46][8-byte nonce][32-byte HMAC over the first 9 bytes]``: the server acknowledges the
+    #: bound forms for this assignment (replication server v0.46.0). The connection handles it,
+    #: counted in ``stats()["bound_control_acks"]``; after it, a legacy 22 or 28 on the
+    #: assignment is dropped and counted in ``stats()["legacy_control_dropped"]``.
+    CONTROL_BOUND_ACK = 46
     MESSAGE_BUNDLE_SIGNED = 30
     CHANNEL_MESSAGE_RANGED_REQUEST = 32
     CHANNEL_AUDIO_REQUEST = 35

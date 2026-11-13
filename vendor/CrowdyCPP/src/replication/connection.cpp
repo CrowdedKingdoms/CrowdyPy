@@ -578,16 +578,20 @@ void Connection::handleDatagram(Bytes datagram) {
   // a verified one cannot be a frame captured earlier: it is final, without the idle guard.
   if (!datagram.empty() &&
       (datagram[0] == static_cast<std::uint8_t>(MessageType::CommandReconnectBound) ||
-       datagram[0] == static_cast<std::uint8_t>(MessageType::CommandSessionReleasedBound))) {
+       datagram[0] == static_cast<std::uint8_t>(MessageType::CommandSessionReleasedBound) ||
+       datagram[0] == static_cast<std::uint8_t>(MessageType::ControlBoundAck))) {
     std::uint8_t nonce[wire::kControlNonceSize];
     const std::uint64_t n = controlNonce_.load(std::memory_order_acquire);
     std::memcpy(nonce, &n, sizeof(nonce));
     const wire::Token64 token = tokenSnapshot();
     const bool reconnect =
         datagram[0] == static_cast<std::uint8_t>(MessageType::CommandReconnectBound);
+    const bool ack = datagram[0] == static_cast<std::uint8_t>(MessageType::ControlBoundAck);
     Errc verdict = Errc::Ok;
     std::uint8_t reason = 0;
-    if (reconnect) {
+    if (ack) {
+      verdict = wire::verifyControlBoundAck(crypto_, datagram, token, nonce).code;
+    } else if (reconnect) {
       verdict = wire::verifyCommandReconnectBound(crypto_, datagram, token, nonce).code;
     } else {
       const auto r = wire::verifySessionReleasedBound(crypto_, datagram, token, nonce);
@@ -596,7 +600,12 @@ void Connection::handleDatagram(Bytes datagram) {
     }
     if (n == 0) verdict = Errc::Rejected;  // we never asked for bound frames
     if (verdict == Errc::Ok) {
-      if (reconnect) {
+      if (ack) {
+        // Bound to the nonce it verified: after a reassignment it matches nothing.
+        boundNonce_.store(n, std::memory_order_release);
+        std::lock_guard lock(statsMutex_);
+        ++stats_.boundControlAcks;
+      } else if (reconnect) {
         reconnectRequested_.store(true, std::memory_order_release);
       } else if (reason == static_cast<std::uint8_t>(wire::ReleaseReason::Idle)) {
         idleReleased_.store(true, std::memory_order_release);
@@ -607,6 +616,19 @@ void Connection::handleDatagram(Bytes datagram) {
       else ++stats_.hmacFailures;
     }
     return;
+  }
+
+  // Once the server acknowledged the bound forms on this assignment, it sends no legacy 22
+  // or 28 on it: one that arrives was captured earlier and sent again.
+  if (!datagram.empty() &&
+      (datagram[0] == static_cast<std::uint8_t>(MessageType::CommandReconnect) ||
+       datagram[0] == static_cast<std::uint8_t>(MessageType::CommandSessionReleased))) {
+    const std::uint64_t current = controlNonce_.load(std::memory_order_acquire);
+    if (current != 0 && boundNonce_.load(std::memory_order_acquire) == current) {
+      std::lock_guard lock(statsMutex_);
+      ++stats_.legacyControlDropped;
+      return;
+    }
   }
 
   // COMMAND_RECONNECT is always its own datagram; verify before acting.
