@@ -136,7 +136,26 @@ class StagedChunks final : public session::IChunkSource {
   std::vector<session::StoredChunk> staged_;
 };
 
-using StoredEntry = std::tuple<int, int, int, int, nb::bytes>;
+/// A stored or recorded voxel: (x, y, z, voxel type, state, the server's time for it in epoch ms,
+/// 0 when unknown).
+using StoredEntry = std::tuple<int, int, int, int, nb::bytes, std::int64_t>;
+
+std::vector<session::StoredVoxelState> stored_voxels(const std::vector<StoredEntry>& entries) {
+  std::vector<session::StoredVoxelState> out;
+  out.reserve(entries.size());
+  for (const auto& [vx, vy, vz, type, state, updatedAtMs] : entries) {
+    session::StoredVoxelState entry;
+    entry.x = vx;
+    entry.y = vy;
+    entry.z = vz;
+    entry.voxelType = i16_arg(type, "voxel type");
+    const auto* data = reinterpret_cast<const std::uint8_t*>(state.c_str());
+    entry.state.assign(data, data + state.size());
+    entry.updatedAtMs = updatedAtMs;
+    out.push_back(std::move(entry));
+  }
+  return out;
+}
 
 // ------------------------------------------------------------------ the session
 
@@ -503,32 +522,49 @@ class PySession {
   }
 
   /// Apply a chunk the facade loaded from the durable store: its dense grid (4096
-  /// octets) and its voxelStates entries, each (x, y, z, voxel type, state). An entry
-  /// the grid cannot hold goes to the chunk's overlay; one without a state clears the
-  /// voxel's.
-  void hydrate(std::int64_t x, std::int64_t y, std::int64_t z, nb::handle voxels,
-               const std::vector<StoredEntry>& entries) {
+  /// octets), its voxelStates entries and the time its row was written (epoch ms, 0 when
+  /// unknown). The store merges it under the changes it holds that are newer (CrowdyCPP
+  /// 0.84.0). An entry the grid cannot hold goes to the chunk's overlay; one without a
+  /// state clears the voxel's. Returns whether the copy was applied.
+  bool hydrate(std::int64_t x, std::int64_t y, std::int64_t z, nb::handle voxels,
+               const std::vector<StoredEntry>& entries, std::int64_t updatedAtMs) {
     BufferView grid(voxels);
     if (grid.size() != session::kChunkVolume)
       raise(Errc::InvalidArgument, "a chunk is 4096 voxel octets");
     session::StoredChunk stored;
     stored.coord = coord_of(x, y, z);
     stored.voxels.assign(grid.bytes().begin(), grid.bytes().end());
-    stored.voxelStates.reserve(entries.size());
-    for (const auto& [vx, vy, vz, type, state] : entries) {
-      session::StoredVoxelState entry;
-      entry.x = vx;
-      entry.y = vy;
-      entry.z = vz;
-      entry.voxelType = i16_arg(type, "voxel type");
-      const auto* data = reinterpret_cast<const std::uint8_t*>(state.c_str());
-      entry.state.assign(data, data + state.size());
-      stored.voxelStates.push_back(std::move(entry));
-    }
+    stored.updatedAtMs = updatedAtMs;
+    stored.voxelStates = stored_voxels(entries);
     std::lock_guard lock(conn_.consumerMutex());
     auto& s = live();
     staged_.stage(std::move(stored));
-    s.chunks().hydrate(coord_of(x, y, z));
+    return s.chunks().hydrate(coord_of(x, y, z)) == 1;
+  }
+
+  /// Merge voxel edits the facade read (a catch-up), each at its time, as the store merges
+  /// a recorded edit: one older than the value held is dropped, and a chunk the store does
+  /// not hold gets a slot. Returns whether what the cache shows changed.
+  bool mergeEdits(std::int64_t x, std::int64_t y, std::int64_t z,
+                  const std::vector<StoredEntry>& edits) {
+    session::StoredChunkEdits group;
+    group.coord = coord_of(x, y, z);
+    group.edits = stored_voxels(edits);
+    std::lock_guard lock(conn_.consumerMutex());
+    return live().chunks().mergeEdits(group);
+  }
+
+  /// Forget one cached chunk; false when the store does not hold it.
+  bool evict(std::int64_t x, std::int64_t y, std::int64_t z) {
+    std::lock_guard lock(conn_.consumerMutex());
+    return live().chunks().evict(coord_of(x, y, z));
+  }
+
+  /// When the server confirmed the voxel's cached value (epoch ms; 0 when unknown).
+  std::int64_t confirmedAt(std::int64_t x, std::int64_t y, std::int64_t z, int vx, int vy,
+                           int vz) {
+    std::lock_guard lock(conn_.consumerMutex());
+    return live().chunks().confirmedAtMs(coord_of(x, y, z), vx, vy, vz);
   }
 
   nb::list chunkCoords() {
@@ -855,7 +891,12 @@ void register_session(nb::module_& m) {
            nb::arg("optimistic") = true)
       .def("seed", &PySession::seed, nb::arg("x"), nb::arg("y"), nb::arg("z"), nb::arg("voxels"))
       .def("hydrate", &PySession::hydrate, nb::arg("x"), nb::arg("y"), nb::arg("z"),
-           nb::arg("voxels"), nb::arg("entries"))
+           nb::arg("voxels"), nb::arg("entries"), nb::arg("updated_at_ms") = 0)
+      .def("merge_edits", &PySession::mergeEdits, nb::arg("x"), nb::arg("y"), nb::arg("z"),
+           nb::arg("edits"))
+      .def("evict", &PySession::evict, nb::arg("x"), nb::arg("y"), nb::arg("z"))
+      .def("confirmed_at", &PySession::confirmedAt, nb::arg("x"), nb::arg("y"), nb::arg("z"),
+           nb::arg("vx"), nb::arg("vy"), nb::arg("vz"))
       .def("prune_beyond", &PySession::pruneBeyond, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("distance"))
       .def("chunk_revision", &PySession::chunkRevision)
