@@ -25,6 +25,9 @@ namespace crowdy::graphql {
 struct GraphQLClientConfig {
   std::string endpoint;  ///< full URL of the /graphql endpoint
   long timeoutMs = 60000;
+  /// The largest response body accepted, decompressed (0.85.0); a larger one fails with
+  /// Errc::ResponseTooLarge (GraphQLErrorKind::Protocol) before it is parsed.
+  std::size_t maxResponseBytes = kDefaultMaxResponseBytes;
 };
 
 /// Which failure a GraphQLOutcome represents (None when it succeeded). The
@@ -58,8 +61,10 @@ struct GraphQLOutcome {
 using GraphQLCallback = std::function<void(GraphQLOutcome)>;
 
 /// A response another transport received, as GraphQLClient reads its own: the `data`
-/// value, the GraphQL errors with their extensions, or an HTTP or malformed answer.
-GraphQLOutcome interpretResponse(int httpStatus, const std::string& body);
+/// value, the GraphQL errors with their extensions, or an HTTP or malformed answer. A
+/// body over `maxBodyBytes` is refused unparsed (Errc::ResponseTooLarge, 0.85.0).
+GraphQLOutcome interpretResponse(int httpStatus, const std::string& body,
+                                 std::size_t maxBodyBytes = kDefaultMaxResponseBytes);
 
 /// The JSON POST body GraphQLClient sends: `query`, then `variables` and `operationName`
 /// when given.
