@@ -3,6 +3,24 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.31.0
+
+Vendors CrowdyCPP 0.83.0 (the Unreal team's hardening, A1 to A6). Nothing new is needed on the tier.
+
+- **MessagePack maps with an array, map, binary or extension key fail to decode** (a kit actor state
+  or a mod's reply): a key nested in keys was escaped again at every level, so about 130 bytes asked
+  for gigabytes and froze or crashed the decoding thread. Number, boolean and nil keys still become
+  their JSON text.
+- **A NaN or an infinity in a decoded value is written as `null` in place** when the native core
+  serialises it, instead of turning the whole value into `null`.
+- **Unchanged keyframes of more than 8 actors no longer count as gameplay input** for
+  `idle_release_guard_ms`, so a genuine idle release ends a session whose host keeps many actors'
+  keyframes going.
+- **A legacy `COMMAND_RECONNECT` (22) is paced** (`client.udp.connect(legacy_reconnect_window_ms=...)`,
+  30 s): one per assignment, each at least a window after the last honoured one, the window
+  doubling to 10 minutes; the rest are dropped and counted in
+  `stats()["legacy_reconnects_suppressed"]`. `0` honours every verified one, as before.
+
 ## 0.30.0
 
 CrowdyJS 18.30.0 and CrowdyCPP 0.82.0 (the ChunkStore rework). Box reads and `since` need ck-api

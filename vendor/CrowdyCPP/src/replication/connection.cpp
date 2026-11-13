@@ -126,9 +126,9 @@ Status Connection::doAssign() {
   {
     // The new session's first update of each actor is a change, as it is to the server.
     std::lock_guard lock(actorStateMutex_);
-    actorStateHashes_ = {};
-    actorStateNext_ = 0;
+    actorStateHashes_.clear();
   }
+  legacyReconnectHonoured_ = false;
   return Errc::Ok;
 }
 
@@ -373,16 +373,31 @@ bool Connection::actorStateChanged(const SpatialSend& p) {
   std::uint64_t hash = 1469598103934665603ULL;  // FNV-1a over the payload
   for (std::uint8_t byte : p.payload) hash = (hash ^ byte) * 1099511628211ULL;
   std::lock_guard lock(actorStateMutex_);
-  for (ActorStateHash& entry : actorStateHashes_) {
-    if (entry.used && entry.uuid == p.uuid) {
-      const bool changed = entry.hash != hash;
-      entry.hash = hash;
-      return changed;
-    }
+  if (auto it = actorStateHashes_.find(p.uuid); it != actorStateHashes_.end()) {
+    const bool changed = it->second != hash;
+    it->second = hash;
+    return changed;
   }
-  ActorStateHash& slot = actorStateHashes_[actorStateNext_];
-  actorStateNext_ = (actorStateNext_ + 1) % actorStateHashes_.size();
-  slot = ActorStateHash{p.uuid, hash, true};
+  if (actorStateHashes_.size() >= kMaxTrackedActors) return false;
+  actorStateHashes_.emplace(p.uuid, hash);
+  return true;
+}
+
+bool Connection::honourLegacyReconnect() {
+  const std::int64_t first = config_.legacyReconnectWindowMs;
+  if (first <= 0) return true;
+  if (legacyReconnectHonoured_) return false;
+  const std::int64_t now = clock_.monotonicMillis();
+  const std::int64_t most = std::max(first, kLegacyReconnectWindowMaxMs);
+  if (lastLegacyReconnectMs_ > 0) {
+    const std::int64_t since = now - lastLegacyReconnectMs_;
+    if (since < legacyReconnectWindowMs_) return false;
+    legacyReconnectWindowMs_ = since >= most ? first : std::min(legacyReconnectWindowMs_ * 2, most);
+  } else {
+    legacyReconnectWindowMs_ = first;
+  }
+  lastLegacyReconnectMs_ = now;
+  legacyReconnectHonoured_ = true;
   return true;
 }
 
@@ -599,7 +614,12 @@ void Connection::handleDatagram(Bytes datagram) {
       datagram[0] == static_cast<std::uint8_t>(MessageType::CommandReconnect)) {
     const wire::Token64 token = tokenSnapshot();
     if (wire::verifyCommandReconnect(crypto_, datagram, token).ok()) {
-      reconnectRequested_.store(true, std::memory_order_release);
+      if (honourLegacyReconnect()) {
+        reconnectRequested_.store(true, std::memory_order_release);
+      } else {
+        std::lock_guard lock(statsMutex_);
+        ++stats_.legacyReconnectsSuppressed;
+      }
     } else {
       std::lock_guard lock(statsMutex_);
       ++stats_.hmacFailures;
