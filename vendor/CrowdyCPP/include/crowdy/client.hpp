@@ -93,6 +93,9 @@ struct ClientConfig {
   /// endpoint URL. Base URLs already ending in /graphql are not duplicated.
   std::string graphqlEndpoint = "/graphql";
   long timeoutMs = 60000;
+  /// The largest GraphQL response accepted, counted decompressed (0.85.0, 128 MiB by
+  /// default); a larger one fails as a protocol error (Errc::ResponseTooLarge).
+  std::size_t maxResponseBytes = graphql::kDefaultMaxResponseBytes;
   /// Token persistence; in-memory when null.
   std::shared_ptr<graphql::ITokenStore> tokenStore;
   /// HTTP transport; the default libcurl transport when null. Engine

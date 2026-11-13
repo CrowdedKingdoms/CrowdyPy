@@ -3,6 +3,27 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.33.0
+
+Vendors CrowdyCPP 0.85.0 and syncs CrowdyJS 18.32.0's schema and operations. **Needs ck-api
+v2.70.0**: `client.chunks.get` and the bulk load select `Chunk.voxelsUpdatedAt`, which an older
+Game API refuses.
+
+- **A whole-chunk write wins on the server.** Game API v2.70.0 supersedes every voxel edit recorded
+  at or before an `updateChunk` or a mod's `world.set_chunk`, so the chunk reads back as written,
+  and reports the time as `voxelsUpdatedAt`. Chunk-state and LOD writes move only `updatedAt`. A
+  grid read earlier and written back now erases the edits made since that read.
+- **The chunk store dates a copy by that write.** `CachedChunk.stored_at` is the copy's
+  `voxelsUpdatedAt`: the time of every voxel it has no entry for, so a chunk-state or LOD write no
+  longer drops a newer change. It is None for a chunk not written whole since v2.70.0; then a copy
+  and later changes are ordered by arrival, as the server shows any recorded edit over its grid.
+- **`CachedChunk.row_at` (new) is the row's `updatedAt`.** `catch_up` reads a chunk again when its
+  row moved, a chunk-state write included.
+- **The native core's `hydrate` takes `voxels_updated_at_ms`** (None: date the copy by
+  `updated_at_ms`, as before).
+- **CrowdyCPP 0.85.0's limits** come with the vendored core: stored-chunk replies are held to the
+  Game API's own limits before they are decoded. CrowdyPy's own GraphQL reads use httpx.
+
 ## 0.32.0
 
 Vendors CrowdyCPP 0.84.0 (ChunkStore v3, the Unreal team's B1 to B8) and syncs CrowdyJS 18.31.1's
