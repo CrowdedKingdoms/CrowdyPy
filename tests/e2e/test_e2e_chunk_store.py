@@ -34,7 +34,8 @@ async def test_loads_hydrate_and_catch_up_with_the_servers_times() -> None:
             assert session.chunks.voxel_type_at(chunk, 0, 0, 0) == 3
             now_ms = int(time.time() * 1000)
             stored_at = session.chunks.confirmed_at(chunk, 0, 0, 0)
-            assert stored_at is not None and abs(stored_at - now_ms) < 120_000
+            assert stored_at is not None
+            assert abs(stored_at - now_ms) < 120_000
 
             session.self.join(chunk, b"py")
             session.chunks.set_voxel(chunk, 1, 2, 3, 9)
@@ -46,7 +47,8 @@ async def test_loads_hydrate_and_catch_up_with_the_servers_times() -> None:
             assert await eventually(settled, timeout_s=15)
             assert session.chunks.voxel_type_at(chunk, 1, 2, 3) == 9
             edited_at = session.chunks.confirmed_at(chunk, 1, 2, 3)
-            assert edited_at is not None and abs(edited_at - now_ms) < 120_000
+            assert edited_at is not None
+            assert abs(edited_at - now_ms) < 120_000
 
             assert await session.chunks.catch_up(_iso(now_ms - 60_000))
             assert session.chunks.voxel_type_at(chunk, 1, 2, 3) == 9
