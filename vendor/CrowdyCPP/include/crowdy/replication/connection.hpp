@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 
 #include "crowdy/core/clock.hpp"
 #include "crowdy/core/crypto.hpp"
@@ -301,6 +302,10 @@ class Connection {
     /// Bound control frames (44, 45) carrying another assignment's nonce, dropped: a
     /// frame captured earlier and sent again.
     std::uint64_t staleBoundControl = 0;
+    /// Verified legacy COMMAND_RECONNECTs (22) dropped because one was honoured too
+    /// recently (0.83.0): a 22 signs fixed bytes, so a captured one verifies for the
+    /// game token's life, and each honoured one moves the player to another server.
+    std::uint64_t legacyReconnectsSuppressed = 0;
     std::int64_t lastServerEpochMs = 0;
     /// Messages sent, by wire opcode (actor/voxel/audio/text/event/channel/
     /// heartbeat requests).
@@ -422,16 +427,29 @@ class Connection {
 
   /// Monotonic ms of the last send that counts as gameplay input (0: none yet).
   std::atomic<std::int64_t> lastGameplayMs_{0};
-  /// The last actor-update payload hash per actor this session, so a keyframe that
-  /// repeats an unchanged state is not input. A lookup that misses counts as a change.
-  struct ActorStateHash {
-    core::ActorUuid uuid{};
-    std::uint64_t hash = 0;
-    bool used = false;
+  /// The last actor-update payload hash per actor this assignment, so a keyframe that
+  /// repeats an unchanged state is not input. An actor's first update is a change. Past
+  /// kMaxTrackedActors actors, an untracked actor's keyframe counts as unchanged, so a host
+  /// keeping a large world's keyframes going still looks idle when it is.
+  struct ActorUuidHasher {
+    std::size_t operator()(const core::ActorUuid& u) const noexcept {
+      std::uint64_t h = 1469598103934665603ULL;
+      for (char c : u) h = (h ^ static_cast<std::uint8_t>(c)) * 1099511628211ULL;
+      return static_cast<std::size_t>(h);
+    }
   };
-  std::array<ActorStateHash, 8> actorStateHashes_{};
-  std::size_t actorStateNext_ = 0;
+  static constexpr std::size_t kMaxTrackedActors = 4096;
+  std::unordered_map<core::ActorUuid, std::uint64_t, ActorUuidHasher> actorStateHashes_;
   std::mutex actorStateMutex_;
+
+  /// Config::legacyReconnectWindowMs: a legacy COMMAND_RECONNECT (22) is honoured once per
+  /// assignment, and each honoured one must follow the last by the current window. Touched
+  /// only on the receive path and in doAssign().
+  static constexpr std::int64_t kLegacyReconnectWindowMaxMs = 600'000;
+  std::int64_t lastLegacyReconnectMs_ = 0;
+  std::int64_t legacyReconnectWindowMs_ = 0;
+  bool legacyReconnectHonoured_ = false;
+  bool honourLegacyReconnect();
   void noteGameplaySend(wire::MessageType type, const SpatialSend& p);
   bool actorStateChanged(const SpatialSend& p);
   bool idleReleaseFollowsInput() const;
