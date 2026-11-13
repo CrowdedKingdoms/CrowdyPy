@@ -197,7 +197,7 @@ def _box_pieces(box: Box) -> int:
 
 
 def _iso_ms(value: Any) -> int | None:
-    """A stored row's ``updatedAt`` (an ISO time) as epoch ms; None when absent or unreadable."""
+    """A server time (an ISO time) as epoch ms; None when absent or unreadable."""
     if not value:
         return None
     try:
@@ -879,7 +879,11 @@ class ChunkStore:
                             continue
                         returned.add(coord)
                         self._apply_server_chunk(
-                            coord, row.get("voxels"), row.get("chunkState"), row.get("updatedAt")
+                            coord,
+                            row.get("voxels"),
+                            row.get("chunkState"),
+                            row.get("updatedAt"),
+                            row.get("voxelsUpdatedAt"),
                         )
                     for coord in [c for c in pending if _in_box(c, box)]:
                         pending.discard(coord)
@@ -957,14 +961,15 @@ class ChunkStore:
             for row in self._read_box(box, iso):
                 coord = _coord(row["coordinates"])
                 meta = self._meta.get(coord)
+                # Any write to the row since, a chunk-state or LOD write included, is read again.
                 stored = _iso_ms(row.get("updatedAt"))
                 if meta is None or meta.dirty:
                     continue
                 if (
                     meta.load_state == "loaded"
                     and stored is not None
-                    and meta.stored_at is not None
-                    and meta.stored_at >= stored
+                    and meta.row_at is not None
+                    and meta.row_at >= stored
                 ):
                     continue
                 stale.add(coord)
@@ -1073,7 +1078,8 @@ class ChunkStore:
 
     def hydrate(self, chunk: Sequence[int | str]) -> bool:
         """Load one chunk in full: voxels, chunk state and per-voxel states, merged under the
-        changes the store holds that are newer (each entry's ``updatedAt``, ck-api v2.69.0).
+        changes the store holds that are newer (each entry's ``updatedAt``, ck-api v2.69.0, and
+        for a voxel without one the chunk's ``voxelsUpdatedAt``, ck-api v2.70.0).
 
         Each ``voxelStates`` entry goes over the dense grid: its voxel type at its voxel, and
         its state (an entry without one clears the state there); an entry the grid cannot
@@ -1107,13 +1113,17 @@ class ChunkStore:
         if len(raw) != CHUNK_VOLUME:
             # A chunk stored with `voxels: null` still carries its recorded edits.
             raw = bytes(CHUNK_VOLUME) if entries else b""
+        row_ms = _iso_ms(full.get("updatedAt"))
+        voxels_ms = _iso_ms(full.get("voxelsUpdatedAt"))
         if raw:
-            self._session._native.hydrate(*coord, raw, entries, _iso_ms(full.get("updatedAt")) or 0)
+            # A null voxelsUpdatedAt (0) is a chunk not written whole since v2.70.0: no floor.
+            self._session._native.hydrate(*coord, raw, entries, row_ms or 0, voxels_ms or 0)
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(full.get("chunkState"))
         meta.load_state = "loaded"
         meta.voxel_states_truncated = bool(full.get("voxelStatesTruncated"))
-        meta.stored_at = _iso_ms(full.get("updatedAt"))
+        meta.stored_at = voxels_ms
+        meta.row_at = row_ms
         meta.hydrated_states.clear()
         for x, y, z, voxel_type, state, _ in entries:
             if not _in_grid(x, y, z):
@@ -1321,16 +1331,21 @@ class ChunkStore:
         voxels: str | None,
         chunk_state: str | None,
         updated_at: str | None = None,
+        voxels_updated_at: str | None = None,
     ) -> None:
+        voxels_ms = _iso_ms(voxels_updated_at)
         if voxels:
             raw = decode_base64(voxels)
             if len(raw) == CHUNK_VOLUME:
                 # Merged under the changes that arrived while the box was read.
-                self._session._native.hydrate(*coord, raw, [], _iso_ms(updated_at) or 0)
+                self._session._native.hydrate(
+                    *coord, raw, [], _iso_ms(updated_at) or 0, voxels_ms or 0
+                )
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(chunk_state)
         meta.load_state = "loaded"
-        meta.stored_at = _iso_ms(updated_at)
+        meta.stored_at = voxels_ms
+        meta.row_at = _iso_ms(updated_at)
         self._touch(meta)
 
     def _decode_chunk_state(self, encoded: str | None) -> Any:
