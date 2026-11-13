@@ -362,6 +362,8 @@ def test_a_legacy_reconnect_is_paced(server: FakeServer) -> None:
     provider = Provider(server)
     with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
         for honoured in (True, False):
+            # A reassignment finishes before the next send: it goes out on the new socket.
+            wait_for_state(connection, ConnState.CONNECTED)
             connection.send_heartbeat((0, 0, 0), ME)
             connection.flush_sends()
             server.recv()  # the server learns where this assignment's socket is
@@ -383,6 +385,7 @@ def test_a_legacy_reconnect_is_paced(server: FakeServer) -> None:
         unpaced, token(), app_id=7, legacy_reconnect_window_ms=0, **QUIET
     ) as connection:
         for n in (2, 3):
+            wait_for_state(connection, ConnState.CONNECTED)
             connection.send_heartbeat((0, 0, 0), ME)
             connection.flush_sends()
             server.recv()
