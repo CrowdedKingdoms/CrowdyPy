@@ -351,6 +351,49 @@ def test_an_idle_release_right_after_input_reassigns(server: FakeServer) -> None
         assert guardless.assigned == 1
 
 
+def command_reconnect(key: str = TOKEN) -> bytes:
+    prefix = bytes([MessageType.COMMAND_RECONNECT])
+    return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()
+
+
+def test_a_legacy_reconnect_is_paced(server: FakeServer) -> None:
+    # CrowdyCPP 0.83.0: a legacy 22 signs fixed bytes, so a captured one verifies for the token's
+    # life. One is honoured, and another moments later is dropped and counted.
+    provider = Provider(server)
+    with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
+        for honoured in (True, False):
+            connection.send_heartbeat((0, 0, 0), ME)
+            connection.flush_sends()
+            server.recv()  # the server learns where this assignment's socket is
+            before = provider.assigned
+            server.send(command_reconnect())
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                connection.wait(0.05)
+                connection.poll()
+                if honoured and provider.assigned > before:
+                    break
+                if not honoured and connection.stats()["legacy_reconnects_suppressed"] == 1:
+                    break
+            assert provider.assigned == (before + 1 if honoured else before)
+        assert connection.stats()["legacy_reconnects_suppressed"] == 1
+
+    unpaced = Provider(server)
+    with ReplicationConnection(
+        unpaced, token(), app_id=7, legacy_reconnect_window_ms=0, **QUIET
+    ) as connection:
+        for n in (2, 3):
+            connection.send_heartbeat((0, 0, 0), ME)
+            connection.flush_sends()
+            server.recv()
+            server.send(command_reconnect())
+            deadline = time.monotonic() + 2
+            while unpaced.assigned < n and time.monotonic() < deadline:
+                connection.wait(0.05)
+                connection.poll()
+            assert unpaced.assigned == n
+
+
 def test_a_release_that_does_not_verify_is_ignored(server: FakeServer) -> None:
     provider = Provider(server)
     with ReplicationConnection(provider, token(), app_id=7, **QUIET) as connection:
