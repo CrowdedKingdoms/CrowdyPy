@@ -9,10 +9,37 @@ namespace crowdy::graphql {
 
 namespace {
 
+/// The body as it arrives, decompressed, and where it stops.
+struct BodySink {
+  std::string body;
+  std::size_t max = kDefaultMaxResponseBytes;
+  bool tooLarge = false;
+};
+
 std::size_t writeCallback(char* data, std::size_t size, std::size_t nmemb, void* userdata) {
-  auto* out = static_cast<std::string*>(userdata);
-  out->append(data, size * nmemb);
-  return size * nmemb;
+  auto* sink = static_cast<BodySink*>(userdata);
+  const std::size_t n = size * nmemb;
+  // A compressed body can expand far past what was sent: count what libcurl hands over.
+  if (n > sink->max - sink->body.size()) {
+    sink->tooLarge = true;
+    return 0;  // CURLE_WRITE_ERROR
+  }
+  sink->body.append(data, n);
+  return n;
+}
+
+/// Requests and redirects use http or https only, and a redirect from https stays on it.
+void limitProtocols(CURL* curl, const std::string& url) {
+  const bool secure = url.rfind("https://", 0) == 0;
+#if LIBCURL_VERSION_NUM >= 0x075500  // 7.85.0
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, secure ? "https" : "http,https");
+#else
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, static_cast<long>(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS,
+                   static_cast<long>(secure ? CURLPROTO_HTTPS : (CURLPROTO_HTTP | CURLPROTO_HTTPS)));
+#endif
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
 }
 
 /// libcurl calls this about once a second even while the transfer is idle, so a
@@ -48,6 +75,9 @@ class CurlTransport final : public IHttpTransport {
     if (outcome.status.code == Errc::Cancelled) {
       throw CrowdyCancelledError(outcome.errorMessage);
     }
+    if (outcome.status.code == Errc::ResponseTooLarge) {
+      throw CrowdyProtocolError(outcome.errorMessage);
+    }
     if (!outcome.status.ok()) {
       throw CrowdyNetworkError(outcome.errorMessage);
     }
@@ -74,7 +104,8 @@ class CurlTransport final : public IHttpTransport {
       return outcome;
     }
 
-    std::string responseBody;
+    BodySink sink;
+    sink.max = request.maxResponseBytes;
     curl_slist* headers = nullptr;
     for (const auto& [k, v] : request.headers) {
       headers = curl_slist_append(headers, (k + ": " + v).c_str());
@@ -93,9 +124,12 @@ class CurlTransport final : public IHttpTransport {
       }
     }
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    // Refused before the body is read when the server declares a larger one.
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(sink.max));
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, request.timeoutMs);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    limitProtocols(curl, request.url);
     curl_easy_setopt(curl, CURLOPT_COOKIEFILE, "");  // enable the cookie engine
     curl_easy_setopt(curl, CURLOPT_SHARE, share_);
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
@@ -121,6 +155,12 @@ class CurlTransport final : public IHttpTransport {
       outcome.errorMessage = "HTTP request cancelled: " + request.url;
       return outcome;
     }
+    if (sink.tooLarge || rc == CURLE_FILESIZE_EXCEEDED) {
+      outcome.status = Errc::ResponseTooLarge;
+      outcome.errorMessage = "HTTP response larger than " + std::to_string(sink.max) +
+                             " bytes: " + request.url;
+      return outcome;
+    }
     if (rc != CURLE_OK) {
       outcome.status = Errc::SocketError;
       outcome.errorMessage =
@@ -129,7 +169,7 @@ class CurlTransport final : public IHttpTransport {
     }
     outcome.status = Errc::Ok;
     outcome.response =
-        HttpResponse{static_cast<int>(status), std::move(responseBody)};
+        HttpResponse{static_cast<int>(status), std::move(sink.body)};
     return outcome;
   }
 

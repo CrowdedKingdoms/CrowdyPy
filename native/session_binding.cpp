@@ -526,8 +526,12 @@ class PySession {
   /// unknown). The store merges it under the changes it holds that are newer (CrowdyCPP
   /// 0.84.0). An entry the grid cannot hold goes to the chunk's overlay; one without a
   /// state clears the voxel's. Returns whether the copy was applied.
+  /// `voxelsUpdatedAtMs` is when the copy's voxels were written whole (ck-api v2.70.0's
+  /// `voxelsUpdatedAt`; 0: not written whole since, so no floor). None dates the copy by
+  /// `updatedAtMs`, the row's write, as before 0.33.0.
   bool hydrate(std::int64_t x, std::int64_t y, std::int64_t z, nb::handle voxels,
-               const std::vector<StoredEntry>& entries, std::int64_t updatedAtMs) {
+               const std::vector<StoredEntry>& entries, std::int64_t updatedAtMs,
+               std::optional<std::int64_t> voxelsUpdatedAtMs) {
     BufferView grid(voxels);
     if (grid.size() != session::kChunkVolume)
       raise(Errc::InvalidArgument, "a chunk is 4096 voxel octets");
@@ -535,6 +539,7 @@ class PySession {
     stored.coord = coord_of(x, y, z);
     stored.voxels.assign(grid.bytes().begin(), grid.bytes().end());
     stored.updatedAtMs = updatedAtMs;
+    stored.voxelsUpdatedAtMs = voxelsUpdatedAtMs;
     stored.voxelStates = stored_voxels(entries);
     std::lock_guard lock(conn_.consumerMutex());
     auto& s = live();
@@ -891,7 +896,8 @@ void register_session(nb::module_& m) {
            nb::arg("optimistic") = true)
       .def("seed", &PySession::seed, nb::arg("x"), nb::arg("y"), nb::arg("z"), nb::arg("voxels"))
       .def("hydrate", &PySession::hydrate, nb::arg("x"), nb::arg("y"), nb::arg("z"),
-           nb::arg("voxels"), nb::arg("entries"), nb::arg("updated_at_ms") = 0)
+           nb::arg("voxels"), nb::arg("entries"), nb::arg("updated_at_ms") = 0,
+           nb::arg("voxels_updated_at_ms") = nb::none())
       .def("merge_edits", &PySession::mergeEdits, nb::arg("x"), nb::arg("y"), nb::arg("z"),
            nb::arg("edits"))
       .def("evict", &PySession::evict, nb::arg("x"), nb::arg("y"), nb::arg("z"))
