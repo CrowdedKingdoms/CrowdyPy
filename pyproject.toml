@@ -124,8 +124,8 @@ commit = "64f273db06c7b06c04c6e54fd792ef9ad16855a5"
 
 [tool.crowdypy.crowdycpp]
 version = "0.84.0"
-tag = "feat/chunk-store-v3"
-commit = "586c9425e0051dc7bfd22c8eafc3167b771fd63d"
+tag = "dev/v0.84.0"
+commit = "38c38a524826f7465f2a95edfae0bea60eedd633"
 tree-sha256 = "bae8eb71b972561f17618f32bcb90dc53b5304f35a9aeba5d7d7728bfe71af91"
 
 # schema.gql and operations/ are CrowdyJS's, copied from the commit pinned above by
