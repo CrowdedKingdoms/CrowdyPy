@@ -29,12 +29,16 @@ class Api:
     def __init__(self) -> None:
         self.roots: dict[str, Any] = {}
         self.sent: list[tuple[str, dict[str, Any]]] = []
+        #: Called before an operation is answered, by root field: what happens while it is out.
+        self.during: dict[str, Callable[[], Any]] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         query: str = body["query"]
         root = query[query.index("{") + 1 :].strip().split("(")[0].split("{")[0].strip()
         self.sent.append((root, body.get("variables") or {}))
+        if root in self.during:
+            self.during[root]()
         answer = self.roots.get(root)
         if isinstance(answer, list):
             answer = answer.pop(0) if len(answer) > 1 else answer[0]
@@ -417,4 +421,108 @@ async def test_a_replaced_chunk_is_read_again_and_a_catch_up_reads_what_changed(
     )
     assert len(api.calls("getChunk")) == 2
     assert session.chunks.voxel_type_at((0, 0, 0), 5, 5, 5) == 6
+    session.dispose()
+
+
+# CrowdyPy 0.32.0 / CrowdyCPP 0.84.0: the store merges by the server's time.
+
+ROW_AT = "2026-11-11T20:00:00.000Z"
+LATER = "2026-11-11T21:00:00.000Z"
+EARLIER = "2026-11-11T19:00:00.000Z"
+
+
+def edit_row(x: int, y: int, z: int, voxel_type: int, created_at: str) -> dict[str, Any]:
+    return {
+        "location": {"x": x, "y": y, "z": z},
+        "voxelType": voxel_type,
+        "state": None,
+        "createdAt": created_at,
+    }
+
+
+async def test_a_catch_up_merges_recorded_edits_by_their_time_into_every_tracked_chunk(
+    setup: Any,
+) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, ROW_AT)]}
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 1)
+    assert session.chunks.get((1, 0, 0)).load_state == "missing"
+    assert session.chunks.confirmed_at((0, 0, 0), 4, 4, 4) == 1_794_427_200_000
+
+    api.roots["getChunksByDistance"] = {"chunks": []}
+    api.roots["listVoxelUpdatesByDistance"] = {
+        "limit": 1000,
+        "skip": 0,
+        "chunks": [
+            {
+                "coordinates": {"x": "1", "y": "0", "z": "0"},
+                "voxels": [edit_row(2, 2, 2, 3, LATER)],
+            },
+            {
+                "coordinates": {"x": "0", "y": "0", "z": "0"},
+                "voxels": [edit_row(4, 4, 4, 6, LATER), edit_row(5, 5, 5, 7, EARLIER)],
+            },
+        ],
+    }
+    reads = len(api.calls("getChunksByDistance"))
+    assert await session.chunks.catch_up("2026-11-11T19:30:00.000Z")
+    boxes = [v["input"] for v in api.calls("getChunksByDistance")[reads:]]
+    covered = {
+        (x, y, z)
+        for b in boxes
+        for x in range(int(b["lowChunk"]["x"]), int(b["highChunk"]["x"]) + 1)
+        for y in range(int(b["lowChunk"]["y"]), int(b["highChunk"]["y"]) + 1)
+        for z in range(int(b["lowChunk"]["z"]), int(b["highChunk"]["z"]) + 1)
+    }
+    assert {(x, y, z) for x in (-1, 0, 1) for y in (-1, 0, 1) for z in (-1, 0, 1)} <= covered
+    assert session.chunks.voxel_type_at((1, 0, 0), 2, 2, 2) == 3, "a chunk never stored"
+    assert session.chunks.voxel_type_at((0, 0, 0), 4, 4, 4) == 6
+    assert session.chunks.voxel_type_at((0, 0, 0), 5, 5, 5) == 1, "older than the stored row"
+
+    reads = len(api.calls("getChunksByDistance"))
+    assert await session.chunks.catch_up("2026-11-11T19:30:00.000Z", [((-20, 0, 0), (20, 0, 0))])
+    assert len(api.calls("getChunksByDistance")) - reads == 3, "41 wide: 17 + 17 + 7"
+    assert not await session.chunks.catch_up(
+        "2026-11-11T19:30:00.000Z", [((0, 0, 0), (200, 200, 0))]
+    )
+    session.dispose()
+
+
+async def test_a_bulk_load_keeps_a_change_made_while_it_was_read(setup: Any) -> None:
+    api, client, connection = setup
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    # A change lands while the read is out: one newer than the row, one older.
+    api.during["getChunksByDistance"] = lambda: session._native.merge_edits(
+        0, 0, 0, [(2, 2, 2, 9, b"", 1_794_430_800_000), (3, 3, 3, 8, b"", 1_794_423_600_000)]
+    )
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, ROW_AT)]}
+    await session.chunks.ensure_around((0, 0, 0), 0)
+    assert session.chunks.voxel_type_at((0, 0, 0), 2, 2, 2) == 9, "newer than the copy: kept"
+    assert session.chunks.voxel_type_at((0, 0, 0), 3, 3, 3) == 1, "older than the copy"
+    session.dispose()
+
+
+async def test_evict_prune_if_and_hydrate_report_what_they_did(setup: Any) -> None:
+    api, client, connection = setup
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    chunks = session.chunks
+    for x in range(6):
+        chunks.seed((x, 0, 0), bytes(4096), write_back=x == 5)
+    assert chunks.evict((1, 0, 0))
+    assert not chunks.evict((1, 0, 0))
+    assert chunks.prune_if(lambda c: c.coord[0] % 2 == 0) == 3
+    assert not chunks.evict((5, 0, 0)), "queued for write-back"
+    assert sorted(c.coord[0] for c in chunks.list()) == [3, 5]
+
+    api.roots["getChunk"] = {**stored_row(7), "voxelStates": []}
+    assert await chunks.hydrate((7, 0, 0))
+    api.roots["getChunk"] = None
+    assert not await chunks.hydrate((8, 0, 0)), "never stored"
     session.dispose()

@@ -742,6 +742,8 @@ class PyConnection {
     d["idle_releases_after_input"] = s.idleReleasesAfterInput;
     d["stale_bound_control"] = s.staleBoundControl;
     d["legacy_reconnects_suppressed"] = s.legacyReconnectsSuppressed;
+    d["bound_control_acks"] = s.boundControlAcks;
+    d["legacy_control_dropped"] = s.legacyControlDropped;
     d["last_server_epoch_ms"] = s.lastServerEpochMs;
     nb::dict sentByType;
     nb::dict receivedByType;
