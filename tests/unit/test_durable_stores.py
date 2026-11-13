@@ -350,13 +350,22 @@ async def test_pruning_keeps_a_dirty_chunks_states_and_overlay(setup: Any) -> No
     session.dispose()
 
 
+_SAME = object()
+
+
 def stored_row(
-    x: int, fill: int = 1, updated_at: str = "2026-11-11T20:00:00.000Z"
+    x: int,
+    fill: int = 1,
+    updated_at: str = "2026-11-11T20:00:00.000Z",
+    voxels_updated_at: Any = _SAME,
 ) -> dict[str, Any]:
+    """A stored chunk as Game API v2.70.0 answers it: its voxels written whole at its row's
+    write unless ``voxels_updated_at`` says otherwise (None: not written whole since)."""
     return {
         "coordinates": {"x": str(x), "y": "0", "z": "0"},
         "voxels": encode_base64(bytes([fill]) * 4096),
         "updatedAt": updated_at,
+        "voxelsUpdatedAt": updated_at if voxels_updated_at is _SAME else voxels_updated_at,
     }
 
 
@@ -525,4 +534,80 @@ async def test_evict_prune_if_and_hydrate_report_what_they_did(setup: Any) -> No
     assert await chunks.hydrate((7, 0, 0))
     api.roots["getChunk"] = None
     assert not await chunks.hydrate((8, 0, 0)), "never stored"
+    session.dispose()
+
+
+# CrowdyPy 0.33.0 / CrowdyCPP 0.85.0: Game API v2.70.0 dates a chunk's voxels by its last
+# whole-chunk write (voxelsUpdatedAt); a chunk-state or LOD write moves only updatedAt.
+
+VOXELS_AT = "2026-11-11T19:00:00.000Z"
+BETWEEN_MS = 1_794_425_400_000  # 2026-11-11T19:30Z: after the voxels write, before the row's
+BEFORE_MS = 1_794_421_800_000  # 2026-11-11T18:30Z: before both
+
+
+async def test_the_floor_is_the_voxels_write_not_the_rows(setup: Any) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, ROW_AT, VOXELS_AT)]}
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 0)
+    meta = session.chunks.get((0, 0, 0))
+    assert meta.stored_at == 1_794_423_600_000
+    assert meta.row_at == 1_794_427_200_000
+    session._native.merge_edits(0, 0, 0, [(1, 1, 1, 5, b"", BETWEEN_MS)])
+    assert session.chunks.voxel_type_at((0, 0, 0), 1, 1, 1) == 5, "newer than the voxels write"
+    session._native.merge_edits(0, 0, 0, [(2, 2, 2, 6, b"", BEFORE_MS)])
+    assert session.chunks.voxel_type_at((0, 0, 0), 2, 2, 2) == 1, "older than the voxels write"
+
+    # A chunk-state write: the row moves, the voxels do not; a fresh read keeps the change.
+    api.roots["getChunk"] = {
+        **stored_row(0, 1, LATER, VOXELS_AT),
+        "chunkState": None,
+        "voxelStates": [],
+    }
+    assert await session.chunks.hydrate((0, 0, 0))
+    assert session.chunks.voxel_type_at((0, 0, 0), 1, 1, 1) == 5
+    assert session.chunks.get((0, 0, 0)).row_at == 1_794_430_800_000
+    session.dispose()
+
+
+async def test_a_chunk_not_written_whole_has_no_floor(setup: Any) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, ROW_AT, None)]}
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 0)
+    assert session.chunks.get((0, 0, 0)).stored_at is None
+    # The server shows a recorded edit of any age over such a chunk's grid, and so does the store.
+    session._native.merge_edits(0, 0, 0, [(1, 1, 1, 5, b"", BEFORE_MS)])
+    assert session.chunks.voxel_type_at((0, 0, 0), 1, 1, 1) == 5
+    session.dispose()
+
+
+async def test_a_catch_up_reads_again_a_chunk_whose_row_moved(setup: Any) -> None:
+    api, client, connection = setup
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, ROW_AT, VOXELS_AT)]}
+    session = WorldSessionCore(
+        client, 7, connection, chunk_options={"write_back_interval_ms": None}
+    )
+    await session.chunks.ensure_around((0, 0, 0), 0)
+    api.roots["listVoxelUpdatesByDistance"] = {"limit": 1000, "skip": 0, "chunks": []}
+    gets = len(api.calls("getChunk"))
+    assert await session.chunks.catch_up("2026-11-11T19:30:00.000Z")
+    await asyncio.sleep(0)
+    assert len(api.calls("getChunk")) == gets, "nothing written since the copy"
+
+    api.roots["getChunksByDistance"] = {"chunks": [stored_row(0, 1, LATER, VOXELS_AT)]}
+    api.roots["getChunk"] = {
+        **stored_row(0, 1, LATER, VOXELS_AT),
+        "chunkState": None,
+        "voxelStates": [],
+    }
+    assert await session.chunks.catch_up("2026-11-11T19:30:00.000Z")
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert len(api.calls("getChunk")) == gets + 1, "the chunk-state write is read"
+    assert session.chunks.get((0, 0, 0)).row_at == 1_794_430_800_000
     session.dispose()

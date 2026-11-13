@@ -1,8 +1,8 @@
 {
   "fixtureVersion": 1,
   "crowdyJs": {
-    "version": "18.31.1",
-    "commit": "39053c3d3681f427c40823d0b133c6dd68684ba8"
+    "version": "18.32.0",
+    "commit": "e5b4719e884adf4dc055065b334899ecf96f6f9d"
   },
   "storageKey": "ck:crowdy-studio:layout:v1",
   "paneIds": [

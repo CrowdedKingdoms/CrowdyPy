@@ -423,7 +423,7 @@ CrowdyClient::CrowdyClient(ClientConfig config) : config_(std::move(config)) {
       resolveGraphqlEndpoint(config_.httpUrl, config_.graphqlEndpoint);
 
   gql_ = std::make_shared<graphql::GraphQLClient>(
-      graphql::GraphQLClientConfig{endpoint, config_.timeoutMs},
+      graphql::GraphQLClientConfig{endpoint, config_.timeoutMs, config_.maxResponseBytes},
       transport_, auth_);
   websocketEndpoint_ = resolveGraphqlEndpoint(config_.wsUrl, config_.wsEndpoint);
   const std::string subscriptionEndpoint =
@@ -532,12 +532,13 @@ graphql::RediscoveredEndpoint CrowdyClient::bootstrapRediscover(
   probe.httpUrl = config_.discoveryUrl;
   probe.graphqlEndpoint = config_.graphqlEndpoint;
   probe.timeoutMs = config_.timeoutMs;
+  probe.maxResponseBytes = config_.maxResponseBytes;
   probe.transport = transport_;
   probe.crypto = crypto_;
   auto probeGql = std::make_shared<graphql::GraphQLClient>(
       graphql::GraphQLClientConfig{
           resolveGraphqlEndpoint(probe.httpUrl, probe.graphqlEndpoint),
-          probe.timeoutMs},
+          probe.timeoutMs, probe.maxResponseBytes},
       transport_, auth_);
 
   graphql::JVal vars;
