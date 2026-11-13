@@ -261,6 +261,11 @@ The replication system saturates the local network stack, so the binding
   `ChunkStore::mergeEdits`, each at its `createdAt`) rather than re-reading every chunk with edits.
   The test `Api` in `test_durable_stores.py` takes `during[root]` hooks for what happens while an
   operation is out: an `httpx.MockTransport` holds the bound `handle`, so replacing it does nothing.
+- Since 0.33.0 (CrowdyCPP 0.85.0, ck-api v2.70.0) a copy's voxels are dated by the chunk's
+  `voxelsUpdatedAt`: the facade passes it to the native `hydrate` as `voxels_updated_at_ms` (0 for
+  the server's null, no floor; leaving it None dates the copy by `updated_at_ms`) and keeps it as
+  `CachedChunk.stored_at`, with the row's `updatedAt` as `row_at`, which `catch_up` compares.
+  `stored_row()` in the tests models v2.70.0: `voxelsUpdatedAt` defaults to the row's `updatedAt`.
 - The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
   `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
   options CrowdyJS refuses.

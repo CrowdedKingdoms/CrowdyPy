@@ -11,7 +11,9 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
-**v0.32.0: CrowdyCPP 0.84.0's chunk store.** The store merges by the server's time (`chunks.confirmed_at`): an older change is dropped, a change made while a chunk loads survives the copy, another client's edit goes under your unanswered one, `catch_up(since, boxes=None)` covers every tracked chunk and merges edits by their time, `evict` and `prune_if` prune any view, and `hydrate` returns whether it applied. After a v0.46.0 server acknowledges the bound control frames, legacy reconnects and releases are dropped. Needs ck-api v2.69.0. See [MIGRATION.md](MIGRATION.md).
+**v0.33.0: a voxel's time is its chunk's whole-chunk write.** The chunk store dates a copy's voxels by `voxelsUpdatedAt` (Game API v2.70.0, where an `updateChunk` or `world.set_chunk` supersedes older edits), so a chunk-state or LOD write drops no newer change; `CachedChunk.row_at` orders copies. Vendors CrowdyCPP 0.85.0. Needs ck-api v2.70.0. See [MIGRATION.md](MIGRATION.md).
+
+v0.32.0: CrowdyCPP 0.84.0's chunk store. The store merges by the server's time (`chunks.confirmed_at`): an older change is dropped, a change made while a chunk loads survives the copy, another client's edit goes under your unanswered one, `catch_up(since, boxes=None)` covers every tracked chunk and merges edits by their time, `evict` and `prune_if` prune any view, and `hydrate` returns whether it applied. After a v0.46.0 server acknowledges the bound control frames, legacy reconnects and releases are dropped. Needs ck-api v2.69.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.31.0: hardening from CrowdyCPP 0.83.0.** MessagePack keys that are containers are refused (a nested key blew up memory), a NaN serialises as `null` in place, unchanged keyframes of many actors are not gameplay input, and a legacy reconnect command is paced (`legacy_reconnect_window_ms`). See [MIGRATION.md](MIGRATION.md).
 

@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: ea5570ea1dca0a4b96788387e3330ce34b468f7fcb79d8dc5afc736f7ad2ffc5
-// operations sha256: 546b64bcb9d2778124fb77328abfa546a6e6b22d28444f8ee73c7e3a40a7aa3b
+// schema.gql sha256: fdf29005c18a010747bbc82fc6a552aa1f25005aedb71bba93ef6942006829d8
+// operations sha256: f22fdab74d48b737bc930e881af91ac667f87633dd3d9f8887c0c48ee838cf0e
 
 #pragma once
 
@@ -2830,6 +2830,7 @@ inline constexpr std::string_view kGetChunkDocument = R"gql(query GetChunk($inpu
     owner
     createdAt
     updatedAt
+    voxelsUpdatedAt
     chunkState
     cdnUploadedAt
     lods {
@@ -2862,6 +2863,7 @@ inline constexpr std::string_view kGetChunkIsolatedDocument = R"gql(query GetChu
     owner
     createdAt
     updatedAt
+    voxelsUpdatedAt
     chunkState
     cdnUploadedAt
     lods {
@@ -2935,6 +2937,7 @@ inline constexpr std::string_view kGetChunksByDistanceDocument = R"gql(query Get
       owner
       createdAt
       updatedAt
+      voxelsUpdatedAt
       chunkState
       cdnUploadedAt
       lods {
@@ -2971,6 +2974,7 @@ inline constexpr std::string_view kGetChunksByDistanceIsolatedDocument = R"gql(q
       owner
       createdAt
       updatedAt
+      voxelsUpdatedAt
       chunkState
       cdnUploadedAt
       lods {
