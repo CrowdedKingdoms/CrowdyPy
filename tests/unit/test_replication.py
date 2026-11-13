@@ -651,3 +651,39 @@ def test_a_bound_release_from_another_assignment_is_refused_and_this_ones_is_fin
         assert connection.state == ConnState.INACTIVE
         assert connection.stats()["idle_releases_after_input"] == 0
         assert provider.assigned == 1
+
+
+def bound_ack(nonce: bytes, key: str = TOKEN) -> bytes:
+    prefix = bytes([MessageType.CONTROL_BOUND_ACK]) + nonce
+    return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()
+
+
+def test_after_the_servers_acknowledgement_legacy_control_is_dropped(server: FakeServer) -> None:
+    # CrowdyCPP 0.84.0: a v0.46.0 server acknowledges the bound forms with this assignment's
+    # nonce; a legacy 22 or 28 on the assignment after that can only be a captured frame.
+    provider = Provider(server)
+    with ReplicationConnection(
+        provider, token(), app_id=7, **{**QUIET, "advertise_capabilities": True}
+    ) as connection:
+        nonce = None
+        deadline = time.monotonic() + 3
+        while nonce is None and time.monotonic() < deadline:
+            for message in server.messages():
+                if message[0] == MessageType.CLIENT_CAPABILITIES:
+                    nonce = bytes(wire.parse_long_spatial(message).payload[4:12])
+        assert nonce is not None
+        server.send(bound_ack(nonce))
+        deadline = time.monotonic() + 3
+        while connection.stats()["bound_control_acks"] < 1 and time.monotonic() < deadline:
+            connection.wait(0.05)
+            connection.poll()
+        assert connection.stats()["bound_control_acks"] == 1
+        server.send(command_reconnect())
+        server.send(session_released(ReleaseReason.IDLE))
+        deadline = time.monotonic() + 3
+        while connection.stats()["legacy_control_dropped"] < 2 and time.monotonic() < deadline:
+            connection.wait(0.05)
+            connection.poll()
+        assert connection.stats()["legacy_control_dropped"] == 2
+        assert provider.assigned == 1
+        assert connection.state == ConnState.CONNECTED

@@ -253,6 +253,14 @@ The replication system saturates the local network stack, so the binding
   facade as an `EDIT_REFUSED` event row (`a` packs x/y/z as 16-bit fields, `c` the result,
   `restored` and the error code, `epochMs` the edit id). Read a chunk through `forEachState`,
   `forEachOverlay` and `grid()`: `ChunkData` keeps no public maps any more.
+- Since 0.32.0 (CrowdyCPP 0.84.0) the native store merges by the server's time. Every copy the
+  facade stages carries its times: bulk rows go through the native `hydrate` with the row's
+  `updatedAt` (never `seed()`, which replaces the grid outright and drops the changes made while
+  the box was read), and each entry tuple's sixth field is its `updatedAt` in epoch ms. The
+  facade's `catch_up` merges recorded edits with `merge_edits` (CrowdyCPP's
+  `ChunkStore::mergeEdits`, each at its `createdAt`) rather than re-reading every chunk with edits.
+  The test `Api` in `test_durable_stores.py` takes `during[root]` hooks for what happens while an
+  operation is out: an `httpx.MockTransport` holds the bound `handle`, so replacing it does nothing.
 - The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
   `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
   options CrowdyJS refuses.

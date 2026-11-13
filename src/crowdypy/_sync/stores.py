@@ -22,7 +22,7 @@ import builtins
 import contextlib
 import functools
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -99,6 +99,10 @@ _MAX_BOX_CHUNKS = 17**3
 _MAX_BOXES = 8
 #: How far before the connection dropped a catch-up starts, for the client's and server's clocks.
 _CATCH_UP_MARGIN_MS = 30_000
+#: The widest box one read covers along an axis: ck-api reads at most 17^3 chunks.
+_BOX_SIDE = 17
+#: More boxes than this (after cutting each to 17^3) is not a view: :meth:`ChunkStore.catch_up` refuses it.
+_MAX_CATCH_UP_BOXES = 64
 
 Box = tuple[Coord, Coord]
 
@@ -154,6 +158,42 @@ def _cover_with_boxes(coords: Sequence[Coord]) -> list[Box]:
     if split(coords):
         return boxes
     return [_bounds(coords)]
+
+
+def _tile_boxes(coords: Iterable[Coord]) -> list[Box]:
+    """``coords`` in boxes of at most 17^3: the bounds of the coords in each cell of a
+    17-chunk lattice."""
+    tiles: dict[Coord, list[Coord]] = {}
+    for c in coords:
+        tiles.setdefault((c[0] // _BOX_SIDE, c[1] // _BOX_SIDE, c[2] // _BOX_SIDE), []).append(c)
+    return [_bounds(group) for group in tiles.values()]
+
+
+def _cut_box(box: Box) -> list[Box]:
+    """A box (corners in any order) cut into boxes of at most 17^3."""
+    lo = tuple(min(box[0][i], box[1][i]) for i in range(3))
+    hi = tuple(max(box[0][i], box[1][i]) for i in range(3))
+    return [
+        (
+            (x, y, z),
+            (
+                min(hi[0], x + _BOX_SIDE - 1),
+                min(hi[1], y + _BOX_SIDE - 1),
+                min(hi[2], z + _BOX_SIDE - 1),
+            ),
+        )
+        for x in range(lo[0], hi[0] + 1, _BOX_SIDE)
+        for y in range(lo[1], hi[1] + 1, _BOX_SIDE)
+        for z in range(lo[2], hi[2] + 1, _BOX_SIDE)
+    ]
+
+
+def _box_pieces(box: Box) -> int:
+    """How many boxes of 17^3 a box cuts into."""
+    count = 1
+    for i in range(3):
+        count *= abs(box[1][i] - box[0][i]) // _BOX_SIDE + 1
+    return count
 
 
 def _iso_ms(value: Any) -> int | None:
@@ -653,12 +693,17 @@ class ChunkStore:
     It is a helper for 16x16x16 chunks with one byte per voxel. Voxel positions and types are
     the app's signed 16-bit values, which the platform does not check: an edit the dense grid
     cannot hold (a type outside 0-255, a position outside 0-15) goes to the chunk's
-    :meth:`overlay` instead, and reads of that voxel return it. The server delivers every
-    accepted edit back to its sender; that echo of a :meth:`set_voxel` is matched (sender,
-    sequence, voxel) and not applied again, so a local edit fires one change event, unless
-    another client's edit of that voxel arrived in between (the server ordered yours last).
-    An app with other addressing reads the raw edits (``session.on("voxel_update")``,
-    ``client.chunks.get``'s ``voxelStates``)."""
+    :meth:`overlay` instead, and reads of that voxel return it.
+
+    Each voxel keeps the value the server confirmed last and the server's time for it (0.32.0,
+    CrowdyCPP 0.84.0): a change older than the value held is dropped, whatever order changes
+    arrive in, and a stored copy merges under newer changes that arrived while it was read
+    (:meth:`confirmed_at`). The server delivers every accepted edit back to its sender; that echo
+    of a :meth:`set_voxel` (sender, sequence, voxel, type and state) confirms the edit and is not
+    applied again, so a local edit fires one change event. This client's unanswered edits show
+    over the confirmed value; another client's edit that arrives meanwhile becomes that value,
+    and shows if the unanswered edit is refused or times out. An app with other addressing reads
+    the raw edits (``session.on("voxel_update")``, ``client.chunks.get``'s ``voxelStates``)."""
 
     def __init__(
         self,
@@ -688,7 +733,6 @@ class ChunkStore:
         self._loading: set[Coord] = set()
         self._reloading: set[Coord] = set()
         self._duplicates = 0
-        self._last_area: tuple[Coord, int] | None = None
         self._down_at: int | None = None
         self._was_connected = False
         if write_back_interval_ms:
@@ -764,6 +808,15 @@ class ChunkStore:
         result: int = self._session._native.voxel_type_at(*_coord(chunk), x, y, z)
         return result
 
+    def confirmed_at(self, chunk: Sequence[int | str], x: int, y: int, z: int) -> int | None:
+        """When the server confirmed the value the store holds for a voxel (epoch ms): the last
+        change merged there, or the stored row's write. ``None`` when unknown. An unanswered
+        local edit shows over that value and does not change it."""
+        if not (_fits_int16(x) and _fits_int16(y) and _fits_int16(z)):
+            return None
+        at: int = self._session._native.confirmed_at(*_coord(chunk), x, y, z)
+        return at if at > 0 else None
+
     def voxel_state_at(self, chunk: Sequence[int | str], x: int, y: int, z: int) -> Any:
         """The decoded state at a within-chunk coordinate, the overlay's first (``None`` when
         it has none or it did not decode)."""
@@ -798,7 +851,6 @@ class ChunkStore:
         A chunk already loaded keeps what the store holds for it: prune it to load it afresh."""
         middle = _coord(center)
         reach = max(0, min(8, int(radius)))
-        self._last_area = (middle, reach)
         around = [
             (middle[0] + dx, middle[1] + dy, middle[2] + dz)
             for dx in range(-reach, reach + 1)
@@ -875,32 +927,49 @@ class ChunkStore:
                 return rows
             skip = int(page.get("skip") or skip) + applied
 
-    def catch_up(self, since: datetime | str) -> None:
-        """Read what changed since ``since`` in the last area :meth:`ensure_around` loaded: the
-        chunks whose stored row was written since then (``updateChunk``, ``world.set_chunk``)
-        and those with voxel edits recorded since then (``voxels.list_by_distance``) are read
-        again. The store calls it when the connection comes back, from 30 s before it dropped.
-        Needs ck-api v2.67.0."""
-        if self._last_area is None:
-            return
-        middle, reach = self._last_area
-        box: Box = (
-            (middle[0] - reach, middle[1] - reach, middle[2] - reach),
-            (middle[0] + reach, middle[1] + reach, middle[2] + reach),
-        )
+    def catch_up(
+        self,
+        since: datetime | str,
+        boxes: Iterable[tuple[Sequence[int | str], Sequence[int | str]]] | None = None,
+    ) -> bool:
+        """Read what changed since ``since`` in every chunk the store tracks (0.32.0; the last
+        area :meth:`ensure_around` loaded before), the never-stored (``missing``) ones included,
+        or in ``boxes`` (each a pair of corners, cut to 17^3; more than 64 such boxes returns
+        False). The area is read in boxes of at most 17^3 chunks: the voxel edits recorded since
+        then (``voxels.list_by_distance``) merge into the chunks the store tracks by their
+        ``createdAt``, and a chunk whose stored row was written since then (``updateChunk``,
+        ``world.set_chunk``) is read again. The store calls it when the connection comes back,
+        from 30 s before it dropped. Needs ck-api v2.67.0. Returns whether anything was read."""
+        if boxes is not None:
+            given = [(_coord(lo), _coord(hi)) for lo, hi in boxes]
+            if sum(_box_pieces(box) for box in given) > _MAX_CATCH_UP_BOXES:
+                return False
+            read = [piece for box in given for piece in _cut_box(box)]
+        else:
+            tracked = set(self._meta) | {_coord(c) for c in self._session._native.chunk_coords()}
+            read = _tile_boxes(sorted(tracked))
+        if not read:
+            return False
         iso = since if isinstance(since, str) else _iso(int(since.timestamp() * 1000))
         stale: set[Coord] = set()
-        for row in self._read_box(box, iso):
-            coord = _coord(row["coordinates"])
-            meta = self._meta.get(coord)
-            stored = _iso_ms(row.get("updatedAt"))
-            if meta is None or meta.dirty or meta.load_state != "loaded":
-                continue
-            if stored is not None and meta.stored_at is not None and meta.stored_at >= stored:
-                continue
-            stale.add(coord)
         voxels = getattr(self._session.client, "voxels", None)
-        if voxels is not None:
+        for box in read:
+            for row in self._read_box(box, iso):
+                coord = _coord(row["coordinates"])
+                meta = self._meta.get(coord)
+                stored = _iso_ms(row.get("updatedAt"))
+                if meta is None or meta.dirty:
+                    continue
+                if (
+                    meta.load_state == "loaded"
+                    and stored is not None
+                    and meta.stored_at is not None
+                    and meta.stored_at >= stored
+                ):
+                    continue
+                stale.add(coord)
+            if voxels is None:
+                continue
             skip = 0
             while True:
                 request = {
@@ -918,14 +987,28 @@ class ChunkStore:
                 for group in groups:
                     coord = _coord(group["coordinates"])
                     meta = self._meta.get(coord)
-                    if meta is not None and not meta.dirty and meta.load_state == "loaded":
-                        stale.add(coord)
+                    if meta is None:
+                        continue
+                    edits = []
+                    for edit in group.get("voxels") or []:
+                        at = edit["location"]
+                        x, y, z = int(at["x"]), int(at["y"]), int(at["z"])
+                        voxel_type = int(edit["voxelType"])
+                        if not all(_fits_int16(v) for v in (x, y, z, voxel_type)):
+                            continue
+                        state = decode_base64(edit["state"]) if edit.get("state") else b""
+                        edits.append(
+                            (x, y, z, voxel_type, state, _iso_ms(edit.get("createdAt")) or 0)
+                        )
+                    if edits and self._session._native.merge_edits(*coord, edits):
+                        self._changed(coord)
                 applied = int(page.get("limit") or _PAGE_SIZE)
                 if len(groups) < applied or applied <= 0:
                     break
                 skip = int(page.get("skip") or skip) + applied
         for coord in sorted(stale):
             self._reload(coord)
+        return True
 
     def _reload(self, coord: Coord) -> None:
         """Read one chunk again; a read already running for it is not doubled."""
@@ -988,23 +1071,29 @@ class ChunkStore:
         if refusal.reason == "timeout" and self._hydrate_states and coord in self._meta:
             run_now(functools.partial(self._reload, coord))
 
-    def hydrate(self, chunk: Sequence[int | str]) -> None:
-        """Load one chunk in full: voxels, chunk state and per-voxel states.
+    def hydrate(self, chunk: Sequence[int | str]) -> bool:
+        """Load one chunk in full: voxels, chunk state and per-voxel states, merged under the
+        changes the store holds that are newer (each entry's ``updatedAt``, ck-api v2.69.0).
 
         Each ``voxelStates`` entry goes over the dense grid: its voxel type at its voxel, and
         its state (an entry without one clears the state there); an entry the grid cannot
         hold (a type outside 0-255, a position outside 0-15) goes to the :meth:`overlay`.
         Since ck-api v2.33.0 every voxel edit recorded for a chunk (a hub's or mod's
         ``world.set_voxels``, ``updateVoxel``, realtime voxel updates) arrives only that way,
-        so without hydration none of them shows after a reload."""
+        so without hydration none of them shows after a reload. Returns whether the copy was
+        applied: False for a chunk never stored, or one :meth:`evict` dropped while the read
+        was out (it is not brought back)."""
         coord = _coord(chunk)
+        before = self._meta.get(coord)
         full = self._session.client.chunks.get(
             {"appId": self._session.app_id, "coordinates": _chunk_input(coord)}
         )
+        if before is not None and self._meta.get(coord) is not before:
+            return False
         if not full:
             self._mark_missing(coord)
-            return
-        entries: builtins.list[tuple[int, int, int, int, bytes]] = []
+            return False
+        entries: builtins.list[tuple[int, int, int, int, bytes, int]] = []
         for entry in full.get("voxelStates") or []:
             voxel = entry["voxelCoord"]
             x, y, z = int(voxel["x"]), int(voxel["y"]), int(voxel["z"])
@@ -1012,21 +1101,21 @@ class ChunkStore:
             if not all(_fits_int16(v) for v in (x, y, z, voxel_type)):
                 continue
             state = decode_base64(entry["state"]) if entry.get("state") else b""
-            entries.append((x, y, z, voxel_type, state))
+            entries.append((x, y, z, voxel_type, state, _iso_ms(entry.get("updatedAt")) or 0))
         voxels = full.get("voxels")
         raw = decode_base64(voxels) if voxels else b""
         if len(raw) != CHUNK_VOLUME:
             # A chunk stored with `voxels: null` still carries its recorded edits.
             raw = bytes(CHUNK_VOLUME) if entries else b""
         if raw:
-            self._session._native.hydrate(*coord, raw, entries)
+            self._session._native.hydrate(*coord, raw, entries, _iso_ms(full.get("updatedAt")) or 0)
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(full.get("chunkState"))
         meta.load_state = "loaded"
         meta.voxel_states_truncated = bool(full.get("voxelStatesTruncated"))
         meta.stored_at = _iso_ms(full.get("updatedAt"))
         meta.hydrated_states.clear()
-        for x, y, z, voxel_type, state in entries:
+        for x, y, z, voxel_type, state, _ in entries:
             if not _in_grid(x, y, z):
                 continue
             index = x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE
@@ -1037,6 +1126,7 @@ class ChunkStore:
                 meta.hydrated_states[index] = self._voxel_codec.decode(state)
         meta.hydrated = True
         self._touch(meta)
+        return True
 
     def set_voxel(
         self,
@@ -1125,15 +1215,39 @@ class ChunkStore:
             grid, states, _, overlay = raw
             entries = [
                 (i % CHUNK_SIZE, i // CHUNK_SIZE % CHUNK_SIZE, i // (CHUNK_SIZE * CHUNK_SIZE),
-                 grid[i], state)
+                 grid[i], state, 0)
                 for i, (_, state) in states.items()
             ]  # fmt: skip
-            self._session._native.hydrate(*coord, grid, [*entries, *overlay])
+            wide = [(x, y, z, voxel_type, state, 0) for x, y, z, voxel_type, state in overlay]
+            self._session._native.hydrate(*coord, grid, [*entries, *wide])
         for coord in [
             c for c, m in self._meta.items() if not m.dirty and _distance(c, middle) > radius
         ]:
             del self._meta[coord]
             self._revision += 1
+
+    def evict(self, chunk: Sequence[int | str]) -> bool:
+        """Forget one chunk (0.32.0), as :meth:`prune_beyond` does. Returns whether it was
+        forgotten: False when the store does not hold it, or it is queued for write-back. A
+        read of it that is out is not applied."""
+        coord = _coord(chunk)
+        meta = self._meta.get(coord)
+        if meta is not None and meta.dirty:
+            return False
+        held = bool(self._session._native.evict(*coord))
+        if meta is None and not held:
+            return False
+        self._meta.pop(coord, None)
+        self._revision += 1
+        return True
+
+    def prune_if(self, drop: Callable[[CachedChunk], bool]) -> int:
+        """Forget every chunk ``drop`` returns True for (0.32.0), for a view that is not a cube
+        (a sphere, a column, several players); chunks queued for write-back stay. Returns how
+        many."""
+        return sum(
+            1 for meta in builtins.list(self.list()) if drop(meta) and self.evict(meta.coord)
+        )
 
     def _persist_due(self) -> None:
         self._persist(now=False)
@@ -1211,7 +1325,8 @@ class ChunkStore:
         if voxels:
             raw = decode_base64(voxels)
             if len(raw) == CHUNK_VOLUME:
-                self._session._native.seed(*coord, raw)
+                # Merged under the changes that arrived while the box was read.
+                self._session._native.hydrate(*coord, raw, [], _iso_ms(updated_at) or 0)
         meta = self._entry(coord)
         meta.chunk_state = self._decode_chunk_state(chunk_state)
         meta.load_state = "loaded"
