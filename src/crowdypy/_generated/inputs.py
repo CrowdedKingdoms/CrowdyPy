@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: c722e2690cd62f033d2a99484279388118921550c84ee6c4f85f4dfe274e0f8e
+schema.gql sha256: 60c1f852ee8ee7d6e7ce7d56b0ced065314550eb1b1351d8f32d0e273cbe1312
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class AcceptedDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
@@ -88,7 +88,7 @@ class AssignGroupToGridInput(msgspec.Struct, kw_only=True, omit_defaults=True, r
 
 
 class AuthorizeAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
-    'Approve (consent to) an app receiving app-scoped tokens via the Overworld portal.'
+    'Approve (consent to) an app receiving app-scoped tokens through a portal authorization code.'
     app_id: str
     scopes: list[str] | None | UnsetType = UNSET
 
@@ -328,7 +328,7 @@ class CreateOrganizationInput(msgspec.Struct, kw_only=True, omit_defaults=True):
 
 
 class CreatePortalAuthorizationCodeInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'code_challenge': 'codeChallenge', 'code_challenge_method': 'codeChallengeMethod', 'redirect_uri': 'redirectUri'}):
-    'Input for createPortalAuthorizationCode: the Overworld (identity origin, holding the session token) mints a one-time code the destination game exchanges for an app token. Browser handoff path; pair with a PKCE verifier held by the destination game origin.'
+    "Input for createPortalAuthorizationCode: the identity origin holding the session token (Studio's hosted sign-in, or a native launcher) mints a one-time code the destination game exchanges for an app token. Browser handoff path; pair with a PKCE verifier held by the destination game origin."
     app_id: str
     code_challenge: str
     code_challenge_method: str | None | UnsetType = UNSET
@@ -550,6 +550,12 @@ class ExecDeployInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     build_id: str | None | UnsetType = UNSET
 
 
+class ExecStudioSourceInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'project_id': 'projectId'}):
+    'The Crowdy Studio project and saved revision a player’s build is made from. The build, and the mod version or CLIENT half deployed from it, report them back, so any client can read which revision a grid runs.'
+    project_id: str
+    revision: str
+
+
 class FileSafetyReportInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'reported_user_id': 'reportedUserId', 'reported_actor_uuid': 'reportedActorUuid', 'occurred_at': 'occurredAt'}):
     'A report about another player of the app.'
     app_id: str
@@ -768,8 +774,9 @@ class RangedChannelMessageInput(msgspec.Struct, kw_only=True, omit_defaults=True
     sequence_number: int | None | UnsetType = UNSET
 
 
-class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'up_to_units': 'upToUnits', 'price_cents': 'priceCents'}):
+class RateCardBandInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'up_to_units': 'upToUnits', 'up_to_bits_per_second': 'upToBitsPerSecond', 'price_cents': 'priceCents'}):
     up_to_units: str | None | UnsetType = UNSET
+    up_to_bits_per_second: str | None | UnsetType = UNSET
     price_cents: float
 
 
@@ -1078,7 +1085,7 @@ class SetQuotaInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'o
     idempotency_key: str | None | UnsetType = UNSET
 
 
-class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth', 'price_bands': 'priceBands', 'clear_price_bands': 'clearPriceBands'}):
+class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'price_cents': 'priceCents', 'unit_label': 'unitLabel', 'unit_quantity': 'unitQuantity', 'acknowledge_repricing': 'acknowledgeRepricing', 'free_per_hour': 'freePerHour', 'free_units': 'freeUnits', 'free_period': 'freePeriod', 'free_per_month': 'freePerMonth', 'price_bands': 'priceBands', 'price_band_basis': 'priceBandBasis', 'clear_price_bands': 'clearPriceBands'}):
     scope: RateScope
     metric: str
     price_cents: float | None | UnsetType = UNSET
@@ -1090,6 +1097,7 @@ class SetRateCardInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
     free_period: AllowancePeriod | None | UnsetType = UNSET
     free_per_month: str | None | UnsetType = UNSET
     price_bands: list[RateCardBandInput] | None | UnsetType = UNSET
+    price_band_basis: PriceBandBasis | None | UnsetType = UNSET
     clear_price_bands: bool | None | UnsetType = UNSET
     reason: str
 
@@ -1401,6 +1409,7 @@ __all__ = [
     'ExecBuildFileInput',
     'ExecBuildInput',
     'ExecDeployInput',
+    'ExecStudioSourceInput',
     'FileSafetyReportInput',
     'GetChunkInput',
     'GetChunkLodsInput',
