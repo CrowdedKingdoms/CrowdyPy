@@ -311,6 +311,17 @@ class ExecCrate(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     files: dict[str, str] | list[ExecSourceFile]
 
 
+class ExecStudioSource(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """The Crowdy Studio project and saved revision a mod build is made from (ck-api v2.73.0).
+
+    A project of yours in the app, at a revision it has reached (``revision`` is the project's).
+    The build reports it back, and so do the mod version and the CLIENT half deployed from it.
+    """
+
+    project_id: str
+    revision: str
+
+
 class ExecStarter(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     """A starter crate, with its files ready for :meth:`ExecAPI.build`."""
 
@@ -364,6 +375,9 @@ class ExecBuild(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     started_at: str | None = None
     finished_at: str | None = None
     artifacts: list[ExecBuildArtifact]
+    #: The Studio project and revision the build named (``studio``); ``None`` when it named none.
+    studio_project_id: str | None = None
+    studio_revision: str | None = None
 
 
 class ExecMod(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -384,6 +398,10 @@ class ExecMod(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     blocked: str | None = None
     running: bool
     updated_at: str
+    #: The Studio project and revision this version was deployed from; ``None`` for an
+    #: install, a build that named none, or a version deployed before ck-api v2.73.0.
+    studio_project_id: str | None = None
+    studio_revision: str | None = None
 
 
 class ExecModListing(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -439,6 +457,9 @@ class ExecModClient(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     capability_hash: str
     tick_interval_ms: int
     updated_at: str
+    #: The Studio project and revision its build named; ``None`` when it named none.
+    studio_project_id: str | None = None
+    studio_revision: str | None = None
     capability_summary: dict[str, Any] | None = None
 
 
@@ -586,6 +607,22 @@ def _crate_input(crate: ExecCrate | Mapping[str, Any]) -> dict[str, Any]:
             "files": [{"path": path, "content": content} for path, content in files.items()],
         }
     return {"name": name, "files": [_source_file(file) for file in files]}
+
+
+def _mod_build_variables(
+    app_id: str | int,
+    crate: ExecCrate | Mapping[str, Any],
+    studio: ExecStudioSource | Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    variables: dict[str, Any] = {"appId": bigint(app_id), "crate": _crate_input(crate)}
+    if studio is not None:
+        project_id, revision = (
+            (studio.project_id, studio.revision)
+            if isinstance(studio, ExecStudioSource)
+            else (studio["projectId"], studio["revision"])
+        )
+        variables["studio"] = {"projectId": project_id, "revision": bigint(revision)}
+    return variables
 
 
 def _optional_bigint(value: str | int | None) -> str | None:
@@ -911,14 +948,22 @@ class ExecAPI(Domain):
         payload = await self._request(ops.EXEC_MOD_STARTER, {"appId": bigint(app_id)})
         return msgspec.convert(payload, ExecStarter)
 
-    async def mod_build(self, app_id: str | int, crate: ExecCrate | Mapping[str, Any]) -> ExecBuild:
+    async def mod_build(
+        self,
+        app_id: str | int,
+        crate: ExecCrate | Mapping[str, Any],
+        studio: ExecStudioSource | Mapping[str, Any] | None = None,
+    ) -> ExecBuild:
         """Build a mod from one ``ckx-sdk`` crate, as :meth:`build` builds a developer's.
 
         Returns at once; wait with :meth:`wait_for_mod_build`, then :meth:`mod_deploy`. One
-        build at a time per player. Requires ``write_server_code`` in the app.
+        build at a time per player. ``studio`` names the Studio project and saved revision the
+        crate is (another player's project is ``NOT_FOUND``, a revision past the project's
+        ``BAD_REQUEST``); the mod version deployed from the build reports them. Requires
+        ``write_server_code`` in the app.
         """
         payload = await self._request(
-            ops.EXEC_MOD_BUILD, {"appId": bigint(app_id), "crate": _crate_input(crate)}
+            ops.EXEC_MOD_BUILD, _mod_build_variables(app_id, crate, studio)
         )
         return _build(payload)
 
@@ -1146,7 +1191,10 @@ class ExecAPI(Domain):
         return msgspec.convert(rows, list[ExecModSwitch])
 
     async def mod_client_build(
-        self, app_id: str | int, crate: ExecCrate | Mapping[str, Any]
+        self,
+        app_id: str | int,
+        crate: ExecCrate | Mapping[str, Any],
+        studio: ExecStudioSource | Mapping[str, Any] | None = None,
     ) -> ExecBuild:
         """Build the CLIENT half of a mod from one ``crowdy-client-sdk`` crate.
 
@@ -1157,12 +1205,24 @@ class ExecAPI(Domain):
         ``serde`` and ``serde_json``, and ``[package.metadata.crowdy] tick_interval_ms``.
         Returns at once with the build queued (``kind`` ``client``); wait with
         :meth:`wait_for_mod_build`, then attach it with :meth:`mod_client_deploy`. One build,
-        server or CLIENT, at a time per player. Requires ``write_client_code`` in the app.
+        server or CLIENT, at a time per player. ``studio`` names the Studio project and saved
+        revision the crate is, as for :meth:`mod_build`; the CLIENT half attached from the
+        build reports them. Requires ``write_client_code`` in the app.
         """
         payload = await self._request(
-            ops.EXEC_MOD_CLIENT_BUILD, {"appId": bigint(app_id), "crate": _crate_input(crate)}
+            ops.EXEC_MOD_CLIENT_BUILD, _mod_build_variables(app_id, crate, studio)
         )
         return _build(payload)
+
+    async def mod_client_starter(self, app_id: str | int) -> ExecStarter:
+        """The CLIENT half starter (``client-half``), a ``crowdy-client-sdk`` crate.
+
+        Build it with :meth:`mod_client_build` once its package is renamed to the CLIENT module.
+        Requires access to the app. An API host whose build toolchain predates it (ck-api
+        v2.73.0 on an older toolchain) answers ``INTERNAL_SERVER_ERROR`` with ``httpStatus`` 503.
+        """
+        payload = await self._request(ops.EXEC_MOD_CLIENT_STARTER, {"appId": bigint(app_id)})
+        return msgspec.convert(payload, ExecStarter)
 
     async def mod_client_deploy(
         self, app_id: str | int, grid_id: str | int, name: str, build_id: str

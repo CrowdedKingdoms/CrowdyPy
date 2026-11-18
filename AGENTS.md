@@ -266,6 +266,11 @@ The replication system saturates the local network stack, so the binding
   the server's null, no floor; leaving it None dates the copy by `updated_at_ms`) and keeps it as
   `CachedChunk.stored_at`, with the row's `updatedAt` as `row_at`, which `catch_up` compares.
   `stored_row()` in the tests models v2.70.0: `voxelsUpdatedAt` defaults to the row's `updatedAt`.
+- Since 0.34.0 (CrowdyCPP 0.87.0, CrowdyJS 18.33.0, ck-api v2.73.0) the Studio controller sends
+  `{"projectId", "revision"}` as the third argument of `mod_build` / `mod_client_build` (the
+  test `Mods` fake records it in `studios`), and `create_project` asks the platform's CLIENT half
+  starter through `mods.mod_client_starter` when `mods` has it, keeping `_client_half_files` (CrowdyJS's
+  copy, byte for byte) on a 503. `CrowdyStudioAPI.links()` reads `crowdyStudioLinks`.
 - The voice helpers (`native/voice_binding.cpp`) bind CrowdyCPP's `voice_frames.hpp`.
   `crowdypy.media` checks every argument as CrowdyJS does first, because CrowdyCPP clamps the
   options CrowdyJS refuses.

@@ -547,6 +547,17 @@ def _patch(input_: dict[str, Any], key: str, value: object) -> None:
         input_[key] = value
 
 
+class CrowdyStudioLinks(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """This tier's Crowdy Studio (``crowdyStudioLinks``, ck-api v2.73.0).
+
+    ``origin`` is the only origin a Studio dock opens a popup to, and ``wallet_url`` the page it
+    sends a player to when the model needs funds.
+    """
+
+    origin: str
+    wallet_url: str
+
+
 class CrowdyStudioAPI(Domain):
     """Private Crowdy Studio projects and reusable files, and how a save reaches them."""
 
@@ -557,6 +568,14 @@ class CrowdyStudioAPI(Domain):
         self._baselines: dict[str, CrowdyStudioProject] = {}
         #: Layout per ``projectId@commit``; commits are immutable, so it never goes stale.
         self._layouts: dict[str, CrowdyStudioGitHubLayout] = {}
+
+    async def links(self) -> CrowdyStudioLinks:
+        """This tier's Studio origin and wallet page (``crowdyStudioLinks``, public).
+
+        An older Game API answers ``GRAPHQL_VALIDATION_FAILED``.
+        """
+        payload = await self._request(ops.CROWDY_STUDIO_LINKS)
+        return msgspec.convert(payload, CrowdyStudioLinks)
 
     async def list_projects(self, app_id: str | int) -> list[CrowdyStudioProjectSummary]:
         """The signed-in player's active projects in the app, newest first (at most 50)."""

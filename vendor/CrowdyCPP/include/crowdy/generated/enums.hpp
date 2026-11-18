@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/game-api.graphql).
-// schema.gql sha256: fdf29005c18a010747bbc82fc6a552aa1f25005aedb71bba93ef6942006829d8
-// operations sha256: f22fdab74d48b737bc930e881af91ac667f87633dd3d9f8887c0c48ee838cf0e
+// schema.gql sha256: 0ea63bf028c7260315fddfec1f8d895bdaf98846aa69eac141ee6c80d8629c36
+// operations sha256: 93e1f0e678c63bcbf238a619f7fde25bd4c8f9d31ebc397b4b94d5d5235666b6
 
 #pragma once
 
@@ -1254,6 +1254,25 @@ inline constexpr std::string_view toString(PlayerCodeOwnerKind v) {
 inline std::optional<PlayerCodeOwnerKind> playerCodeOwnerKindFromString(std::string_view s) {
   if (s == "USER") return PlayerCodeOwnerKind::USER;
   if (s == "ORG") return PlayerCodeOwnerKind::ORG;
+  return std::nullopt;
+}
+
+enum class PriceBandBasis {
+  VOLUME,
+  RATE,
+};
+
+inline constexpr std::string_view toString(PriceBandBasis v) {
+  switch (v) {
+    case PriceBandBasis::VOLUME: return "VOLUME";
+    case PriceBandBasis::RATE: return "RATE";
+  }
+  return "";
+}
+
+inline std::optional<PriceBandBasis> priceBandBasisFromString(std::string_view s) {
+  if (s == "VOLUME") return PriceBandBasis::VOLUME;
+  if (s == "RATE") return PriceBandBasis::RATE;
   return std::nullopt;
 }
 
