@@ -12,6 +12,7 @@ from crowdypy.domains.crowdy_studio import (
     CrowdyStudioProjectFile,
     CrowdyStudioProjectKind,
     CrowdyStudioProjectMetadata,
+    CrowdyStudioTarget,
 )
 from crowdypy.studio.models import project_targets
 
@@ -60,10 +61,14 @@ def create_crowdy_studio_starter_project(
     kind: CrowdyStudioProjectKind,
     description: str | None = None,
     mod_starter: Any = None,
+    client_starter: Any = None,
 ) -> CrowdyStudioStarterProject:
     """A new project's metadata and files. ``mod_starter`` (``client.exec.mod_starter()``,
-    or anything with ``files``) is required for a SERVER target; module names derive from
-    ``name`` (``<base>-server``, ``<base>-client``)."""
+    or anything with ``files``) is required for a SERVER target; ``client_starter``
+    (``client.exec.mod_client_starter()``) is the CLIENT target's crate, and without it the
+    CLIENT target is the starter this SDK carries, the same crate. Each starter's package is
+    renamed to its module; module names derive from ``name`` (``<base>-server``,
+    ``<base>-client``)."""
     targets = project_targets(kind)
     if "SERVER" in targets and mod_starter is None:
         raise ValueError("A SERVER target starts from the mod starter (client.exec.mod_starter)")
@@ -78,7 +83,9 @@ def create_crowdy_studio_starter_project(
     files: list[CrowdyStudioProjectFile] = []
     for target in targets:
         if target == "SERVER":
-            files.extend(_mod_starter_files(mod_starter, f"{base}-server"))
+            files.extend(_starter_target_files(mod_starter, f"{base}-server", "SERVER"))
+        elif client_starter is not None:
+            files.extend(_starter_target_files(client_starter, f"{base}-client", "CLIENT"))
         else:
             files.extend(_client_half_files(f"{base}-client"))
     return CrowdyStudioStarterProject(
@@ -108,14 +115,17 @@ def _field(file: Any, name: str) -> str:
     return str(file[name] if isinstance(file, Mapping) else getattr(file, name))
 
 
-def _mod_starter_files(starter: Any, name: str) -> list[CrowdyStudioProjectFile]:
+def _starter_target_files(
+    starter: Any, name: str, target: CrowdyStudioTarget
+) -> list[CrowdyStudioProjectFile]:
     files = _starter_files(starter)
     paths = {_field(file, "path") for file in files}
     if "Cargo.toml" not in paths or "src/lib.rs" not in paths:
-        raise ValueError("The mod starter has no Cargo.toml or src/lib.rs")
+        which = "mod" if target == "SERVER" else "CLIENT half"
+        raise ValueError(f"The {which} starter has no Cargo.toml or src/lib.rs")
     return [
         CrowdyStudioProjectFile(
-            target="SERVER",
+            target=target,
             path=_field(file, "path"),
             content=(
                 _rename_package(_field(file, "content"), name)

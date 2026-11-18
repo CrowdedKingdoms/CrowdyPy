@@ -21,6 +21,7 @@ from crowdypy.domains.crowdy_studio import (
     CrowdyStudioReferenceFile,
     CrowdyStudioRevisionConflictError,
 )
+from crowdypy.errors import CrowdyGraphQLError
 from crowdypy.player_host import CrowdyAgentError
 from crowdypy.studio import (
     CrowdyStudioAtomicFileChange,
@@ -210,6 +211,8 @@ class Provider:
 class Mods:
     def __init__(self, statuses: Sequence[str] = ("running", "succeeded"), log: str = "") -> None:
         self.calls: list[tuple[Any, ...]] = []
+        #: Each build's Studio source, by target.
+        self.studios: list[tuple[str, Any]] = []
         self.statuses = list(statuses)
         self.log = log
         self.mods: list[Any] = []
@@ -235,12 +238,14 @@ class Mods:
             ],
         )
 
-    async def mod_build(self, app_id: Any, crate: Any) -> Any:
+    async def mod_build(self, app_id: Any, crate: Any, studio: Any = None) -> Any:
         self.calls.append(("build", crate["name"], [f["path"] for f in crate["files"]]))
+        self.studios.append(("SERVER", studio))
         return SimpleNamespace(build_id="b-server")
 
-    async def mod_client_build(self, app_id: Any, crate: Any) -> Any:
+    async def mod_client_build(self, app_id: Any, crate: Any, studio: Any = None) -> Any:
         self.calls.append(("client_build", crate["name"]))
+        self.studios.append(("CLIENT", studio))
         return SimpleNamespace(build_id="b-client")
 
     async def mod_build_status(self, app_id: Any, build_id: str) -> Any:
@@ -468,6 +473,50 @@ async def test_create_project_starts_from_the_starters() -> None:
     assert controller.get_state().project.project_id == "p-new"  # type: ignore[union-attr]
 
 
+async def test_a_client_target_starts_from_the_platform_starter_and_this_sdks_on_a_503() -> None:
+    controller, _provider, mods = await studio()
+    answers: list[Any] = [
+        SimpleNamespace(
+            crate="client-half",
+            files=[
+                SimpleNamespace(path="Cargo.toml", content='[package]\nname = "client-half"\n'),
+                SimpleNamespace(path="src/lib.rs", content="// the platform's"),
+            ],
+        )
+    ]
+
+    async def mod_client_starter(app_id: Any) -> Any:
+        mods.calls.append(("client_starter",))
+        if isinstance(answers[0], Exception):
+            raise answers[0]
+        return answers[0]
+
+    mods.mod_client_starter = mod_client_starter  # type: ignore[attr-defined]
+    radar = await controller.create_project(name="Radar", kind="CLIENT")
+    assert ("client_starter",) in mods.calls
+    assert {f.path: f.content for f in radar.files} == {
+        "Cargo.toml": '[package]\nname = "radar-client"\n',
+        "src/lib.rs": "// the platform's",
+    }
+
+    answers[0] = CrowdyGraphQLError(
+        [
+            {
+                "message": "no starter",
+                "extensions": {"code": "INTERNAL_SERVER_ERROR", "httpStatus": 503},
+            }
+        ]
+    )
+    fallback = await controller.create_project(name="Radar", kind="CLIENT")
+    assert "crowdy::register_module!" in next(
+        f.content for f in fallback.files if f.path == "src/lib.rs"
+    )
+
+    answers[0] = CrowdyGraphQLError([{"message": "no access", "extensions": {"code": "FORBIDDEN"}}])
+    with pytest.raises(CrowdyGraphQLError, match="no access"):
+        await controller.create_project(name="Radar", kind="CLIENT")
+
+
 async def test_a_server_draft_builds_deploys_and_runs() -> None:
     log = "error[E0425]: cannot find value `x`\n  --> src/lib.rs:3:5"
     controller, _, mods = await studio(
@@ -481,6 +530,12 @@ async def test_a_server_draft_builds_deploys_and_runs() -> None:
     assert ("build", "quest-server", ["src/lib.rs", "Cargo.toml"]) in mods.calls
     assert ("deploy", "quest-server", "b-server") in mods.calls
     assert ("enabled", "quest-server", True) in mods.calls
+    # The build names the project and the revision it is.
+    project = controller.get_state().project
+    assert project is not None
+    assert mods.studios == [
+        ("SERVER", {"projectId": project.project_id, "revision": project.revision.id})
+    ]
     state = controller.get_state()
     assert state.runtime.phase == "RUNNING"
     assert state.runtime_sync.state == "RUNNING_SAVED"

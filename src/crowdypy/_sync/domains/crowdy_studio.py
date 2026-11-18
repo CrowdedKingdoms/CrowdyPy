@@ -49,7 +49,7 @@ from crowdypy.errors import (
 )
 from crowdypy._sync.graphql import GraphQLClient
 from crowdypy.utils import bigint
-from crowdypy.domains.crowdy_studio import CrowdyStudioOfflineError, CrowdyStudioProject, CrowdyStudioProjectFile, CrowdyStudioProjectGitHub, CrowdyStudioProjectMetadata, CrowdyStudioProjectRevision, CrowdyStudioProjectSummary, CrowdyStudioReferenceFile, CrowdyStudioRevisionConflictError, _FileDelta, _ProjectSave, _Unchanged  # one class in both clients
+from crowdypy.domains.crowdy_studio import CrowdyStudioLinks, CrowdyStudioOfflineError, CrowdyStudioProject, CrowdyStudioProjectFile, CrowdyStudioProjectGitHub, CrowdyStudioProjectMetadata, CrowdyStudioProjectRevision, CrowdyStudioProjectSummary, CrowdyStudioReferenceFile, CrowdyStudioRevisionConflictError, _FileDelta, _ProjectSave, _Unchanged  # one class in both clients
 
 __all__ = [
     "UNCHANGED",
@@ -435,6 +435,8 @@ def _patch(input_: dict[str, Any], key: str, value: object) -> None:
         input_[key] = value
 
 
+
+
 class CrowdyStudioAPI(Domain):
     """Private Crowdy Studio projects and reusable files, and how a save reaches them."""
 
@@ -445,6 +447,14 @@ class CrowdyStudioAPI(Domain):
         self._baselines: dict[str, CrowdyStudioProject] = {}
         #: Layout per ``projectId@commit``; commits are immutable, so it never goes stale.
         self._layouts: dict[str, CrowdyStudioGitHubLayout] = {}
+
+    def links(self) -> CrowdyStudioLinks:
+        """This tier's Studio origin and wallet page (``crowdyStudioLinks``, public).
+
+        An older Game API answers ``GRAPHQL_VALIDATION_FAILED``.
+        """
+        payload = self._request(ops.CROWDY_STUDIO_LINKS)
+        return msgspec.convert(payload, CrowdyStudioLinks)
 
     def list_projects(self, app_id: str | int) -> list[CrowdyStudioProjectSummary]:
         """The signed-in player's active projects in the app, newest first (at most 50)."""

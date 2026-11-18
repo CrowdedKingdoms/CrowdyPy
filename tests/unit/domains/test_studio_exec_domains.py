@@ -59,6 +59,7 @@ from crowdypy.domains.exec import (
     ExecModScope,
     ExecSourceFile,
     ExecStarter,
+    ExecStudioSource,
     exec_mod_type,
     exec_status,
     is_name_list,
@@ -111,6 +112,7 @@ def refusal(code: str, message: str | None = None) -> GraphQLErrors:
 
 PORTED: dict[type, set[str]] = {
     CrowdyStudioAPI: {
+        "links",
         "list_projects",
         "get_project",
         "create_project",
@@ -176,6 +178,7 @@ PORTED: dict[type, set[str]] = {
         "mod_switches",
         "mod_set_switch",
         "mod_client_build",
+        "mod_client_starter",
         "mod_client_deploy",
         "mod_client_delete",
         "grid_client_mods",
@@ -1246,6 +1249,8 @@ BUILD = {
     "startedAt": None,
     "finishedAt": None,
     "artifacts": [],
+    "studioProjectId": None,
+    "studioRevision": None,
 }
 MOD = {
     "modId": "900",
@@ -1259,6 +1264,8 @@ MOD = {
     "blocked": None,
     "running": False,
     "updatedAt": "t",
+    "studioProjectId": None,
+    "studioRevision": None,
 }
 LISTING = {
     "listingId": "555",
@@ -1605,6 +1612,51 @@ async def test_the_build_poll_gives_up_after_its_timeout(
 # ---- ck-exec: mods ----
 
 
+async def test_a_build_names_its_studio_source_and_the_platform_serves_the_starter_and_links(
+    graphql: AsyncGraphQLClient, api: MockApi
+) -> None:
+    sourced = {**BUILD, "studioProjectId": "p1", "studioRevision": "3"}
+    route(
+        api,
+        {
+            "ExecModBuild": sourced,
+            "ExecModClientBuild": {**sourced, "kind": "client"},
+            "ExecModDeploy": {**MOD, "studioProjectId": "p1", "studioRevision": "3"},
+            "ExecModClientStarter": {**STARTER, "crate": "client-half", "nodeType": "client"},
+            "CrowdyStudioLinks": {
+                "origin": "https://studio.prod.crowdedkingdoms.com",
+                "walletUrl": "https://studio.prod.crowdedkingdoms.com/account/wallet",
+            },
+        },
+    )
+    exec_api = ExecAPI(graphql)
+    crate = ExecCrate(name="turret", files={"Cargo.toml": "c", "src/lib.rs": "l"})
+
+    built = await exec_api.mod_build("77", crate, ExecStudioSource(project_id="p1", revision="3"))
+    assert (built.studio_project_id, built.studio_revision) == ("p1", "3")
+    assert (
+        await exec_api.mod_client_build("77", crate, {"projectId": "p1", "revision": 3})
+    ).kind == "client"
+    await exec_api.mod_build("77", crate)
+    deployed = await exec_api.mod_deploy("77", 5, "turret", "b1")
+    assert (deployed.studio_project_id, deployed.studio_revision) == ("p1", "3")
+    starter = await exec_api.mod_client_starter(77)
+    assert (starter.crate, starter.node_type) == ("client-half", "client")
+    links = await CrowdyStudioAPI(graphql).links()
+    assert (links.origin, links.wallet_url) == (
+        "https://studio.prod.crowdedkingdoms.com",
+        "https://studio.prod.crowdedkingdoms.com/account/wallet",
+    )
+
+    source = {"projectId": "p1", "revision": "3"}
+    assert [
+        (name, variables.get("studio"))
+        for name, variables in sent(api)
+        if name in ("ExecModBuild", "ExecModClientBuild")
+    ] == [("ExecModBuild", source), ("ExecModClientBuild", source), ("ExecModBuild", None)]
+    assert ("ExecModClientStarter", {"appId": "77"}) in sent(api)
+
+
 async def test_mods_pass_their_arguments_and_map_results(
     graphql: AsyncGraphQLClient, api: MockApi, slept: list[float]
 ) -> None:
@@ -1728,6 +1780,8 @@ async def test_client_halves_pass_their_arguments_and_parse_their_summaries(
         "capabilityHash": HASH,
         "tickIntervalMs": 250,
         "updatedAt": "t",
+        "studioProjectId": None,
+        "studioRevision": None,
     }
     served = {
         "modId": "900",
