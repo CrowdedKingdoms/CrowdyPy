@@ -566,11 +566,9 @@ class CrowdyStudioController:
             raise CrowdyStudioError(
                 "Resolve or retry the current project save before creating another"
             )
-        mod_starter = (
-            await self._mods.mod_starter(self._app_id)
-            if "SERVER" in project_targets(kind)
-            else None
-        )
+        targets = project_targets(kind)
+        mod_starter = await self._mods.mod_starter(self._app_id) if "SERVER" in targets else None
+        client_starter = await self._client_starter() if "CLIENT" in targets else None
         starter = create_crowdy_studio_starter_project(
             app_id=self._app_id,
             grid_id=self._grid_id,
@@ -578,6 +576,7 @@ class CrowdyStudioController:
             kind=kind,
             description=description,
             mod_starter=mod_starter,
+            client_starter=client_starter,
         )
         project = await self._provider.create_project(
             starter.app_id, starter.grid_id, starter.kind, starter.metadata, starter.files
@@ -589,6 +588,19 @@ class CrowdyStudioController:
             save_message=None,
         )
         return project
+
+    async def _client_starter(self) -> Any:
+        """The platform's CLIENT half starter, or ``None`` (this SDK's copy) when ``mods`` has no
+        ``mod_client_starter`` or the API host's toolchain predates it (HTTP status 503)."""
+        fetch = getattr(self._mods, "mod_client_starter", None)
+        if fetch is None:
+            return None
+        try:
+            return await fetch(self._app_id)
+        except CrowdyGraphQLError as error:
+            if (error.extensions or {}).get("httpStatus") == 503:
+                return None
+            raise
 
     async def switch_project(self, project_id: str) -> None:
         if self._state.project is not None and self._state.project.project_id == project_id:
@@ -1763,18 +1775,24 @@ class CrowdyStudioController:
         if not files:
             raise CrowdyStudioError(f"{target} has no project files")
         self._update(runtime=CrowdyStudioRuntimeStatus("COMPILING", target, f"Submitting {name}"))
+        # The saved revision these files are, so the mod and CLIENT half report it.
+        studio = {"projectId": project.project_id, "revision": project.revision.id}
         if target == "SERVER":
-            return await self._build_mod(name, files, operation)
-        return await self._build_client_half(name, files, operation)
+            return await self._build_mod(name, files, operation, studio)
+        return await self._build_client_half(name, files, operation, studio)
 
     async def _build_mod(
-        self, name: str, files: Sequence[CrowdyStudioProjectFile], operation: int
+        self,
+        name: str,
+        files: Sequence[CrowdyStudioProjectFile],
+        operation: int,
+        studio: Mapping[str, str],
     ) -> _Compiled | None:
         problem = _mod_name_problem(self._require_project())
         if problem:
             raise CrowdyStudioError(problem)
         queued = await self._mods.mod_build(
-            self._app_id, {"name": _crate_name(name), "files": _crate_files(files)}
+            self._app_id, {"name": _crate_name(name), "files": _crate_files(files)}, studio
         )
         self._check_operation(operation)
         built = await self._await_mod_build("SERVER", name, queued.build_id, operation)
@@ -1785,7 +1803,11 @@ class CrowdyStudioController:
         return _Compiled("SERVER", name, str(mod.version))
 
     async def _build_client_half(
-        self, name: str, files: Sequence[CrowdyStudioProjectFile], operation: int
+        self,
+        name: str,
+        files: Sequence[CrowdyStudioProjectFile],
+        operation: int,
+        studio: Mapping[str, str],
     ) -> _Compiled | None:
         problem = _mod_name_problem(self._require_project())
         if problem:
@@ -1802,7 +1824,7 @@ class CrowdyStudioController:
             )
             return None
         queued = await self._mods.mod_client_build(
-            self._app_id, {"name": _crate_name(name), "files": _crate_files(files)}
+            self._app_id, {"name": _crate_name(name), "files": _crate_files(files)}, studio
         )
         self._check_operation(operation)
         built = await self._await_mod_build("CLIENT", name, queued.build_id, operation)

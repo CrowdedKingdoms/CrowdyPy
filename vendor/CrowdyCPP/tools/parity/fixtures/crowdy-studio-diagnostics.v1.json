@@ -1,8 +1,8 @@
 {
   "contractVersion": "crowdy.studio-diagnostics/1",
   "crowdyJs": {
-    "version": "18.32.0",
-    "commit": "9620a8fbe4871403ca2433fa3234f8c2f53eea1f"
+    "version": "18.33.0",
+    "commit": "732c895443a3c2e55b0166972ba384a3e80998ce"
   },
   "cases": [
     {
@@ -75,6 +75,107 @@
           "column": 2,
           "severity": "warning",
           "message": "after malformed JSON",
+          "source": "rustc"
+        }
+      ]
+    },
+    {
+      "name": "long-lines-many-colons-and-edges",
+      "defaultTarget": "SERVER",
+      "output": "x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:x:1:1:\nsrc/lib.rs:1:2:3:4:5:6:7:8:9:10: warning: unused import\nerror[E0425]: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n  --> src/main.rs:1:2:3:4\nwarning: tabs and an end column\n\t-->\tsrc/lib.rs:12:3-9  \nnote:   \n  --> src/a.rs:1:1\nerror[E 1: weird]: code with a colon\n  --> src/lib.rs:2:2\nerrors: not a header\n  --> src/lib.rs:3:3\nwarning: a CLIENT path\n  --> crates/Client/src/hud.rs:1:2\nwarning: a rooted SERVER path\n  --> /server/x.rs:4:5\nwarning: not a target directory\n  --> a/serverx/b.rs:1:1\ninfo[I1]:no space after the colon\n  -->  src/lib.rs:7:7\nwarning: header without a location\nsrc/lib.rs:5:6:warning:compact without spaces",
+      "expected": [
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs:1:2:3:4:5:6:7:8",
+          "line": 9,
+          "column": 10,
+          "severity": "warning",
+          "message": "unused import",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/main.rs:1:2",
+          "line": 3,
+          "column": 4,
+          "severity": "error",
+          "message": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "code": "E0425",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs",
+          "line": 12,
+          "column": 3,
+          "endColumn": 9,
+          "severity": "warning",
+          "message": "tabs and an end column",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/a.rs",
+          "line": 1,
+          "column": 1,
+          "severity": "info",
+          "message": " ",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs",
+          "line": 2,
+          "column": 2,
+          "severity": "error",
+          "message": "code with a colon",
+          "code": "E 1: weird",
+          "source": "rustc"
+        },
+        {
+          "target": "CLIENT",
+          "path": "src/hud.rs",
+          "line": 1,
+          "column": 2,
+          "severity": "warning",
+          "message": "a CLIENT path",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "x.rs",
+          "line": 4,
+          "column": 5,
+          "severity": "warning",
+          "message": "a rooted SERVER path",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "a/serverx/b.rs",
+          "line": 1,
+          "column": 1,
+          "severity": "warning",
+          "message": "not a target directory",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs",
+          "line": 7,
+          "column": 7,
+          "severity": "info",
+          "message": "no space after the colon",
+          "code": "I1",
+          "source": "rustc"
+        },
+        {
+          "target": "SERVER",
+          "path": "src/lib.rs",
+          "line": 5,
+          "column": 6,
+          "severity": "warning",
+          "message": "compact without spaces",
           "source": "rustc"
         }
       ]

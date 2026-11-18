@@ -3,6 +3,30 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.34.0
+
+Vendors CrowdyCPP 0.87.0 and syncs CrowdyJS 18.33.0's schema and operations. **Needs ck-api
+v2.73.0**: every exec mod build, mod and CLIENT half read selects `studioProjectId` and
+`studioRevision`, which an older Game API refuses. Nothing is removed.
+
+- **A build names its Studio source.** `client.exec.mod_build(app_id, crate, studio)` and
+  `mod_client_build(app_id, crate, studio)` take an optional `ExecStudioSource(project_id,
+  revision)` (or `{"projectId", "revision"}`): a Studio project of yours in the app at a saved
+  revision it has reached. Another player's project is `NOT_FOUND`, a revision past the project's
+  `BAD_REQUEST`. `ExecBuild`, `ExecMod` and `ExecModClient` gain `studio_project_id` and
+  `studio_revision`; an install, a build that named none and a version deployed before v2.73.0
+  read `None`. `CrowdyStudioController` sends the open project and its saved revision on every
+  draft test and live deploy, so a `mods` of your own takes the third argument.
+- **The CLIENT half starter comes from the platform.** `client.exec.mod_client_starter(app_id)`
+  returns the `client-half` crate. `create_crowdy_studio_starter_project(..., client_starter=)`
+  takes it and renames its package to the CLIENT module; without it the CLIENT target is the SDK's
+  copy. `CrowdyStudioController.create_project` asks `mods.mod_client_starter` when `mods` has it,
+  and keeps the SDK's copy when the API host answers with `httpStatus` 503 (its toolchain
+  predates the starter).
+- **Studio's address.** `client.crowdy_studio.links()` (public `crowdyStudioLinks`) returns
+  `CrowdyStudioLinks(origin, wallet_url)`: this tier's Studio, where a dock opens popups and sends
+  a player for funds.
+
 ## 0.33.0
 
 Vendors CrowdyCPP 0.85.0 and syncs CrowdyJS 18.32.0's schema and operations. **Needs ck-api
