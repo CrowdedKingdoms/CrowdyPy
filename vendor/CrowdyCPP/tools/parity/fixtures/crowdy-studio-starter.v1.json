@@ -1,0 +1,414 @@
+{
+  "contractVersion": "crowdy.studio-starter/1",
+  "crowdyJs": {
+    "version": "18.33.0",
+    "commit": "2a12346b548d8fa020a4502c95c4c89fda6bf3fa"
+  },
+  "modStarters": {
+    "grid-mod": {
+      "files": [
+        {
+          "path": "Cargo.toml",
+          "content": "[package]\nname = \"grid-mod\"\ndescription = \"Starter mod: a player's code on a grid they own; greets visitors and follows what happens in the grid\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nckx-sdk = \"0.14.1\"\nserde = { version = \"1\", features = [\"derive\"] }\n"
+        },
+        {
+          "path": "src/lib.rs",
+          "content": "// The grid-mod starter's module.\nuse ckx_sdk::prelude::*;\n"
+        }
+      ]
+    },
+    "tricky": {
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# A starter\n"
+        },
+        {
+          "path": "Cargo.toml",
+          "content": "# name = \"comment\"\n[workspace]\nname = \"ws\"\n  [ package ]  \r\n  name   = \"grid-mod\"\r\nname = \"second\"\n[[bin]]\nname = \"tool\"\n[dependencies]\nname = \"dep\"\n"
+        },
+        {
+          "path": "src/lib.rs",
+          "content": "pub fn start() {}\n"
+        },
+        {
+          "path": "src/extra.rs",
+          "content": "pub fn more() {}\n"
+        }
+      ]
+    },
+    "no-library": {
+      "files": [
+        {
+          "path": "Cargo.toml",
+          "content": "[package]\nname = \"grid-mod\"\n"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "client-only",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "Weather HUD",
+        "kind": "CLIENT"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "CLIENT",
+        "metadata": {
+          "name": "Weather HUD",
+          "clientModuleName": "weather-hud-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"weather-hud-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "server-only-trimmed",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "  Turret Defense!  ",
+        "description": "  Guards the gate.  ",
+        "kind": "SERVER",
+        "modStarter": "grid-mod"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "SERVER",
+        "metadata": {
+          "name": "Turret Defense!",
+          "description": "Guards the gate.",
+          "serverModuleName": "turret-defense-server",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "SERVER",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"turret-defense-server\"\ndescription = \"Starter mod: a player's code on a grid they own; greets visitors and follows what happens in the grid\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nckx-sdk = \"0.14.1\"\nserde = { version = \"1\", features = [\"derive\"] }\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/lib.rs",
+            "content": "// The grid-mod starter's module.\nuse ckx_sdk::prelude::*;\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "full-stack-starts-with-a-digit",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "3D Pool",
+        "kind": "FULL_STACK",
+        "modStarter": "grid-mod"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "FULL_STACK",
+        "metadata": {
+          "name": "3D Pool",
+          "serverModuleName": "mod-3d-pool-server",
+          "clientModuleName": "mod-3d-pool-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "SERVER",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"mod-3d-pool-server\"\ndescription = \"Starter mod: a player's code on a grid they own; greets visitors and follows what happens in the grid\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nckx-sdk = \"0.14.1\"\nserde = { version = \"1\", features = [\"derive\"] }\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/lib.rs",
+            "content": "// The grid-mod starter's module.\nuse ckx_sdk::prelude::*;\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"mod-3d-pool-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "punctuation-only-and-blank-description",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "!!!",
+        "description": "   ",
+        "kind": "FULL_STACK",
+        "modStarter": "grid-mod"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "FULL_STACK",
+        "metadata": {
+          "name": "!!!",
+          "serverModuleName": "player-mod-server",
+          "clientModuleName": "player-mod-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "SERVER",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"player-mod-server\"\ndescription = \"Starter mod: a player's code on a grid they own; greets visitors and follows what happens in the grid\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nckx-sdk = \"0.14.1\"\nserde = { version = \"1\", features = [\"derive\"] }\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/lib.rs",
+            "content": "// The grid-mod starter's module.\nuse ckx_sdk::prelude::*;\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"player-mod-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "blank-name",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": " \t ",
+        "kind": "SERVER",
+        "modStarter": "grid-mod"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "SERVER",
+        "metadata": {
+          "name": "Untitled mod",
+          "serverModuleName": "player-mod-server",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "SERVER",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"player-mod-server\"\ndescription = \"Starter mod: a player's code on a grid they own; greets visitors and follows what happens in the grid\"\nversion = \"0.1.0\"\nedition = \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nckx-sdk = \"0.14.1\"\nserde = { version = \"1\", features = [\"derive\"] }\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/lib.rs",
+            "content": "// The grid-mod starter's module.\nuse ckx_sdk::prelude::*;\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "long-name-cut",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "The Very Long Name Of A Mod That Keeps Going And Going Forever",
+        "kind": "CLIENT"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "CLIENT",
+        "metadata": {
+          "name": "The Very Long Name Of A Mod That Keeps Going And Going Forever",
+          "clientModuleName": "the-very-long-name-of-a-mod-that-keeps-go-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"the-very-long-name-of-a-mod-that-keeps-go-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "cut-ends-on-a-dash",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b",
+        "kind": "CLIENT"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "CLIENT",
+        "metadata": {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa b",
+          "clientModuleName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "non-ascii-letters",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "Café Über İnfo K-9",
+        "kind": "CLIENT"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "CLIENT",
+        "metadata": {
+          "name": "Café Über İnfo K-9",
+          "clientModuleName": "caf-ber-i-nfo-k-9-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"caf-ber-i-nfo-k-9-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unicode-whitespace",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": " 　Unicode Spaces ",
+        "description": "﻿desc ",
+        "kind": "CLIENT"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "CLIENT",
+        "metadata": {
+          "name": "Unicode Spaces",
+          "description": "desc",
+          "clientModuleName": "unicode-spaces-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"unicode-spaces-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "manifest-sections",
+      "options": {
+        "appId": "77",
+        "gridId": "5",
+        "name": "Tricky",
+        "kind": "FULL_STACK",
+        "modStarter": "tricky"
+      },
+      "expected": {
+        "appId": "77",
+        "gridId": "5",
+        "kind": "FULL_STACK",
+        "metadata": {
+          "name": "Tricky",
+          "serverModuleName": "tricky-server",
+          "clientModuleName": "tricky-client",
+          "pairingPreference": "NONE"
+        },
+        "files": [
+          {
+            "target": "SERVER",
+            "path": "README.md",
+            "content": "# A starter\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "Cargo.toml",
+            "content": "# name = \"comment\"\n[workspace]\nname = \"ws\"\n  [ package ]  \r\nname = \"tricky-server\"\nname = \"second\"\n[[bin]]\nname = \"tool\"\n[dependencies]\nname = \"dep\"\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/lib.rs",
+            "content": "pub fn start() {}\n"
+          },
+          {
+            "target": "SERVER",
+            "path": "src/extra.rs",
+            "content": "pub fn more() {}\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "Cargo.toml",
+            "content": "[package]\nname = \"tricky-client\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n# How often visitors' browsers call tick (clamped 16–1000 ms).\n# 1000 = HUD/text. 50 = physics minigames (pool). 16 = shooters, if a tick stays cheap.\n[package.metadata.crowdy]\ntick_interval_ms = 1000\n\n[dependencies]\ncrowdy-client-sdk = \"0.1.0\"\nserde_json = \"1\"\n"
+          },
+          {
+            "target": "CLIENT",
+            "path": "src/lib.rs",
+            "content": "use crowdy_client_sdk as crowdy;\n\nfn init() {\n    // Runs once in each visitor's browser, after they consent to this CLIENT half\n    // (or trust you) and while they stand in this grid.\n    crowdy::log(1, \"ready\");\n}\n\nfn tick(_dt_ms: u32) {\n    // Every tick_interval_ms (Cargo.toml). The state blob lasts as long as the page's worker.\n    let ticks = u32::from_le_bytes(crowdy::state_get().try_into().unwrap_or([0; 4])).wrapping_add(1);\n    crowdy::state_set(&ticks.to_le_bytes());\n    // Host calls cross the page's broker as the visiting player, inside this grid: the HUD and\n    // overlay, chunk and actor reads, voxel writes, spatial and channel sends, grid events.\n    // Type \"crowdy::api::\" for the rest. The page's DOM and tokens are never reachable.\n    let _ = crowdy::api::hud_set(serde_json::json!({ \"text\": format!(\"Ticks here: {ticks}\") }));\n    //\n    // Mouse (holodeck canvas only; Studio chrome is omitted). Drain every tick:\n    //   let data = crowdy::api::pointer_clicks().unwrap_or(serde_json::json!({}));\n    // data[\"clicks\"] = [{ \"t\": \"down\"|\"up\", \"button\": 0, \"atMs\", \"heldMs\", \"nx\", \"ny\" }]\n}\n\nfn invoke(payload: &[u8]) -> Vec<u8> {\n    payload.to_vec()\n}\n\nfn event(_payload: &[u8]) {\n    // Grid events from the other CLIENT halves on this page (crowdy::api::emit_event).\n}\n\ncrowdy::register_module!(init: init, tick: tick, invoke: invoke, event: event);\n"
+          }
+        ]
+      }
+    }
+  ]
+}

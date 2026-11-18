@@ -34,7 +34,7 @@ from crowdypy._generated.enums import ExecModScope
 from crowdypy._sync.domains._base import Domain, omit_none, sleep
 from crowdypy.errors import CrowdyError, CrowdyProtocolError
 from crowdypy.utils import bigint, decode_base64, encode_base64
-from crowdypy.domains.exec import CrowdyExecError, ExecAppStatus, ExecBuild, ExecBuildArtifact, ExecCrate, ExecDeployResult, ExecEndpoint, ExecEndpointStat, ExecGridClientMod, ExecInstance, ExecLogLine, ExecMod, ExecModClient, ExecModClientArtifact, ExecModClientArtifactBytes, ExecModListing, ExecModSwitch, ExecRestartResult, ExecSourceFile, ExecStarter, ExecStarterPack, ExecVersion, _Url  # one class in both clients
+from crowdypy.domains.exec import CrowdyExecError, ExecAppStatus, ExecBuild, ExecBuildArtifact, ExecCrate, ExecDeployResult, ExecEndpoint, ExecEndpointStat, ExecGridClientMod, ExecInstance, ExecLogLine, ExecMod, ExecModClient, ExecModClientArtifact, ExecModClientArtifactBytes, ExecModListing, ExecModSwitch, ExecRestartResult, ExecSourceFile, ExecStarter, ExecStarterPack, ExecStudioSource, ExecVersion, _Url  # one class in both clients
 
 if TYPE_CHECKING:
     from crowdypy.exec_gateway import ExecConnection
@@ -188,6 +188,8 @@ def is_name_list(value: object) -> TypeGuard[list[str]]:
 
 
 
+
+
 def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name} is not JSON")
 
@@ -235,6 +237,22 @@ def _crate_input(crate: ExecCrate | Mapping[str, Any]) -> dict[str, Any]:
             "files": [{"path": path, "content": content} for path, content in files.items()],
         }
     return {"name": name, "files": [_source_file(file) for file in files]}
+
+
+def _mod_build_variables(
+    app_id: str | int,
+    crate: ExecCrate | Mapping[str, Any],
+    studio: ExecStudioSource | Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    variables: dict[str, Any] = {"appId": bigint(app_id), "crate": _crate_input(crate)}
+    if studio is not None:
+        project_id, revision = (
+            (studio.project_id, studio.revision)
+            if isinstance(studio, ExecStudioSource)
+            else (studio["projectId"], studio["revision"])
+        )
+        variables["studio"] = {"projectId": project_id, "revision": bigint(revision)}
+    return variables
 
 
 def _optional_bigint(value: str | int | None) -> str | None:
@@ -555,14 +573,22 @@ class ExecAPI(Domain):
         payload = self._request(ops.EXEC_MOD_STARTER, {"appId": bigint(app_id)})
         return msgspec.convert(payload, ExecStarter)
 
-    def mod_build(self, app_id: str | int, crate: ExecCrate | Mapping[str, Any]) -> ExecBuild:
+    def mod_build(
+        self,
+        app_id: str | int,
+        crate: ExecCrate | Mapping[str, Any],
+        studio: ExecStudioSource | Mapping[str, Any] | None = None,
+    ) -> ExecBuild:
         """Build a mod from one ``ckx-sdk`` crate, as :meth:`build` builds a developer's.
 
         Returns at once; wait with :meth:`wait_for_mod_build`, then :meth:`mod_deploy`. One
-        build at a time per player. Requires ``write_server_code`` in the app.
+        build at a time per player. ``studio`` names the Studio project and saved revision the
+        crate is (another player's project is ``NOT_FOUND``, a revision past the project's
+        ``BAD_REQUEST``); the mod version deployed from the build reports them. Requires
+        ``write_server_code`` in the app.
         """
         payload = self._request(
-            ops.EXEC_MOD_BUILD, {"appId": bigint(app_id), "crate": _crate_input(crate)}
+            ops.EXEC_MOD_BUILD, _mod_build_variables(app_id, crate, studio)
         )
         return _build(payload)
 
@@ -790,7 +816,10 @@ class ExecAPI(Domain):
         return msgspec.convert(rows, list[ExecModSwitch])
 
     def mod_client_build(
-        self, app_id: str | int, crate: ExecCrate | Mapping[str, Any]
+        self,
+        app_id: str | int,
+        crate: ExecCrate | Mapping[str, Any],
+        studio: ExecStudioSource | Mapping[str, Any] | None = None,
     ) -> ExecBuild:
         """Build the CLIENT half of a mod from one ``crowdy-client-sdk`` crate.
 
@@ -801,12 +830,24 @@ class ExecAPI(Domain):
         ``serde`` and ``serde_json``, and ``[package.metadata.crowdy] tick_interval_ms``.
         Returns at once with the build queued (``kind`` ``client``); wait with
         :meth:`wait_for_mod_build`, then attach it with :meth:`mod_client_deploy`. One build,
-        server or CLIENT, at a time per player. Requires ``write_client_code`` in the app.
+        server or CLIENT, at a time per player. ``studio`` names the Studio project and saved
+        revision the crate is, as for :meth:`mod_build`; the CLIENT half attached from the
+        build reports them. Requires ``write_client_code`` in the app.
         """
         payload = self._request(
-            ops.EXEC_MOD_CLIENT_BUILD, {"appId": bigint(app_id), "crate": _crate_input(crate)}
+            ops.EXEC_MOD_CLIENT_BUILD, _mod_build_variables(app_id, crate, studio)
         )
         return _build(payload)
+
+    def mod_client_starter(self, app_id: str | int) -> ExecStarter:
+        """The CLIENT half starter (``client-half``), a ``crowdy-client-sdk`` crate.
+
+        Build it with :meth:`mod_client_build` once its package is renamed to the CLIENT module.
+        Requires access to the app. An API host whose build toolchain predates it (ck-api
+        v2.73.0 on an older toolchain) answers ``INTERNAL_SERVER_ERROR`` with ``httpStatus`` 503.
+        """
+        payload = self._request(ops.EXEC_MOD_CLIENT_STARTER, {"appId": bigint(app_id)})
+        return msgspec.convert(payload, ExecStarter)
 
     def mod_client_deploy(
         self, app_id: str | int, grid_id: str | int, name: str, build_id: str
