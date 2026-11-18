@@ -5,7 +5,9 @@
 
 #ifndef CROWDY_NO_EXCEPTIONS
 #include "crowdy/studio/integration.hpp"
+#include "crowdy/studio/mod_runner.hpp"
 #endif
+#include "crowdy/studio_origin.hpp"
 #include "crowdy/domains/admin.hpp"
 #include "crowdy/graphql/dispatcher.hpp"
 #include "crowdy/replication/connection.hpp"
@@ -752,7 +754,20 @@ CrowdyClient::createCrowdyStudioIntegration(
   return studio::CrowdyStudioIntegration::create(
       std::move(options), std::move(projectApi), std::move(runtime));
 }
+
+std::unique_ptr<studio::CrowdyStudioModRunner>
+CrowdyClient::createCrowdyStudioModRunner() {
+  return std::make_unique<studio::CrowdyStudioModRunner>(
+      std::make_shared<domains::ExecAPI>(gql_, webSocketTransport_),
+      std::make_shared<domains::CrowdyStudioAPI>(gql_),
+      std::make_shared<domains::CrowdyStudioAgentAPI>(gql_, dispatcher_),
+      dispatcher_);
+}
 #endif
+
+std::string CrowdyClient::studioOrigin() const {
+  return studioOriginFor(gql_->origin()).value_or(std::string());
+}
 
 GameplayTokenRefreshResult CrowdyClient::refreshGameplayToken() {
   auto preparation = prepareGameplayRefresh(

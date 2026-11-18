@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.33.0`
+- CrowdyPy `0.34.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -49,6 +49,10 @@ requirement names one exactly, the same way a caret never matches an npm prerele
   `record_player_consents` / `player_legal_acceptance` with an `app_id`, a `method` or no
   attestation. `record_player_consents` with both flags and nothing else still sends the
   v2.35.0 document.
+- 0.34.0 selects `studioProjectId` and `studioRevision` in every exec mod build, mod and CLIENT
+  half read (`mod_build`, `mod_build_status`, `mod_deploy`, `mods`, `my_mods`, `mod_client_deploy`
+  and the rest), so those need ck-api v2.73.0; so do `exec.mod_client_starter` and
+  `crowdy_studio.links()`.
 - 0.25.0 selects `idleTimeoutSeconds` and `effectiveIdleTimeoutSeconds` in `apps.app()` and
   `apps.update()`, so those need ck-api v2.64.0. `ConnState.INACTIVE` comes from replication
   server v0.44.0; an older server never releases a session for idleness.
