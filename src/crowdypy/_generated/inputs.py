@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 60c1f852ee8ee7d6e7ce7d56b0ced065314550eb1b1351d8f32d0e273cbe1312
+schema.gql sha256: 979f69e243b4d60e2f4207a6a5aabfcd728df95359fef8de2bdca9137a3390e9
 """
 
 from __future__ import annotations
@@ -920,6 +920,13 @@ class SaveCrowdyStudioProjectMetadataInput(msgspec.Struct, kw_only=True, omit_de
     idempotency_key: str | None | UnsetType = UNSET
 
 
+class SetAllowancePoolInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'effective_from': 'effectiveFrom'}):
+    'A change to the organization allowance pool.'
+    effective_from: str | None | UnsetType = UNSET
+    factor: int | None | UnsetType = UNSET
+    reason: str
+
+
 class SetAppClientSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'redirect_uris': 'redirectUris', 'client_type': 'clientType', 'launch_url': 'launchUrl'}):
     "Register/update an app's OAuth client settings for the portal handoff (requires manage_apps on the app)."
     app_id: str
@@ -1023,6 +1030,14 @@ class SetCrowdyStudioProviderConsentInput(msgspec.Struct, kw_only=True, omit_def
     'Record or revoke the provider-data consent for one app.'
     app_id: str
     consented: bool
+
+
+class SetFreeTierCardRequirementInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'required_from': 'requiredFrom', 'existing_organization_grace_days': 'existingOrganizationGraceDays'}):
+    'A change to the free-tier card requirement: its start, off, or the grace for organizations created before the start.'
+    required_from: str | None | UnsetType = UNSET
+    off: bool | None | UnsetType = UNSET
+    existing_organization_grace_days: int | None | UnsetType = UNSET
+    reason: str
 
 
 class SetGridOpenPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'grid_id': 'gridId', 'permission_keys': 'permissionKeys'}):
@@ -1452,6 +1467,7 @@ __all__ = [
     'SaveCrowdyStudioProjectFilesInput',
     'SaveCrowdyStudioProjectInput',
     'SaveCrowdyStudioProjectMetadataInput',
+    'SetAllowancePoolInput',
     'SetAppClientSettingsInput',
     'SetAppReservedThroughputInput',
     'SetChannelPolicyInput',
@@ -1462,6 +1478,7 @@ __all__ = [
     'SetCrowdyStudioLibraryFileArchivedInput',
     'SetCrowdyStudioProjectArchivedInput',
     'SetCrowdyStudioProviderConsentInput',
+    'SetFreeTierCardRequirementInput',
     'SetGridOpenPermissionsInput',
     'SetGridPermissionLimitsInput',
     'SetHostedGameEnabledInput',

@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.35.0: a full channel says so.** `group_limit_reached_of(err)` reads Game API v2.77.0's `GROUP_LIMIT_REACHED` (a join, an add or a creation past a channel or team cap) as `CrowdyGroupLimitReached(limit, max)`, and `payment_method_required` no longer counts wallet funds. Vendors CrowdyCPP 0.88.0 and follows CrowdyJS 18.34.0; works with every Game API on dev, test and prod. See [MIGRATION.md](MIGRATION.md).
+
 **v0.34.0: a mod knows the Studio revision it runs.** `client.exec.mod_build` and `mod_client_build` take the Studio project and saved revision a crate is (`ExecStudioSource`), and the build, the mod version and the CLIENT half deployed from it report them; the Studio controller sends them. `client.exec.mod_client_starter` is the platform's CLIENT half starter, which a new project's CLIENT target now starts from, and `client.crowdy_studio.links()` is this tier's Studio origin and wallet page. Vendors CrowdyCPP 0.87.0 and follows CrowdyJS 18.33.0; needs Game API v2.73.0. See [MIGRATION.md](MIGRATION.md).
 
 **v0.33.0: a voxel's time is its chunk's whole-chunk write.** The chunk store dates a copy's voxels by `voxelsUpdatedAt` (Game API v2.70.0, where an `updateChunk` or `world.set_chunk` supersedes older edits), so a chunk-state or LOD write drops no newer change; `CachedChunk.row_at` orders copies. Vendors CrowdyCPP 0.85.0. Needs ck-api v2.70.0. See [MIGRATION.md](MIGRATION.md).
