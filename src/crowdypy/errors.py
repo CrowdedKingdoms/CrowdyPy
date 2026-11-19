@@ -333,8 +333,10 @@ class CrowdyAccountBlocked:
 class CrowdyAppPaused:
     """An ``APP_PAUSED`` refusal: the app's runtime gate is not ``ACTIVE``."""
 
-    #: ``insufficient_funds``, ``spend_cap`` or ``subscription_lapsed`` (an open set), or
-    #: ``None`` when the server did not say.
+    #: ``insufficient_funds``, ``spend_cap``, ``subscription_lapsed`` or ``payment_method_required``
+    #: (an open set), or ``None`` when the server did not say. ``payment_method_required``
+    #: (ck-api v2.76.0): the environment asks for a saved card before the free allowance, and the
+    #: app's organization has no card, no funds and no exemption.
     reason: str | None
 
 
