@@ -29,6 +29,7 @@ from crowdypy.errors import (
     actor_exists_of,
     age_required_of,
     age_requirement_not_met_of,
+    app_limit_reached_of,
     app_paused_of,
     group_limit_reached_of,
     group_member_banned_of,
@@ -217,6 +218,27 @@ def test_account_blocked_and_group_member_banned_are_read_from_an_error_or_an_en
     assert group_limit_reached_of(banned) is None
     assert crowdypy.GROUP_LIMIT_REACHED_CODE == "GROUP_LIMIT_REACHED"
     assert crowdypy.EXEC_CLOSE_ACCESS_ENDED == 4403
+
+
+def test_app_limit_reached_names_the_cap_of_apps() -> None:
+    capped = CrowdyGraphQLError(
+        [
+            {
+                "message": "cap",
+                "extensions": {"code": "APP_LIMIT_REACHED", "limit": "apps", "max": 10},
+            }
+        ]
+    )
+    assert app_limit_reached_of(capped) == crowdypy.CrowdyAppLimitReached("apps", 10)
+    assert app_limit_reached_of(
+        {"message": "m", "extensions": {"code": "APP_LIMIT_REACHED"}}
+    ) == crowdypy.CrowdyAppLimitReached(None, None)
+    assert (
+        app_limit_reached_of({"message": "m", "extensions": {"code": "GROUP_LIMIT_REACHED"}})
+        is None
+    )
+    assert group_limit_reached_of(capped) is None
+    assert crowdypy.APP_LIMIT_REACHED_CODE == "APP_LIMIT_REACHED"
 
 
 # The teen safety refusals (ck-api v2.60.0, CrowdyJS 18.24.0).

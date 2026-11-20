@@ -62,6 +62,7 @@ _LAZY: dict[str, str] = {
     "ASSERTION_REJECTED_CODE": "crowdypy.errors",
     "EMAIL_CONFIRMATION_REQUIRED_CODE": "crowdypy.errors",
     "GROUP_LIMIT_REACHED_CODE": "crowdypy.errors",
+    "APP_LIMIT_REACHED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
@@ -77,6 +78,7 @@ _LAZY: dict[str, str] = {
     "CrowdyAccessRefusal": "crowdypy.errors",
     "CrowdyAccountBlocked": "crowdypy.errors",
     "CrowdyGroupLimitReached": "crowdypy.errors",
+    "CrowdyAppLimitReached": "crowdypy.errors",
     "CrowdyAssertionRejected": "crowdypy.errors",
     "CrowdyActorExists": "crowdypy.errors",
     "CrowdyAppPaused": "crowdypy.errors",
@@ -105,6 +107,7 @@ _LAZY: dict[str, str] = {
     "actor_exists_of": "crowdypy.errors",
     "app_paused_of": "crowdypy.errors",
     "group_limit_reached_of": "crowdypy.errors",
+    "app_limit_reached_of": "crowdypy.errors",
     "group_member_banned_of": "crowdypy.errors",
     "legal_acceptance_required_of": "crowdypy.errors",
     "managed_player_not_allowed_of": "crowdypy.errors",
@@ -483,6 +486,9 @@ if TYPE_CHECKING:
         AGE_REQUIREMENT_NOT_MET_CODE as AGE_REQUIREMENT_NOT_MET_CODE,
     )
     from crowdypy.errors import (
+        APP_LIMIT_REACHED_CODE as APP_LIMIT_REACHED_CODE,
+    )
+    from crowdypy.errors import (
         APP_PAUSED_CODE as APP_PAUSED_CODE,
     )
     from crowdypy.errors import (
@@ -541,6 +547,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         CrowdyActorExists as CrowdyActorExists,
+    )
+    from crowdypy.errors import (
+        CrowdyAppLimitReached as CrowdyAppLimitReached,
     )
     from crowdypy.errors import (
         CrowdyAppPaused as CrowdyAppPaused,
@@ -616,6 +625,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         age_requirement_not_met_of as age_requirement_not_met_of,
+    )
+    from crowdypy.errors import (
+        app_limit_reached_of as app_limit_reached_of,
     )
     from crowdypy.errors import (
         app_paused_of as app_paused_of,
