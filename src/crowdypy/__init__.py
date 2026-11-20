@@ -61,6 +61,7 @@ _LAZY: dict[str, str] = {
     "APP_UNAVAILABLE_CODE": "crowdypy.errors",
     "ASSERTION_REJECTED_CODE": "crowdypy.errors",
     "EMAIL_CONFIRMATION_REQUIRED_CODE": "crowdypy.errors",
+    "GROUP_LIMIT_REACHED_CODE": "crowdypy.errors",
     "GROUP_MEMBER_BANNED_CODE": "crowdypy.errors",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE": "crowdypy.errors",
@@ -75,6 +76,7 @@ _LAZY: dict[str, str] = {
     "WRONG_DATACENTER_CODE": "crowdypy.errors",
     "CrowdyAccessRefusal": "crowdypy.errors",
     "CrowdyAccountBlocked": "crowdypy.errors",
+    "CrowdyGroupLimitReached": "crowdypy.errors",
     "CrowdyAssertionRejected": "crowdypy.errors",
     "CrowdyActorExists": "crowdypy.errors",
     "CrowdyAppPaused": "crowdypy.errors",
@@ -102,6 +104,7 @@ _LAZY: dict[str, str] = {
     "assertion_rejected_of": "crowdypy.errors",
     "actor_exists_of": "crowdypy.errors",
     "app_paused_of": "crowdypy.errors",
+    "group_limit_reached_of": "crowdypy.errors",
     "group_member_banned_of": "crowdypy.errors",
     "legal_acceptance_required_of": "crowdypy.errors",
     "managed_player_not_allowed_of": "crowdypy.errors",
@@ -492,6 +495,9 @@ if TYPE_CHECKING:
         EMAIL_CONFIRMATION_REQUIRED_CODE as EMAIL_CONFIRMATION_REQUIRED_CODE,
     )
     from crowdypy.errors import (
+        GROUP_LIMIT_REACHED_CODE as GROUP_LIMIT_REACHED_CODE,
+    )
+    from crowdypy.errors import (
         GROUP_MEMBER_BANNED_CODE as GROUP_MEMBER_BANNED_CODE,
     )
     from crowdypy.errors import (
@@ -550,6 +556,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         CrowdyGraphQLError as CrowdyGraphQLError,
+    )
+    from crowdypy.errors import (
+        CrowdyGroupLimitReached as CrowdyGroupLimitReached,
     )
     from crowdypy.errors import (
         CrowdyHttpError as CrowdyHttpError,
@@ -613,6 +622,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.errors import (
         assertion_rejected_of as assertion_rejected_of,
+    )
+    from crowdypy.errors import (
+        group_limit_reached_of as group_limit_reached_of,
     )
     from crowdypy.errors import (
         group_member_banned_of as group_member_banned_of,

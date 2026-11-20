@@ -3,6 +3,20 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.35.0
+
+Vendors CrowdyCPP 0.88.0 and syncs CrowdyJS 18.34.0's schema and operations (Game API v2.77.0). Works with every
+Game API on dev, test and prod. Nothing is removed.
+
+- **A channel or team cap now refuses.** Game API v2.77.0 enforces `maxMembers` and `maxGroupsPerUser`: a join, an
+  add (including approving a request) or a creation past either fails with `GROUP_LIMIT_REACHED` (HTTP 409).
+  `group_limit_reached_of(err)` returns `CrowdyGroupLimitReached(limit, max)`, the cap (`maxMembers` or
+  `maxGroupsPerUser`) and its value, or `None` for any other error; `GROUP_LIMIT_REACHED_CODE` is the code.
+- **`payment_method_required`** on `CrowdyAppPaused.reason` means the app's organization has no saved card and no
+  exemption; from Game API v2.77.0 wallet funds do not count. Nothing a game does changes.
+- **Voice and video distance:** `send_audio_packet` and `send_video_packet` already default to 1 chunk; the vendored
+  CrowdyCPP now does the same for its own sends, so the two agree.
+
 ## 0.34.0
 
 Vendors CrowdyCPP 0.87.0 and syncs CrowdyJS 18.33.0's schema and operations. **Needs ck-api

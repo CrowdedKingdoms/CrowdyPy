@@ -266,6 +266,11 @@ The replication system saturates the local network stack, so the binding
   the server's null, no floor; leaving it None dates the copy by `updated_at_ms`) and keeps it as
   `CachedChunk.stored_at`, with the row's `updatedAt` as `row_at`, which `catch_up` compares.
   `stored_row()` in the tests models v2.70.0: `voxelsUpdatedAt` defaults to the row's `updatedAt`.
+- Since 0.35.0 (CrowdyCPP 0.88.0, CrowdyJS 18.34.0, ck-api v2.77.0) `group_limit_reached_of` reads
+  `GROUP_LIMIT_REACHED` into `CrowdyGroupLimitReached(limit, max)` from the error's extensions (a
+  boolean `max` reads as None). The billing roots CrowdyJS also leaves unwrapped (the allowance
+  pool, the smallest top-ups, the card requirement) are browser exclusions in
+  `tools/parity/classifications.toml`.
 - Since 0.34.0 (CrowdyCPP 0.87.0, CrowdyJS 18.33.0, ck-api v2.73.0) the Studio controller sends
   `{"projectId", "revision"}` as the third argument of `mod_build` / `mod_client_build` (the
   test `Mods` fake records it in `studios`), and `create_project` asks the platform's CLIENT half
