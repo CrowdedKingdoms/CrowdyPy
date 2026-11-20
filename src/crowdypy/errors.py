@@ -27,6 +27,7 @@ __all__ = [
     "APP_UNAVAILABLE_CODE",
     "ASSERTION_REJECTED_CODE",
     "EMAIL_CONFIRMATION_REQUIRED_CODE",
+    "GROUP_LIMIT_REACHED_CODE",
     "GROUP_MEMBER_BANNED_CODE",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE",
@@ -48,6 +49,7 @@ __all__ = [
     "CrowdyError",
     "CrowdyFaultBlame",
     "CrowdyGraphQLError",
+    "CrowdyGroupLimitReached",
     "CrowdyHttpError",
     "CrowdyLegalAcceptanceRequired",
     "CrowdyMinecraftVerificationFailed",
@@ -69,6 +71,7 @@ __all__ = [
     "age_requirement_not_met_of",
     "app_paused_of",
     "assertion_rejected_of",
+    "group_limit_reached_of",
     "group_member_banned_of",
     "is_app_paused",
     "legal_acceptance_required_of",
@@ -102,6 +105,9 @@ APP_PAUSED_CODE = "APP_PAUSED"
 ACCOUNT_BLOCKED_CODE = "ACCOUNT_BLOCKED"
 #: The channel or team banned the user (HTTP 403); see :func:`group_member_banned_of`.
 GROUP_MEMBER_BANNED_CODE = "GROUP_MEMBER_BANNED"
+#: A channel or team cap refused a join, an add or a creation (HTTP 409, ck-api v2.77.0); see
+#: :func:`group_limit_reached_of`.
+GROUP_LIMIT_REACHED_CODE = "GROUP_LIMIT_REACHED"
 #: Something an org-managed player cannot do (HTTP 403): it has no wallet, and its mods are
 #: refused where its organization has not switched them on; see
 #: :func:`managed_player_not_allowed_of`.
@@ -330,11 +336,26 @@ class CrowdyAccountBlocked:
 
 
 @dataclass(frozen=True, slots=True)
+class CrowdyGroupLimitReached:
+    """A ``GROUP_LIMIT_REACHED`` refusal: the app's policy for the group type caps it. Retrying
+    does not help; wait for a member to leave, leave a group, or raise the cap."""
+
+    #: ``maxMembers`` (the group is full) or ``maxGroupsPerUser`` (the user is in as many groups
+    #: of the type as the app allows); ``None`` when the server did not say.
+    limit: str | None = None
+    #: The cap; ``None`` when the server did not say.
+    max: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CrowdyAppPaused:
     """An ``APP_PAUSED`` refusal: the app's runtime gate is not ``ACTIVE``."""
 
-    #: ``insufficient_funds``, ``spend_cap`` or ``subscription_lapsed`` (an open set), or
-    #: ``None`` when the server did not say.
+    #: ``insufficient_funds``, ``spend_cap``, ``subscription_lapsed`` or ``payment_method_required``
+    #: (an open set), or ``None`` when the server did not say. ``payment_method_required``
+    #: (ck-api v2.76.0): the environment asks an organization for a saved card before its apps
+    #: run, and the app's organization has none and no exemption (from v2.77.0 wallet funds do
+    #: not count).
     reason: str | None
 
 
@@ -454,6 +475,21 @@ def group_member_banned_of(value: object) -> bool:
     """Whether a channel or team refused the call with ``GROUP_MEMBER_BANNED`` (joining,
     requesting to join, or being added or invited). Only an unban lifts it."""
     return _extensions_with_code(value, GROUP_MEMBER_BANNED_CODE) is not None
+
+
+def group_limit_reached_of(value: object) -> CrowdyGroupLimitReached | None:
+    """A ``GROUP_LIMIT_REACHED`` refusal (HTTP 409, on a join, an add or a creation past the
+    app's ``channelPolicy`` / ``teamPolicy``) from a raised error or a raw error entry, or
+    ``None``."""
+    extensions = _extensions_with_code(value, GROUP_LIMIT_REACHED_CODE)
+    if extensions is None:
+        return None
+    limit = extensions.get("limit")
+    cap = extensions.get("max")
+    return CrowdyGroupLimitReached(
+        limit if isinstance(limit, str) and limit else None,
+        cap if isinstance(cap, int) and not isinstance(cap, bool) else None,
+    )
 
 
 def managed_player_not_allowed_of(value: object) -> bool:
