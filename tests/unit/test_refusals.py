@@ -30,6 +30,7 @@ from crowdypy.errors import (
     age_required_of,
     age_requirement_not_met_of,
     app_paused_of,
+    group_limit_reached_of,
     group_member_banned_of,
     is_app_paused,
     legal_acceptance_required_of,
@@ -201,6 +202,20 @@ def test_account_blocked_and_group_member_banned_are_read_from_an_error_or_an_en
     assert group_member_banned_of({"message": "m", "extensions": {"code": "FORBIDDEN"}}) is False
     assert crowdypy.ACCOUNT_BLOCKED_CODE == "ACCOUNT_BLOCKED"
     assert crowdypy.GROUP_MEMBER_BANNED_CODE == "GROUP_MEMBER_BANNED"
+    full = CrowdyGraphQLError(
+        [
+            {
+                "message": "This group is full.",
+                "extensions": {"code": "GROUP_LIMIT_REACHED", "limit": "maxMembers", "max": 50},
+            }
+        ]
+    )
+    assert group_limit_reached_of(full) == crowdypy.CrowdyGroupLimitReached("maxMembers", 50)
+    assert group_limit_reached_of(
+        {"message": "m", "extensions": {"code": "GROUP_LIMIT_REACHED", "max": True}}
+    ) == crowdypy.CrowdyGroupLimitReached(None, None)
+    assert group_limit_reached_of(banned) is None
+    assert crowdypy.GROUP_LIMIT_REACHED_CODE == "GROUP_LIMIT_REACHED"
     assert crowdypy.EXEC_CLOSE_ACCESS_ENDED == 4403
 
 
