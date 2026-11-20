@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 979f69e243b4d60e2f4207a6a5aabfcd728df95359fef8de2bdca9137a3390e9
+schema.gql sha256: 9050c381c01383036cf68ffb946473852a9936d4e98742f7d55fbd351a5efa65
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrmSyncMode, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, FreeTierLevel, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, ProjectLogicLocation, ProjectStage, ProjectWorldShape, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class AcceptedDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
@@ -959,6 +959,13 @@ class SetCommSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, ren
     video_receive: CommScope | None | UnsetType = UNSET
 
 
+class SetCrmSyncInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'webhook_enabled': 'webhookEnabled'}):
+    "Operator only: the Twenty sync's mode and webhook switch."
+    mode: CrmSyncMode | None | UnsetType = UNSET
+    webhook_enabled: bool | None | UnsetType = UNSET
+    reason: str
+
+
 class SetCrowdyStudioAgentAppPolicyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'kill_switch': 'killSwitch', 'allowed_model_ids': 'allowedModelIds', 'allowed_tool_names': 'allowedToolNames', 'allowed_modes': 'allowedModes', 'allowed_risk_classes': 'allowedRiskClasses', 'turn_limits': 'turnLimits', 'session_limits': 'sessionLimits', 'player_day_limits': 'playerDayLimits', 'app_id': 'appId', 'expected_revision': 'expectedRevision', 'idempotency_key': 'idempotencyKey'}):
     "Patch an app's Agentic Studio policy. Requires manage_compute. Omitted fields stay unchanged; all supplied authority and limits are clamped to platform policy."
     enabled: bool | None | UnsetType = UNSET
@@ -1040,6 +1047,13 @@ class SetFreeTierCardRequirementInput(msgspec.Struct, kw_only=True, omit_default
     reason: str
 
 
+class SetFreeTierLevelsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'effective_from': 'effectiveFrom'}):
+    'Operator only: the first month free tier levels size pools on this tier, or off.'
+    effective_from: str | None | UnsetType = UNSET
+    off: bool | None | UnsetType = UNSET
+    reason: str
+
+
 class SetGridOpenPermissionsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'grid_id': 'gridId', 'permission_keys': 'permissionKeys'}):
     'Set the permission keys a grid grants every player with active access to the app (writes the grid_open_permissions input table): an open build area, a public arena.'
     app_id: str
@@ -1080,6 +1094,16 @@ class SetMemberRolesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rena
     role_ids: list[str]
 
 
+class SetOrgFreeTierAgreementInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'start_month': 'startMonth', 'end_month': 'endMonth'}):
+    'Operator only: records a written agreement for a larger free allowance (whole months, starting next month or later), or revokes one.'
+    org_id: str
+    start_month: str
+    end_month: str | None | UnsetType = UNSET
+    gigabytes: int | None | UnsetType = UNSET
+    revoke: bool | None | UnsetType = UNSET
+    reason: str
+
+
 class SetOrgManagedPlayerSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'max_players': 'maxPlayers', 'mints_per_minute': 'mintsPerMinute', 'default_session_ttl_seconds': 'defaultSessionTtlSeconds', 'max_session_ttl_seconds': 'maxSessionTtlSeconds'}):
     org_id: str
     enabled: bool
@@ -1087,6 +1111,31 @@ class SetOrgManagedPlayerSettingsInput(msgspec.Struct, kw_only=True, omit_defaul
     mints_per_minute: int | None | UnsetType = UNSET
     default_session_ttl_seconds: int | None | UnsetType = UNSET
     max_session_ttl_seconds: int | None | UnsetType = UNSET
+
+
+class SetOrgProjectProfileInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'what_building': 'whatBuilding', 'world_shape': 'worldShape', 'players_per_world_launch': 'playersPerWorldLaunch', 'players_in_view_launch': 'playersInViewLaunch', 'players_per_world_year1': 'playersPerWorldYear1', 'players_in_view_year1': 'playersInViewYear1', 'launch_date': 'launchDate', 'logic_location': 'logicLocation', 'current_networking': 'currentNetworking', 'current_networking_monthly_cost_cents': 'currentNetworkingMonthlyCostCents', 'reference_consent': 'referenceConsent'}):
+    'Answers to the project profile. An omitted field keeps its answer; null clears it. Complete when every answer is in.'
+    org_id: str
+    what_building: str | None | UnsetType = UNSET
+    world_shape: ProjectWorldShape | None | UnsetType = UNSET
+    players_per_world_launch: int | None | UnsetType = UNSET
+    players_in_view_launch: int | None | UnsetType = UNSET
+    players_per_world_year1: int | None | UnsetType = UNSET
+    players_in_view_year1: int | None | UnsetType = UNSET
+    stage: ProjectStage | None | UnsetType = UNSET
+    launch_date: str | None | UnsetType = UNSET
+    engine: str | None | UnsetType = UNSET
+    logic_location: ProjectLogicLocation | None | UnsetType = UNSET
+    current_networking: str | None | UnsetType = UNSET
+    current_networking_monthly_cost_cents: int | None | UnsetType = UNSET
+    reference_consent: bool | None | UnsetType = UNSET
+
+
+class SetPlayerTrialPoolInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'effective_from': 'effectiveFrom'}):
+    'A change to when the player trial is per organization.'
+    effective_from: str | None | UnsetType = UNSET
+    off: bool | None | UnsetType = UNSET
+    reason: str
 
 
 class SetQuotaInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'app_id': 'appId', 'tier_id': 'tierId', 'limit_value': 'limitValue', 'action_on_exceed': 'actionOnExceed', 'idempotency_key': 'idempotencyKey'}):
@@ -1472,6 +1521,7 @@ __all__ = [
     'SetAppReservedThroughputInput',
     'SetChannelPolicyInput',
     'SetCommSettingsInput',
+    'SetCrmSyncInput',
     'SetCrowdyStudioAgentAppPolicyInput',
     'SetCrowdyStudioAgentOperatorAppKillInput',
     'SetCrowdyStudioAgentPlatformPolicyInput',
@@ -1479,13 +1529,17 @@ __all__ = [
     'SetCrowdyStudioProjectArchivedInput',
     'SetCrowdyStudioProviderConsentInput',
     'SetFreeTierCardRequirementInput',
+    'SetFreeTierLevelsInput',
     'SetGridOpenPermissionsInput',
     'SetGridPermissionLimitsInput',
     'SetHostedGameEnabledInput',
     'SetHostedGameListingInput',
     'SetLegalHoldInput',
     'SetMemberRolesInput',
+    'SetOrgFreeTierAgreementInput',
     'SetOrgManagedPlayerSettingsInput',
+    'SetOrgProjectProfileInput',
+    'SetPlayerTrialPoolInput',
     'SetQuotaInput',
     'SetRateCardInput',
     'SetTeamPolicyInput',

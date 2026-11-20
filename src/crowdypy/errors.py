@@ -23,6 +23,7 @@ __all__ = [
     "ACTOR_EXISTS_CODE",
     "AGE_REQUIRED_CODE",
     "AGE_REQUIREMENT_NOT_MET_CODE",
+    "APP_LIMIT_REACHED_CODE",
     "APP_PAUSED_CODE",
     "APP_UNAVAILABLE_CODE",
     "ASSERTION_REJECTED_CODE",
@@ -43,6 +44,7 @@ __all__ = [
     "CrowdyAccessRefusal",
     "CrowdyAccountBlocked",
     "CrowdyActorExists",
+    "CrowdyAppLimitReached",
     "CrowdyAppPaused",
     "CrowdyAppUnavailableError",
     "CrowdyAssertionRejected",
@@ -69,6 +71,7 @@ __all__ = [
     "actor_exists_of",
     "age_required_of",
     "age_requirement_not_met_of",
+    "app_limit_reached_of",
     "app_paused_of",
     "assertion_rejected_of",
     "group_limit_reached_of",
@@ -108,6 +111,9 @@ GROUP_MEMBER_BANNED_CODE = "GROUP_MEMBER_BANNED"
 #: A channel or team cap refused a join, an add or a creation (HTTP 409, ck-api v2.77.0); see
 #: :func:`group_limit_reached_of`.
 GROUP_LIMIT_REACHED_CODE = "GROUP_LIMIT_REACHED"
+#: An organization without a funded wallet or auto-billing has as many apps as it may (HTTP 409,
+#: ck-api v2.80.0), on ``createApp`` or restoring an archived app; see :func:`app_limit_reached_of`.
+APP_LIMIT_REACHED_CODE = "APP_LIMIT_REACHED"
 #: Something an org-managed player cannot do (HTTP 403): it has no wallet, and its mods are
 #: refused where its organization has not switched them on; see
 #: :func:`managed_player_not_allowed_of`.
@@ -348,6 +354,18 @@ class CrowdyGroupLimitReached:
 
 
 @dataclass(frozen=True, slots=True)
+class CrowdyAppLimitReached:
+    """An ``APP_LIMIT_REACHED`` refusal: an organization without a funded wallet or auto-billing
+    may have at most ``max`` apps that are not archived (10). Retrying does not help; fund the
+    wallet, turn on auto-billing, or archive an app."""
+
+    #: ``apps``; ``None`` when the server did not say.
+    limit: str | None = None
+    #: The cap; ``None`` when the server did not say.
+    max: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CrowdyAppPaused:
     """An ``APP_PAUSED`` refusal: the app's runtime gate is not ``ACTIVE``."""
 
@@ -487,6 +505,21 @@ def group_limit_reached_of(value: object) -> CrowdyGroupLimitReached | None:
     limit = extensions.get("limit")
     cap = extensions.get("max")
     return CrowdyGroupLimitReached(
+        limit if isinstance(limit, str) and limit else None,
+        cap if isinstance(cap, int) and not isinstance(cap, bool) else None,
+    )
+
+
+def app_limit_reached_of(value: object) -> CrowdyAppLimitReached | None:
+    """An ``APP_LIMIT_REACHED`` refusal (HTTP 409, on ``createApp`` or restoring an archived app
+    past the cap of an organization without a funded wallet or auto-billing) from a raised error
+    or a raw error entry, or ``None``."""
+    extensions = _extensions_with_code(value, APP_LIMIT_REACHED_CODE)
+    if extensions is None:
+        return None
+    limit = extensions.get("limit")
+    cap = extensions.get("max")
+    return CrowdyAppLimitReached(
         limit if isinstance(limit, str) and limit else None,
         cap if isinstance(cap, int) and not isinstance(cap, bool) else None,
     )
