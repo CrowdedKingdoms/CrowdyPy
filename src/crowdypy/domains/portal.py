@@ -65,7 +65,8 @@ class AppRuntimeGate(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
 
     #: ``ACTIVE``, ``GRACE``, ``DENIED`` or ``SUSPENDED`` (an open set).
     status: str
-    #: ``insufficient_funds``, ``spend_cap`` or ``subscription_lapsed``; ``None`` while active.
+    #: ``insufficient_funds``, ``spend_cap``, ``subscription_lapsed`` or
+    #: ``payment_method_required`` (an open set); ``None`` while active.
     reason: str | None = None
 
 

@@ -64,6 +64,9 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.sendTestEmail" = { kind = "browser-exclusion", reason = "operator-only email deliverability control; not a game-client surface" }
 "mutation.setAppVisibility" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setBillingRate" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
+"mutation.setAllowancePool" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
+"mutation.setFreeTierCardRequirement" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
+"mutation.setOrgCardRequirementExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setEarlyAccessOverride" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setHostedGameEnabled" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.setHostedGameListing" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
@@ -86,6 +89,11 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.billingCharges" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
 "query.billingExemptOrgs" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
 "query.billingRateCard" = { kind = "browser-exclusion", reason = "operator-only billing reads; not a game-client surface" }
+"query.allowancePool" = { kind = "browser-exclusion", reason = "billing policy and an organization's billing standing, read by Studio; not a game-client surface" }
+"query.cardRequirementExemptions" = { kind = "browser-exclusion", reason = "billing policy and an organization's billing standing, read by Studio; not a game-client surface" }
+"query.freeTierCardRequirement" = { kind = "browser-exclusion", reason = "billing policy and an organization's billing standing, read by Studio; not a game-client surface" }
+"query.orgCardRequirement" = { kind = "browser-exclusion", reason = "billing policy and an organization's billing standing, read by Studio; not a game-client surface" }
+"query.walletTopUpMinimums" = { kind = "browser-exclusion", reason = "billing policy and an organization's billing standing, read by Studio; not a game-client surface" }
 "query.billingWriteOffs" = { kind = "browser-exclusion", reason = "org-admin ledger reads (view_billing) for the studio dashboard; not a game-client surface" }
 "query.checkouts" = { kind = "browser-exclusion", reason = "super-admin only (cross-tenant audit); the SDK wraps nothing for platform roles (tooling calls it directly). CrowdyCPP waives it as deprecated offset pagination" }
 "query.checkoutsConnection" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
