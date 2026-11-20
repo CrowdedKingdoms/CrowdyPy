@@ -125,8 +125,9 @@ struct GraphQLErrorDetail {
   /// spend, as decimal micro-USD strings. Empty elsewhere.
   std::string requiredMicrousd;
   std::string spendableMicrousd;
-  /// extensions.limit and extensions.max on GROUP_LIMIT_REACHED: the cap that refused
-  /// ("maxMembers" or "maxGroupsPerUser") and its value. Empty and absent elsewhere.
+  /// extensions.limit and extensions.max on GROUP_LIMIT_REACHED and APP_LIMIT_REACHED: the cap
+  /// that refused ("maxMembers", "maxGroupsPerUser" or "apps") and its value. Empty and absent
+  /// elsewhere.
   std::string limit;
   std::optional<std::int64_t> limitValue;
 };
@@ -150,6 +151,10 @@ inline constexpr std::string_view kGroupMemberBannedCode = "GROUP_MEMBER_BANNED"
 /// extensions.code for a channel or team cap that refused a join, an add or a creation
 /// (HTTP 409, ck-api v2.77.0); see groupLimitReachedOf().
 inline constexpr std::string_view kGroupLimitReachedCode = "GROUP_LIMIT_REACHED";
+/// extensions.code for an organization without a funded wallet or auto-billing that has as many
+/// apps as it may (HTTP 409, ck-api v2.80.0), on createApp or restoring an archived app; see
+/// appLimitReachedOf().
+inline constexpr std::string_view kAppLimitReachedCode = "APP_LIMIT_REACHED";
 /// extensions.code for something an org-managed player cannot do (HTTP 403): it has no
 /// wallet, and its mods are refused where its organization has not switched them on for the
 /// app; see managedPlayerNotAllowedOf().
@@ -297,6 +302,21 @@ inline std::optional<GroupLimitReached> groupLimitReachedOf(
   const GraphQLErrorDetail* e = errorWithCode(errors, kGroupLimitReachedCode);
   if (!e) return std::nullopt;
   return GroupLimitReached{e->limit, e->limitValue};
+}
+
+/// An APP_LIMIT_REACHED refusal: an organization without a funded wallet or auto-billing may
+/// have at most `cap` apps that are not archived (10), and creating or restoring one more was
+/// refused. `limit` is "apps", empty when the server did not say. Not fixed by retrying: fund
+/// the wallet, turn on auto-billing, or archive an app.
+struct AppLimitReached {
+  std::string limit;
+  std::optional<std::int64_t> cap;
+};
+inline std::optional<AppLimitReached> appLimitReachedOf(
+    const std::vector<GraphQLErrorDetail>& errors) {
+  const GraphQLErrorDetail* e = errorWithCode(errors, kAppLimitReachedCode);
+  if (!e) return std::nullopt;
+  return AppLimitReached{e->limit, e->limitValue};
 }
 
 /// True when an org-managed player was refused with MANAGED_PLAYER_NOT_ALLOWED: a wallet, or a

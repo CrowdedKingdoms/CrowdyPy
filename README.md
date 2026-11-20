@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.36.0: an organization's cap of apps.** `app_limit_reached_of(err)` reads Game API v2.80.0's `APP_LIMIT_REACHED` (an organization without a funded wallet or auto-billing past 10 apps) as `CrowdyAppLimitReached(limit, max)`, and the exec status reports the compute ceiling an unfunded organization's apps share. Vendors CrowdyCPP 0.89.0; schema at CrowdyJS 18.35.0.
+
 **v0.35.0: a full channel says so.** `group_limit_reached_of(err)` reads Game API v2.77.0's `GROUP_LIMIT_REACHED` (a join, an add or a creation past a channel or team cap) as `CrowdyGroupLimitReached(limit, max)`, and `payment_method_required` no longer counts wallet funds. Vendors CrowdyCPP 0.88.0 and follows CrowdyJS 18.34.0; works with every Game API on dev, test and prod. See [MIGRATION.md](MIGRATION.md).
 
 **v0.34.0: a mod knows the Studio revision it runs.** `client.exec.mod_build` and `mod_client_build` take the Studio project and saved revision a crate is (`ExecStudioSource`), and the build, the mod version and the CLIENT half deployed from it report them; the Studio controller sends them. `client.exec.mod_client_starter` is the platform's CLIENT half starter, which a new project's CLIENT target now starts from, and `client.crowdy_studio.links()` is this tier's Studio origin and wallet page. Vendors CrowdyCPP 0.87.0 and follows CrowdyJS 18.33.0; needs Game API v2.73.0. See [MIGRATION.md](MIGRATION.md).
