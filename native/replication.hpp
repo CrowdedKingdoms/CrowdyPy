@@ -394,6 +394,7 @@ struct ConnectionOptions {
   bool verifyNotifications = true;
   bool advertiseCapabilities = true;
   std::int64_t advertiseIntervalMs = 15 * 1000;
+  bool ownMediaEcho = false;
   std::int64_t watchdogSilenceMs = 0;
   std::int64_t idleReleaseGuardMs = 60 * 1000;
   std::int64_t legacyReconnectWindowMs = 30 * 1000;
@@ -431,6 +432,7 @@ class PyConnection {
     config.verifyNotifications = options.verifyNotifications;
     config.advertiseCapabilities = options.advertiseCapabilities;
     config.advertiseIntervalMs = options.advertiseIntervalMs;
+    config.ownMediaEcho = options.ownMediaEcho;
     config.watchdogSilenceMs = options.watchdogSilenceMs;
     config.idleReleaseGuardMs = options.idleReleaseGuardMs;
     config.legacyReconnectWindowMs = options.legacyReconnectWindowMs;
@@ -687,6 +689,11 @@ class PyConnection {
     if (failure != Errc::Ok)
       raise(failure, "batch stopped after " + std::to_string(accepted) + " send(s)");
     return accepted;
+  }
+
+  void setOwnMediaEcho(bool on) {
+    nb::gil_scoped_release release;
+    connection_->setOwnMediaEcho(on);
   }
 
   void flushSends() {
