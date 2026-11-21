@@ -3,6 +3,17 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.36.0
+
+Vendors CrowdyCPP 0.89.0 and syncs CrowdyJS 18.35.0's schema and operations (Game API v2.80.0). Nothing is removed.
+
+- **An organization without a funded wallet or auto-billing may have 10 apps.** `createApp`, or restoring an archived
+  app, past 10 apps that are not archived fails with `APP_LIMIT_REACHED` (HTTP 409). `app_limit_reached_of(err)`
+  returns `CrowdyAppLimitReached(limit, max)` (`apps` and the cap), or `None` for any other error;
+  `APP_LIMIT_REACHED_CODE` is the code. New apps are created `UNLISTED`.
+- **The exec status reports the organization's shared ceiling** (`orgMaxInstances`, `orgMaxReservedMb`,
+  `orgInstances`, `orgReservedMb`; null without one): the status query needs Game API v2.80.0.
+
 ## 0.35.0
 
 Vendors CrowdyCPP 0.88.0 and syncs CrowdyJS 18.34.0's schema and operations (Game API v2.77.0). Works with every

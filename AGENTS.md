@@ -266,6 +266,9 @@ The replication system saturates the local network stack, so the binding
   the server's null, no floor; leaving it None dates the copy by `updated_at_ms`) and keeps it as
   `CachedChunk.stored_at`, with the row's `updatedAt` as `row_at`, which `catch_up` compares.
   `stored_row()` in the tests models v2.70.0: `voxelsUpdatedAt` defaults to the row's `updatedAt`.
+- Since 0.36.0 (CrowdyCPP 0.89.0, CrowdyJS 18.35.0, ck-api v2.80.0) `app_limit_reached_of` reads
+  `APP_LIMIT_REACHED` into `CrowdyAppLimitReached(limit, max)` the same way, and the roots of free data
+  tiers, the CRM sync, the app cap and the player trial are browser exclusions.
 - Since 0.35.0 (CrowdyCPP 0.88.0, CrowdyJS 18.34.0, ck-api v2.77.0) `group_limit_reached_of` reads
   `GROUP_LIMIT_REACHED` into `CrowdyGroupLimitReached(limit, max)` from the error's extensions (a
   boolean `max` reads as None). The billing roots CrowdyJS also leaves unwrapped (the allowance
