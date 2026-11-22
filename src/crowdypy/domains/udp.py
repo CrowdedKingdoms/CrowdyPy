@@ -27,9 +27,11 @@ from crowdypy.domains.portal import AppTokenResponse, CurrentServer
 from crowdypy.errors import CrowdyError, CrowdyRealtimeError, CrowdyReplicationError
 from crowdypy.replication import (
     HANDLER_NAMES,
+    KEEP_SPEAKERS,
     Assignment,
     AsyncReplicationConnection,
     ConnState,
+    KeepSpeakers,
     Notification,
     TokenMaterial,
     _SessionChanged,
@@ -109,6 +111,9 @@ class UdpAPI:
         self._confirmed: tuple[int, int] | None = None
         #: The last :meth:`set_own_media_echo`; a connection made later starts with it.
         self._own_media_echo = False
+        #: The speaker lists :meth:`set_speakers` last set (None: everyone in range); a
+        #: connection made later starts with them.
+        self._speakers: dict[str, list[str] | None] = {"voice": None, "video": None}
 
     @property
     def connection(self) -> AsyncReplicationConnection | None:
@@ -148,6 +153,9 @@ class UdpAPI:
                 subscriptions=self._subscriptions,
                 **{**options, "own_media_echo": self._own_media_echo},
             )
+            listed = {kind: names for kind, names in self._speakers.items() if names is not None}
+            if listed:
+                self._connection.set_speakers(**listed)
         else:
             self._connection.set_token(token_material(token))
         self._generation += 1
@@ -190,6 +198,25 @@ class UdpAPI:
         self._own_media_echo = on
         if self._connection is not None:
             self._connection.set_own_media_echo(on)
+
+    def set_speakers(
+        self,
+        *,
+        voice: Sequence[str] | KeepSpeakers | None = KEEP_SPEAKERS,
+        video: Sequence[str] | KeepSpeakers | None = KEEP_SPEAKERS,
+    ) -> None:
+        """The speakers whose spatial voice and webcam video this player receives (replication
+        server v0.49.0). Per kind: a list of actor uuids receives only those (none when empty),
+        ``None`` everyone in range again, and a kind left out stays as it is. Streams a list
+        leaves out are neither sent nor billed. A list names at most the app's
+        ``gameClientBootstrap.maxVoiceSpeakers`` / ``maxVideoSpeakers`` (32 at most); the server
+        refuses a longer one INVALID_REQUEST and keeps the list it had. A connection made later
+        starts with the lists."""
+        for kind, names in (("voice", voice), ("video", video)):
+            if not isinstance(names, KeepSpeakers):
+                self._speakers[kind] = None if names is None else [str(n) for n in names]
+        if self._connection is not None:
+            self._connection.set_speakers(voice=voice, video=video)
 
     async def wait_for_in_flight_actor_updates(self) -> None:
         """Native sends complete when they return; this only flushes the pending bundle."""

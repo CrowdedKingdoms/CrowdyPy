@@ -562,6 +562,68 @@ void Connection::setOwnMediaEcho(bool on) {
   if (config_.advertiseCapabilities && state() == ConnState::Connected) (void)sendCapabilities();
 }
 
+Result<std::uint8_t> Connection::sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video) {
+  // [voiceMode][voiceCount][videoMode][videoCount][names x 32B]
+  std::vector<std::uint8_t> payload(4 + (voice.names.size() + video.names.size()) *
+                                            sizeof(core::ActorUuid));
+  payload[0] = static_cast<std::uint8_t>(voice.mode);
+  payload[1] = static_cast<std::uint8_t>(voice.names.size());
+  payload[2] = static_cast<std::uint8_t>(video.mode);
+  payload[3] = static_cast<std::uint8_t>(video.names.size());
+  std::size_t off = 4;
+  for (const auto* list : {&voice.names, &video.names}) {
+    for (const core::ActorUuid& name : *list) {
+      std::memcpy(payload.data() + off, name.data(), name.size());
+      off += name.size();
+    }
+  }
+  SpatialSend p;
+  p.chunk = wire::ChunkCoord{};
+  p.distance = 0;
+  p.decay = wire::DecayRate::None;
+  p.payload = Bytes(payload.data(), payload.size());
+  return sendLongSpatial(MessageType::ClientMediaSpeakers, p);
+}
+
+Status Connection::setSpeakers(SpeakerList voice, SpeakerList video) {
+  if (voice.names.size() > wire::kMaxSpeakers || video.names.size() > wire::kMaxSpeakers)
+    return Errc::InvalidArgument;
+  {
+    std::lock_guard lock(speakersMutex_);
+    if (voice.mode != wire::SpeakerMode::Keep)
+      voiceSpeakers_ = voice.mode == wire::SpeakerMode::Only
+                           ? std::optional<std::vector<core::ActorUuid>>(voice.names)
+                           : std::nullopt;
+    if (video.mode != wire::SpeakerMode::Keep)
+      videoSpeakers_ = video.mode == wire::SpeakerMode::Only
+                           ? std::optional<std::vector<core::ActorUuid>>(video.names)
+                           : std::nullopt;
+  }
+  if (state() != ConnState::Connected) return Errc::Ok;
+  // One kind a message: 32 names of each would not fit one datagram.
+  if (voice.mode != wire::SpeakerMode::Keep) {
+    const auto sent = sendSpeakerLists(voice, SpeakerList::keep());
+    if (!sent.ok()) return sent.error();
+  }
+  if (video.mode != wire::SpeakerMode::Keep) {
+    const auto sent = sendSpeakerLists(SpeakerList::keep(), video);
+    if (!sent.ok()) return sent.error();
+  }
+  return Errc::Ok;
+}
+
+void Connection::resendSpeakerLists() {
+  std::optional<std::vector<core::ActorUuid>> voice;
+  std::optional<std::vector<core::ActorUuid>> video;
+  {
+    std::lock_guard lock(speakersMutex_);
+    voice = voiceSpeakers_;
+    video = videoSpeakers_;
+  }
+  if (voice) (void)sendSpeakerLists(SpeakerList::only(std::move(*voice)), SpeakerList::keep());
+  if (video) (void)sendSpeakerLists(SpeakerList::keep(), SpeakerList::only(std::move(*video)));
+}
+
 Result<std::uint8_t> Connection::sendHeartbeat(const wire::ChunkCoord& chunk,
                                                const core::ActorUuid& uuid) {
   SpatialSend p;
@@ -731,7 +793,8 @@ void Connection::handleDatagram(Bytes datagram) {
         return;
       }
       e.kind = Event::Kind::Channel;
-    } else if (type == static_cast<std::uint8_t>(MessageType::ClientCapabilities)) {
+    } else if (type == static_cast<std::uint8_t>(MessageType::ClientCapabilities) ||
+               type == static_cast<std::uint8_t>(MessageType::ClientMediaSpeakers)) {
       // Client-originated. Sharing the long-spatial layout must not enqueue a
       // server echo as a spatial notification; a client never expects one back.
       return;
@@ -832,6 +895,8 @@ void Connection::housekeeping() {
       logger_.log(core::LogLevel::Warn,
                   std::string("CLIENT_CAPABILITIES send failed: ") + errcName(sent.error()));
     }
+    // The speaker lists live with the session on the server, as the capabilities do.
+    resendSpeakerLists();
   }
 
   // Proactive token refresh.

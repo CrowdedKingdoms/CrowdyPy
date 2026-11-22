@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.38.0
+
+Vendors CrowdyCPP 0.91.0 and syncs CrowdyJS 18.38.0's schema and operations. Nothing is removed.
+
+- **Choose whose voice and video each player receives** (replication server v0.49.0). By default a player receives
+  everyone in range, and each stream delivered is billed. `client.udp.set_speakers(voice=[...], video=[...])` names
+  whose it receives instead: a list of actor uuids receives only those (none when empty), `None` everyone in range
+  again, and a kind you leave out stays as it is. Streams a list leaves out are neither sent nor billed. A list names at
+  most the app's `gameClientBootstrap.maxVoiceSpeakers` / `maxVideoSpeakers` (an org admin sets them with `updateApp`;
+  32 at most); the server refuses a longer one `INVALID_REQUEST` and keeps the list it had. The same method is on a
+  `ReplicationConnection`; the connection sends the lists again with each capabilities advertisement.
+
 ## 0.37.0
 
 Vendors CrowdyCPP 0.90.0 and syncs CrowdyJS 18.37.0's schema and operations. Nothing is removed.
