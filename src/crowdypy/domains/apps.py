@@ -28,15 +28,17 @@ __all__ = ["AppRoute", "AppsAPI"]
 
 
 class AppRoute(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
-    """Which game-api endpoint should serve an app (:meth:`AppsAPI.route_for`)."""
+    """Which Application API endpoint should serve an app (:meth:`AppsAPI.route_for`)."""
 
     #: The app id (decimal string).
     app_id: str
-    #: The app's runtime data lives in its own game-api database, not the shared one.
+    #: The app's runtime data lives in its own Application API database, not the shared one.
     split_mode: bool = False
-    #: Where the app runs (not deployed, the shared game-api, or a dedicated environment).
+    #: Where the app runs (not deployed, the shared Application API, or a dedicated environment).
     deployment_target: str | None = None
-    #: The game-api URL to route gameplay to; ``None`` means keep the client's own endpoint.
+    #: The Application API URL to route gameplay to; ``None`` means keep the client's own endpoint.
+    application_api_url: str | None = None
+    #: Deprecated: use ``application_api_url`` (the Game API is now the Application API); removed on January 1, 2027.
     game_api_url: str | None = None
 
 
@@ -48,12 +50,14 @@ def _route_from_app_row(row: object) -> AppRoute | None:
         return None
     split_mode = row.get("splitMode")
     deployment_target = row.get("deploymentTarget")
-    game_api_url = row.get("gameApiUrl")
+    selected = row.get("applicationApiUrl") or row.get("gameApiUrl")
+    url = selected if isinstance(selected, str) and selected else None
     return AppRoute(
         app_id=app_id,
         split_mode=split_mode if isinstance(split_mode, bool) else False,
         deployment_target=deployment_target if isinstance(deployment_target, str) else None,
-        game_api_url=game_api_url if isinstance(game_api_url, str) and game_api_url else None,
+        application_api_url=url,
+        game_api_url=url,
     )
 
 
