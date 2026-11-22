@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 1c52bf51fe64b8b4ff0501dda7f44f988d55e1fa80243cd959b974ebdb177a29
+schema.gql sha256: 5f699bf31a57c272a07e4d7a07ed1aba6d5f00d163cf685a86550ffc2d5ad96b
 """
 
 from __future__ import annotations
@@ -1268,7 +1268,7 @@ class UpdateActorStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     public_state: str | None | UnsetType = UNSET
 
 
-class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'replay_logging_records_voice': 'replayLoggingRecordsVoice', 'replay_logging_records_video': 'replayLoggingRecordsVideo', 'claim_owner_keys': 'claimOwnerKeys', 'min_player_age': 'minPlayerAge', 'idle_timeout_seconds': 'idleTimeoutSeconds'}):
+class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'wilderness_writes_open': 'wildernessWritesOpen', 'replay_logging_enabled': 'replayLoggingEnabled', 'replay_logging_records_media': 'replayLoggingRecordsMedia', 'replay_logging_records_voice': 'replayLoggingRecordsVoice', 'replay_logging_records_video': 'replayLoggingRecordsVideo', 'claim_owner_keys': 'claimOwnerKeys', 'min_player_age': 'minPlayerAge', 'idle_timeout_seconds': 'idleTimeoutSeconds', 'max_voice_speakers': 'maxVoiceSpeakers', 'max_video_speakers': 'maxVideoSpeakers'}):
     'Input payload for updating an app. All fields are optional; only fields that are provided are changed.'
     name: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
@@ -1283,6 +1283,8 @@ class UpdateAppInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'
     claim_owner_keys: list[str] | None | UnsetType = UNSET
     min_player_age: int | None | UnsetType = UNSET
     idle_timeout_seconds: int | None | UnsetType = UNSET
+    max_voice_speakers: int | None | UnsetType = UNSET
+    max_video_speakers: int | None | UnsetType = UNSET
 
 
 class UpdateAvatarAppStateInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'avatar_id': 'avatarId'}):

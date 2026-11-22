@@ -486,6 +486,25 @@ def _payload_rows(payloads: Any) -> tuple[Any, Any]:
     return payloads, None
 
 
+class KeepSpeakers:
+    """``set_speakers``' default for a kind: leave that kind's speaker list as it is."""
+
+    def __repr__(self) -> str:
+        return "KEEP_SPEAKERS"
+
+
+KEEP_SPEAKERS: Final = KeepSpeakers()
+
+
+def _speaker_change(names: Sequence[str] | KeepSpeakers | None) -> tuple[int, list[str]]:
+    """The wire mode (0 keep, 1 only, 2 everyone) and names of one kind's change."""
+    if isinstance(names, KeepSpeakers):
+        return 0, []
+    if names is None:
+        return 2, []
+    return 1, [str(name) for name in names]
+
+
 class _ConnectionCore:
     """Sends, polling and handler dispatch, shared by the async and blocking connections."""
 
@@ -818,6 +837,23 @@ class _ConnectionCore:
         """Start or stop asking for this session's own spatial voice and video (the
         ``own_media_echo`` option); a change is advertised at once when connected."""
         self._native.set_own_media_echo(on)
+
+    def set_speakers(
+        self,
+        *,
+        voice: Sequence[str] | KeepSpeakers | None = KEEP_SPEAKERS,
+        video: Sequence[str] | KeepSpeakers | None = KEEP_SPEAKERS,
+    ) -> None:
+        """The speakers whose spatial voice and video this session receives (replication
+        server v0.49.0). Per kind: a list of 32-character actor uuids receives only those (none
+        when empty), ``None`` everyone in range again, and a kind left out stays as it is. Sent
+        at once when connected and again with each capabilities advertisement."""
+        voice_mode, voice_names = _speaker_change(voice)
+        video_mode, video_names = _speaker_change(video)
+        try:
+            self._native.set_speakers(voice_mode, voice_names, video_mode, video_names)
+        except ValueError as exc:
+            raise _replication_error(exc) from None
 
     def _spatial(
         self, kind: int, chunk: Sequence[int], uuid: Any, payload: Any, distance: int, decay: int
