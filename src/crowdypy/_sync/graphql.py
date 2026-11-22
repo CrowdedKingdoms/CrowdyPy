@@ -156,7 +156,7 @@ class GraphQLClient:
             self._logger.info(
                 "moved to %s at %s and retrying",
                 move.app_datacenter or "the app's datacenter",
-                move.game_api_url,
+                move.application_api_url,
             )
             return self._attempt(document, variables, operation_name)
 

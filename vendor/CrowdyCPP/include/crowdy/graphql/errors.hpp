@@ -67,8 +67,10 @@ struct GraphQLErrorDetail {
   std::string appId;
   std::string appDatacenter;  ///< where the app IS served
   std::string servedBy;       ///< the datacenter that refused
-  std::string gameApiUrl;     ///< move target; only on WRONG_DATACENTER
-  std::string gameApiWsUrl;
+  std::string applicationApiUrl;    ///< move target; only on WRONG_DATACENTER
+  std::string applicationApiWsUrl;
+  std::string gameApiUrl;     ///< Deprecated: use applicationApiUrl (the Game API is now the Application API); removed on January 1, 2027.
+  std::string gameApiWsUrl;   ///< Deprecated: use applicationApiWsUrl (the Game API is now the Application API); removed on January 1, 2027.
   /// extensions.retryable. Defaults TRUE to match the server contract, where
   /// only an explicit `false` means "do not bother trying again".
   bool retryable = true;

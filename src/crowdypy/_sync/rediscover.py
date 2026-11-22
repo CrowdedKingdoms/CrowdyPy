@@ -32,7 +32,7 @@ __all__ = [
 
 BOOTSTRAP_QUERY = (
     "query CrowdyPyRediscover($appId: BigInt!) {\n"
-    "  gameClientBootstrap(appId: $appId) { gameApiUrl gameApiWsUrl discoveryUrl }\n"
+    "  gameClientBootstrap(appId: $appId) { applicationApiUrl applicationApiWsUrl discoveryUrl }\n"
     "}"
 )
 
@@ -72,7 +72,10 @@ def create_mint_rediscover(
         except Exception as exc:  # re-discovery must never raise into a reconnect path
             log.warning("Re-discovery via mint_app_token failed: %s", exc)
             return None
-        return Endpoint(http_url=minted.game_api_url, ws_url=minted.game_api_ws_url)
+        return Endpoint(
+            http_url=minted.application_api_url or minted.game_api_url,
+            ws_url=minted.application_api_ws_url or minted.game_api_ws_url,
+        )
 
     return rediscover
 
@@ -124,9 +127,11 @@ def create_bootstrap_rediscover(
         except Exception as exc:  # re-discovery must never raise into a reconnect path
             log.warning("Re-discovery via discovery_url failed: %s", exc)
             return None
-        if not found.get("gameApiUrl") and not found.get("gameApiWsUrl"):
+        if not found.get("applicationApiUrl") and not found.get("applicationApiWsUrl"):
             log.warning("Re-discovery returned no endpoint.")
             return None
-        return Endpoint(http_url=found.get("gameApiUrl"), ws_url=found.get("gameApiWsUrl"))
+        return Endpoint(
+            http_url=found.get("applicationApiUrl"), ws_url=found.get("applicationApiWsUrl")
+        )
 
     return rediscover
