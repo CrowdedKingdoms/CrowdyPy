@@ -302,6 +302,8 @@ void register_replication(nb::module_& m) {
            nb::arg("stride"), nb::arg("distance"), nb::arg("decay"), nb::arg("flush"))
       .def("flush_sends", &PyConnection::flushSends)
       .def("set_own_media_echo", &PyConnection::setOwnMediaEcho, nb::arg("on"))
+      .def("set_speakers", &PyConnection::setSpeakers, nb::arg("voice_mode"), nb::arg("voice"),
+           nb::arg("video_mode"), nb::arg("video"))
       .def("poll", &PyConnection::poll, nb::arg("max_events") = SIZE_MAX)
       .def("pump", &PyConnection::pump, nb::arg("timeout_ms") = 0)
       .def("stats", &PyConnection::stats)
