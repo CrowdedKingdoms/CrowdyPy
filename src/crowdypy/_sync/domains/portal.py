@@ -147,7 +147,8 @@ def is_email_confirmation_required_error(error: object) -> bool:
 
 
 _APP_TOKEN_FIELDS = (
-    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl "
+    "token gameTokenId appId expiresAt applicationApiUrl applicationApiWsUrl "
+    "gameApiUrl: applicationApiUrl gameApiWsUrl: applicationApiWsUrl discoveryUrl launchUrl "
     "runtimeGate { status reason }"
 )
 
