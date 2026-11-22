@@ -173,6 +173,7 @@ APP: dict[str, Any] = {
     "slug": "quest",
     "splitMode": True,
     "deploymentTarget": "DEDICATED",
+    "applicationApiUrl": "game-api-of-42",
     "gameApiUrl": "game-api-of-42",
 }
 PAGE: dict[str, Any] = {"items": [], "pageInfo": {"totalCount": 0, "limit": 50, "offset": 0}}
@@ -558,6 +559,7 @@ CASES: list[Case] = [
             app_id="42",
             split_mode=True,
             deployment_target="DEDICATED",
+            application_api_url="game-api-of-42",
             game_api_url="game-api-of-42",
         ),
     ),
@@ -962,15 +964,17 @@ CASES: list[Case] = [
             {
                 "appId": "42",
                 "datacenterCode": "or",
-                "gameApiUrl": "game-api-or",
-                "gameApiWsUrl": "game-ws-or",
+                "applicationApiUrl": "game-api-or",
+                "applicationApiWsUrl": "game-ws-or",
             },
-            {"appId": "43", "datacenterCode": None, "gameApiUrl": None},
+            {"appId": "43", "datacenterCode": None, "applicationApiUrl": None},
         ],
         returns=[
             AppEndpoint(
                 app_id="42",
                 datacenter_code="or",
+                application_api_url="game-api-or",
+                application_api_ws_url="game-ws-or",
                 game_api_url="game-api-or",
                 game_api_ws_url="game-ws-or",
             ),
@@ -983,8 +987,13 @@ CASES: list[Case] = [
         (42,),
         "AppDiscovery",
         {"appIds": ["42"]},
-        [{"appId": "42", "datacenterCode": "va", "gameApiUrl": "game-api-va"}],
-        returns=AppEndpoint(app_id="42", datacenter_code="va", game_api_url="game-api-va"),
+        [{"appId": "42", "datacenterCode": "va", "applicationApiUrl": "game-api-va"}],
+        returns=AppEndpoint(
+            app_id="42",
+            datacenter_code="va",
+            application_api_url="game-api-va",
+            game_api_url="game-api-va",
+        ),
     ),
     # -- CrowdyCPP's ------------------------------------------------------------------
     Case(AppsAPI, "compute_budget", (42,), "AppComputeBudget", {"appId": "42"}, COMPUTE),
@@ -1096,7 +1105,7 @@ async def test_route_for_keeps_a_shared_app_on_the_shared_endpoint(
 
 @pytest.mark.parametrize(
     "reply",
-    [[], [{"appId": "42", "gameApiUrl": None}], [{"appId": "42", "gameApiUrl": ""}]],
+    [[], [{"appId": "42", "applicationApiUrl": None}], [{"appId": "42", "applicationApiUrl": ""}]],
     ids=["no entry", "unplaced", "empty url"],
 )
 async def test_discovery_app_is_none_without_a_placement(

@@ -77,7 +77,11 @@ class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True
     game_token_id: str
     app_id: str
     expires_at: str
+    application_api_url: str | None = None
+    application_api_ws_url: str | None = None
+    #: Deprecated: use ``application_api_url`` (the Game API is now the Application API); removed on January 1, 2027.
     game_api_url: str | None = None
+    #: Deprecated: use ``application_api_ws_url`` (the Game API is now the Application API); removed on January 1, 2027.
     game_api_ws_url: str | None = None
     discovery_url: str | None = None
     launch_url: str | None = None
@@ -91,7 +95,8 @@ class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True
     def __repr__(self) -> str:
         return (
             f"AppTokenResponse(app_id={self.app_id!r}, game_token_id={self.game_token_id!r}, "
-            f"expires_at={self.expires_at!r}, game_api_url={self.game_api_url!r}, token=<redacted>)"
+            f"expires_at={self.expires_at!r}, application_api_url={self.application_api_url!r}, "
+            "token=<redacted>)"
         )
 
 
@@ -238,7 +243,8 @@ def is_email_confirmation_required_error(error: object) -> bool:
 
 
 _APP_TOKEN_FIELDS = (
-    "token gameTokenId appId expiresAt gameApiUrl gameApiWsUrl discoveryUrl launchUrl "
+    "token gameTokenId appId expiresAt applicationApiUrl applicationApiWsUrl "
+    "gameApiUrl: applicationApiUrl gameApiWsUrl: applicationApiWsUrl discoveryUrl launchUrl "
     "runtimeGate { status reason }"
 )
 

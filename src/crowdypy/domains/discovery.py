@@ -34,8 +34,12 @@ class AppEndpoint(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     #: The datacenter code (e.g. ``or``, ``va``); ``None`` when the app has no placement.
     datacenter_code: str | None = None
     #: The HTTPS GraphQL origin of the app's own datacenter; ``None`` when unplaced.
+    application_api_url: str | None = None
+    #: The WebSocket form of ``application_api_url``.
+    application_api_ws_url: str | None = None
+    #: Deprecated: use ``application_api_url`` (the Game API is now the Application API); removed on January 1, 2027.
     game_api_url: str | None = None
-    #: The WebSocket form of ``game_api_url``.
+    #: Deprecated: use ``application_api_ws_url`` (the Game API is now the Application API); removed on January 1, 2027.
     game_api_ws_url: str | None = None
 
 
@@ -57,8 +61,10 @@ class DiscoveryDomain(Domain):
             AppEndpoint(
                 app_id=str(entry["appId"]),
                 datacenter_code=entry.get("datacenterCode"),
-                game_api_url=entry.get("gameApiUrl"),
-                game_api_ws_url=entry.get("gameApiWsUrl"),
+                application_api_url=entry.get("applicationApiUrl"),
+                application_api_ws_url=entry.get("applicationApiWsUrl"),
+                game_api_url=entry.get("applicationApiUrl"),
+                game_api_ws_url=entry.get("applicationApiWsUrl"),
             )
             for entry in entries
         ]
@@ -69,6 +75,6 @@ class DiscoveryDomain(Domain):
         Prefer :meth:`apps` for more than one: one round trip rather than one per app.
         """
         entries = await self.apps([app_id])
-        if not entries or not entries[0].game_api_url:
+        if not entries or not entries[0].application_api_url:
             return None
         return entries[0]

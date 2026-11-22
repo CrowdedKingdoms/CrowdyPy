@@ -48,8 +48,10 @@ class DiscoveryDomain(Domain):
             AppEndpoint(
                 app_id=str(entry["appId"]),
                 datacenter_code=entry.get("datacenterCode"),
-                game_api_url=entry.get("gameApiUrl"),
-                game_api_ws_url=entry.get("gameApiWsUrl"),
+                application_api_url=entry.get("applicationApiUrl"),
+                application_api_ws_url=entry.get("applicationApiWsUrl"),
+                game_api_url=entry.get("applicationApiUrl"),
+                game_api_ws_url=entry.get("applicationApiWsUrl"),
             )
             for entry in entries
         ]
@@ -60,6 +62,6 @@ class DiscoveryDomain(Domain):
         Prefer :meth:`apps` for more than one: one round trip rather than one per app.
         """
         entries = self.apps([app_id])
-        if not entries or not entries[0].game_api_url:
+        if not entries or not entries[0].application_api_url:
             return None
         return entries[0]
