@@ -39,12 +39,14 @@ def _route_from_app_row(row: object) -> AppRoute | None:
         return None
     split_mode = row.get("splitMode")
     deployment_target = row.get("deploymentTarget")
-    game_api_url = row.get("gameApiUrl")
+    selected = row.get("applicationApiUrl") or row.get("gameApiUrl")
+    url = selected if isinstance(selected, str) and selected else None
     return AppRoute(
         app_id=app_id,
         split_mode=split_mode if isinstance(split_mode, bool) else False,
         deployment_target=deployment_target if isinstance(deployment_target, str) else None,
-        game_api_url=game_api_url if isinstance(game_api_url, str) and game_api_url else None,
+        application_api_url=url,
+        game_api_url=url,
     )
 
 

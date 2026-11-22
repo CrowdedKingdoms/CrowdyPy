@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.39.0: the Game API is now the Application API.** Results carry `application_api_url` / `application_api_ws_url` beside the deprecated `game_api_url` / `game_api_ws_url`, which go on January 1, 2027; needs Application API v2.85.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.38.0: choose whose voice and video each player receives.** From replication server v0.49.0, `client.udp.set_speakers(voice=[...], video=[...])` names the actors a player receives spatial voice and webcam video from (`None` for everyone again); streams a list leaves out are neither sent nor billed. See [MIGRATION.md](MIGRATION.md).
 
 **v0.37.0: a speaker's own voice and video stop coming back.** From replication server v0.48.0 a session is not sent its own spatial voice and video; `client.udp.set_own_media_echo(True)` asks for the copy and `False` stops it, for a game that confirms capture by playing back what came round (`own_media_echo=True` on `connect` is the starting value). The same server counts keepalives as data in. See [MIGRATION.md](MIGRATION.md).

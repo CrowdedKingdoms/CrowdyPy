@@ -269,10 +269,13 @@ class AsyncCrowdyClient:
         so the transport's single retry cannot loop, and when a target is outside this
         client's estate (:func:`crowdypy.estate.is_same_estate`).
         """
-        endpoint = graphql_endpoint(move.game_api_url) or move.game_api_url
+        target = move.application_api_url
+        if not target:
+            return False
+        endpoint = graphql_endpoint(target) or target
         if endpoint == self.graphql.get_endpoint():
             return False
-        ws = graphql_endpoint(move.game_api_ws_url)
+        ws = graphql_endpoint(move.application_api_ws_url)
         if not self._within_estate(endpoint, ws):
             return False
         self.graphql.set_endpoint(endpoint)
