@@ -814,6 +814,11 @@ class _ConnectionCore:
         except ValueError as exc:
             raise _replication_error(exc) from None
 
+    def set_own_media_echo(self, on: bool) -> None:
+        """Start or stop asking for this session's own spatial voice and video (the
+        ``own_media_echo`` option); a change is advertised at once when connected."""
+        self._native.set_own_media_echo(on)
+
     def _spatial(
         self, kind: int, chunk: Sequence[int], uuid: Any, payload: Any, distance: int, decay: int
     ) -> int:

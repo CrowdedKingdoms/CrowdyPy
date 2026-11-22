@@ -107,6 +107,8 @@ class UdpAPI:
         self._generation = 0
         #: The session of the last awaited send that was answered.
         self._confirmed: tuple[int, int] | None = None
+        #: The last :meth:`set_own_media_echo`; a connection made later starts with it.
+        self._own_media_echo = False
 
     @property
     def connection(self) -> AsyncReplicationConnection | None:
@@ -121,6 +123,8 @@ class UdpAPI:
         ``app_token`` is the minted (or refreshed) token for the app; without it the client's
         :attr:`~crowdypy.AsyncCrowdyClient.app_token` is used. ``options`` tune the native
         connection (``bundle_window_ms``, ``ring_capacity``, ``manual_pump``, ...).
+        ``own_media_echo=True`` asks the server for this player's own spatial voice and video
+        back, which from replication server v0.48.0 a speaker is not otherwise sent.
         """
         if self._connection is not None and self._connection.state in _LIVE:
             return await self.connection_status()
@@ -136,12 +140,13 @@ class UdpAPI:
         if self._connection is None or options:
             if self._connection is not None:
                 await self._connection.close()
+            self._own_media_echo = bool(options.get("own_media_echo", self._own_media_echo))
             self._connection = AsyncReplicationConnection(
                 _GameSessionProvider(self._client, token.app_id),
                 token_material(token),
                 app_id=token.app_id,
                 subscriptions=self._subscriptions,
-                **options,
+                **{**options, "own_media_echo": self._own_media_echo},
             )
         else:
             self._connection.set_token(token_material(token))
@@ -176,6 +181,15 @@ class UdpAPI:
         """Put the pending bundle on the wire now (at the end of a frame)."""
         if self._connection is not None:
             self._connection.flush_sends()
+
+    def set_own_media_echo(self, on: bool) -> None:
+        """Start or stop asking for this player's own spatial voice and video, which from
+        replication server v0.48.0 a speaker is not sent otherwise: on for a microphone or
+        camera check, off after it. A change is advertised at once on a live connection, and
+        a connection made later starts with it."""
+        self._own_media_echo = on
+        if self._connection is not None:
+            self._connection.set_own_media_echo(on)
 
     async def wait_for_in_flight_actor_updates(self) -> None:
         """Native sends complete when they return; this only flushes the pending bundle."""
