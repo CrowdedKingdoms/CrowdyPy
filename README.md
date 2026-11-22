@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.38.0: choose whose voice and video each player receives.** From replication server v0.49.0, `client.udp.set_speakers(voice=[...], video=[...])` names the actors a player receives spatial voice and webcam video from (`None` for everyone again); streams a list leaves out are neither sent nor billed. See [MIGRATION.md](MIGRATION.md).
+
 **v0.37.0: a speaker's own voice and video stop coming back.** From replication server v0.48.0 a session is not sent its own spatial voice and video; `client.udp.set_own_media_echo(True)` asks for the copy and `False` stops it, for a game that confirms capture by playing back what came round (`own_media_echo=True` on `connect` is the starting value). The same server counts keepalives as data in. See [MIGRATION.md](MIGRATION.md).
 
 **v0.36.0: an organization's cap of apps.** `app_limit_reached_of(err)` reads Game API v2.80.0's `APP_LIMIT_REACHED` (an organization without a funded wallet or auto-billing past 10 apps) as `CrowdyAppLimitReached(limit, max)`, and the exec status reports the compute ceiling an unfunded organization's apps share. Vendors CrowdyCPP 0.89.0; schema at CrowdyJS 18.35.0.
