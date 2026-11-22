@@ -92,7 +92,9 @@ def world() -> Iterator[tuple[FakeServer, ReplicationConnection, WorldSessionCor
         object(),  # type: ignore[arg-type]  # these tests make no GraphQL or udp facade calls
         7, connection,  # type: ignore[arg-type]
         actor_uuid=ME, send_hz=1000, heartbeat_interval_ms=0, stale_after_ms=60_000,
-        chunk_options={"write_back_interval_ms": None},
+        # No timers: these tests tick outside an event loop, and a slow runner reaches a timer's
+        # interval mid-test (OI-2026-11-19-010).
+        chunk_options={"write_back_interval_ms": None, "catch_up_on_reconnect": False},
     )  # fmt: skip
     yield server, connection, session
     session.dispose()
