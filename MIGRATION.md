@@ -3,6 +3,18 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.37.0
+
+Vendors CrowdyCPP 0.90.0 and syncs CrowdyJS 18.37.0's schema and operations. Nothing is removed.
+
+- **From replication server v0.48.0 a speaker is not sent its own spatial voice and video.** Nobody listening needed
+  the copy, and it was billed as data out. If your game confirms capture by playing back what the server returns,
+  call `client.udp.set_own_media_echo(True)` for the check and `set_own_media_echo(False)` after it (the same method
+  is on a `ReplicationConnection`): each change is advertised at once, with bit 2 of the capabilities, and the server
+  sends the copy while it is set. `own_media_echo=True` on `connect` is the starting value. An older server ignores
+  the bit and keeps sending the copy.
+- **Keepalives count as data in** on the same server, as the Billing Basis says. Nothing to change in a client.
+
 ## 0.36.0
 
 Vendors CrowdyCPP 0.89.0 and syncs CrowdyJS 18.35.0's schema and operations (Game API v2.80.0). Nothing is removed.

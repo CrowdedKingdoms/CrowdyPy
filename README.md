@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.37.0: a speaker's own voice and video stop coming back.** From replication server v0.48.0 a session is not sent its own spatial voice and video; `client.udp.set_own_media_echo(True)` asks for the copy and `False` stops it, for a game that confirms capture by playing back what came round (`own_media_echo=True` on `connect` is the starting value). The same server counts keepalives as data in. See [MIGRATION.md](MIGRATION.md).
+
 **v0.36.0: an organization's cap of apps.** `app_limit_reached_of(err)` reads Game API v2.80.0's `APP_LIMIT_REACHED` (an organization without a funded wallet or auto-billing past 10 apps) as `CrowdyAppLimitReached(limit, max)`, and the exec status reports the compute ceiling an unfunded organization's apps share. Vendors CrowdyCPP 0.89.0; schema at CrowdyJS 18.35.0.
 
 **v0.35.0: a full channel says so.** `group_limit_reached_of(err)` reads Game API v2.77.0's `GROUP_LIMIT_REACHED` (a join, an add or a creation past a channel or team cap) as `CrowdyGroupLimitReached(limit, max)`, and `payment_method_required` no longer counts wallet funds. Vendors CrowdyCPP 0.88.0 and follows CrowdyJS 18.34.0; works with every Game API on dev, test and prod. See [MIGRATION.md](MIGRATION.md).

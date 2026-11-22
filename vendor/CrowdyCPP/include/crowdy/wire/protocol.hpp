@@ -142,6 +142,10 @@ inline constexpr std::uint32_t kBundleSigned = 1u << 0;
 /// Buddy v0.45.0: 8 nonce bytes follow the flags, and this assignment is sent only the
 /// bound control frames (CommandReconnectBound, CommandSessionReleasedBound).
 inline constexpr std::uint32_t kBoundControl = 1u << 1;
+/// Buddy v0.48.0: send this session its own ClientAudioPacket2 and ClientVideoPacket2, which it
+/// is otherwise not sent. A request rather than something this build reads, so it is not in
+/// kAll; Config::ownMediaEcho adds it.
+inline constexpr std::uint32_t kOwnMediaEcho = 1u << 2;
 /// Everything this SDK build can read.
 inline constexpr std::uint32_t kAll = kBundleSigned | kBoundControl;
 }  // namespace ClientCapability
