@@ -108,6 +108,7 @@ class SingleFlight[T]:
 
 _background: set[asyncio.Task[Any]] = set()
 _logger = logging.getLogger("crowdypy")
+_warned_no_loop = False
 
 
 def run_soon(job: Callable[[], Awaitable[Any]]) -> None:
@@ -117,13 +118,28 @@ def run_soon(job: Callable[[], Awaitable[Any]]) -> None:
     blocking client.
     """
 
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # tick() ran outside the event loop (a game's own frame loop, or a test). A periodic
+        # job runs at its next interval; a one-off job, such as a chunk reload, is lost.
+        global _warned_no_loop
+        if not _warned_no_loop:
+            _warned_no_loop = True
+            _logger.warning(
+                "background job %r skipped: no event loop is running in this thread; "
+                "call tick() from the loop (WorldSession.run) to run them",
+                getattr(job, "__qualname__", job),
+            )
+        return
+
     async def guarded() -> None:
         try:
             await job()
         except Exception:
             _logger.exception("background job failed")
 
-    task = asyncio.get_running_loop().create_task(guarded())
+    task = loop.create_task(guarded())
     _background.add(task)
     task.add_done_callback(_background.discard)
 
