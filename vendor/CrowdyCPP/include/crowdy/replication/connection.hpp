@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <unordered_map>
 
@@ -169,6 +170,15 @@ class Connection {
   /// value is Config::ownMediaEcho. Any thread.
   void setOwnMediaEcho(bool on);
   bool ownMediaEcho() const noexcept { return ownMediaEcho_.load(std::memory_order_acquire); }
+  /// The speakers whose spatial voice and video this session receives (Buddy v0.49.0;
+  /// ClientMediaSpeakers). Per kind: SpeakerList::only(names) receives only those (none when
+  /// empty), SpeakerList::everyone() everyone in range again, SpeakerList::keep() leaves the
+  /// kind as it is. A changed kind is sent at once when connected, and every list again with
+  /// each capabilities advertisement, since the server forgets them with the session.
+  /// InvalidArgument over wire::kMaxSpeakers names; the app's own numbers are
+  /// gameClientBootstrap.maxVoiceSpeakers / maxVideoSpeakers, and the server refuses a longer
+  /// list INVALID_REQUEST. Any thread.
+  Status setSpeakers(SpeakerList voice, SpeakerList video);
 
   /// Put the pending outbound bundle on the wire now instead of at the end of
   /// Config::bundleWindowMs. Call it at the end of a frame when you want that
@@ -443,6 +453,13 @@ class Connection {
   std::atomic<std::uint64_t> boundNonce_{0};
   /// Whether CLIENT_CAPABILITIES carries kOwnMediaEcho; Config::ownMediaEcho, then setOwnMediaEcho.
   std::atomic<bool> ownMediaEcho_{false};
+  /// The speaker lists setSpeakers last set (nullopt: everyone in range), re-sent with the
+  /// capabilities.
+  mutable std::mutex speakersMutex_;
+  std::optional<std::vector<core::ActorUuid>> voiceSpeakers_;
+  std::optional<std::vector<core::ActorUuid>> videoSpeakers_;
+  Result<std::uint8_t> sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video);
+  void resendSpeakerLists();
 
   /// Monotonic ms of the last send that counts as gameplay input (0: none yet).
   std::atomic<std::int64_t> lastGameplayMs_{0};

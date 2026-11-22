@@ -3,9 +3,12 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "crowdy/core/uuid.hpp"
 #include "crowdy/wire/codec.hpp"
+#include "crowdy/wire/protocol.hpp"
 
 namespace crowdy::replication {
 
@@ -57,6 +60,21 @@ inline const char* connStateName(ConnState s) {
   }
   return "?";
 }
+
+/// A change to one kind of speaker list for Connection::setSpeakers (Buddy v0.49.0).
+struct SpeakerList {
+  wire::SpeakerMode mode = wire::SpeakerMode::Keep;
+  std::vector<core::ActorUuid> names;  ///< SpeakerMode::Only; at most wire::kMaxSpeakers
+
+  /// Leave this kind's list as it is.
+  static SpeakerList keep() { return {}; }
+  /// Receive this kind from everyone in range again.
+  static SpeakerList everyone() { return {wire::SpeakerMode::Everyone, {}}; }
+  /// Receive this kind only from these actors (from no one when empty).
+  static SpeakerList only(std::vector<core::ActorUuid> actors) {
+    return {wire::SpeakerMode::Only, std::move(actors)};
+  }
+};
 
 struct Config {
   std::int64_t appId = 0;

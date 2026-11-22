@@ -689,6 +689,34 @@ def test_own_media_echo_asks_for_the_speakers_own_voice_and_video(server: FakeSe
         assert advertised_flags(server, 1) == [0b111]
 
 
+def speaker_lists(server: FakeServer, count: int) -> list[bytes]:
+    bodies: list[bytes] = []
+    deadline = time.monotonic() + 3
+    while len(bodies) < count and time.monotonic() < deadline:
+        bodies.extend(
+            bytes(wire.parse_long_spatial(message).payload)
+            for message in server.messages()
+            if message[0] == 47
+        )
+    return bodies
+
+
+def test_set_speakers_sends_each_changed_kind(server: FakeServer) -> None:
+    # CrowdyCPP 0.91.0: a v0.49.0 server delivers voice and video only from the speakers named.
+    a, b = "a" * 32, "b" * 32
+    with ReplicationConnection(
+        Provider(server), token(), app_id=7, **{**QUIET, "advertise_capabilities": True}
+    ) as connection:
+        connection.set_speakers(voice=[a, b])
+        assert speaker_lists(server, 1) == [bytes([1, 2, 0, 0]) + a.encode() + b.encode()]
+        connection.set_speakers(video=[])
+        assert speaker_lists(server, 1) == [bytes([0, 0, 1, 0])]
+        connection.set_speakers(voice=None)
+        assert speaker_lists(server, 1) == [bytes([2, 0, 0, 0])]
+        with pytest.raises(CrowdyReplicationError):
+            connection.set_speakers(voice=["too-short"])
+
+
 def bound_ack(nonce: bytes, key: str = TOKEN) -> bytes:
     prefix = bytes([MessageType.CONTROL_BOUND_ACK]) + nonce
     return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()
