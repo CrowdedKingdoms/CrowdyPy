@@ -19,7 +19,8 @@ Connection::Connection(Config config, std::shared_ptr<ISessionProvider> provider
       crypto_(crypto),
       clock_(clock),
       logger_(logger),
-      ring_(config_.ringCapacity) {
+      ring_(config_.ringCapacity),
+      ownMediaEcho_(config_.ownMediaEcho) {
   setToken(config_.token);
 }
 
@@ -542,9 +543,10 @@ Result<std::uint8_t> Connection::sendCapabilities() {
   // [u32 flags][8B nonce]: the nonce follows the flags whenever kBoundControl is set.
   std::uint8_t payload[4 + wire::kControlNonceSize];
   const std::uint64_t nonce = controlNonce_.load(std::memory_order_acquire);
-  const std::uint32_t flags =
+  std::uint32_t flags =
       nonce != 0 ? wire::ClientCapability::kAll
                  : (wire::ClientCapability::kAll & ~wire::ClientCapability::kBoundControl);
+  if (ownMediaEcho_.load(std::memory_order_acquire)) flags |= wire::ClientCapability::kOwnMediaEcho;
   le::writeU32(payload, flags);
   std::memcpy(payload + 4, &nonce, wire::kControlNonceSize);
   SpatialSend p;
@@ -553,6 +555,11 @@ Result<std::uint8_t> Connection::sendCapabilities() {
   p.decay = wire::DecayRate::None;
   p.payload = Bytes(payload, nonce != 0 ? sizeof(payload) : 4);
   return sendLongSpatial(MessageType::ClientCapabilities, p);
+}
+
+void Connection::setOwnMediaEcho(bool on) {
+  if (ownMediaEcho_.exchange(on, std::memory_order_acq_rel) == on) return;
+  if (config_.advertiseCapabilities && state() == ConnState::Connected) (void)sendCapabilities();
 }
 
 Result<std::uint8_t> Connection::sendHeartbeat(const wire::ChunkCoord& chunk,
