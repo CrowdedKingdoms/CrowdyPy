@@ -89,6 +89,14 @@ struct Config {
   bool advertiseCapabilities = true;
   std::int64_t advertiseIntervalMs = 15 * 1000;
 
+  /// Ask for this session's own spatial voice and video back
+  /// (ClientCapability::kOwnMediaEcho), for a game that confirms capture by
+  /// playing back what came round. From Buddy v0.48.0 a speaker is not sent
+  /// its own ClientAudioPacket2 or ClientVideoPacket2 otherwise; an older
+  /// server always sends it. Rides the capabilities advertisement, so it
+  /// needs advertiseCapabilities.
+  bool ownMediaEcho = false;
+
   /// Silent-drop watchdog: if >0 and we have received traffic before, going
   /// this long with sends flowing but nothing received triggers reassignment.
   /// Disabled by default (a lone player legitimately receives nothing).
