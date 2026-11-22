@@ -65,9 +65,11 @@ class BillingAPI(Domain):
     def set_app_budget(
         self, org_id: str | int, app_id: str | int, monthly_limit_cents: str | int
     ) -> dict[str, Any]:
-        """Set (or clear) an app's monthly spend cap in cents; ``0`` disables it.
+        """Set (or clear) an app's monthly spend cap in cents; ``0`` removes it.
 
-        Records the cap only: no money moves. Needs the app's ``manage_billing``.
+        Once the app's spend this calendar month (UTC) reaches the cap, the platform pauses the
+        app (``spend_cap``) until the month ends or the cap is raised (Game API v2.84.0). No money
+        moves. Needs the app's ``manage_billing``.
         """
         result: dict[str, Any] = self._request(
             ops.SET_APP_BUDGET,

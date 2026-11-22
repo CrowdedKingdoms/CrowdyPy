@@ -8,7 +8,7 @@ data, ck-exec) and a native UDP replication core, CrowdyCPP's, bound with nanobi
     identity = crowdypy.AsyncCrowdyClient(http_url="https://ck.dev.crowdedkingdoms.com")
     await identity.auth.login("player@example.com", "correct-horse-battery")
     minted = await identity.portal.mint_app_token(app_id)
-    game = crowdypy.AsyncCrowdyClient(http_url=minted.game_api_url, discovery_url=minted.discovery_url)
+    game = crowdypy.AsyncCrowdyClient(http_url=minted.application_api_url, discovery_url=minted.discovery_url)
     game.set_app_token(minted)
 
 Names resolve lazily, so ``import crowdypy`` stays cheap; ``crowdypy.sync`` is the blocking

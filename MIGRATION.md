@@ -3,6 +3,20 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.39.0
+
+Vendors CrowdyCPP 0.92.0 and syncs CrowdyJS 18.39.0's schema and operations. **Needs Application API v2.85.0.**
+Nothing is removed before January 1, 2027.
+
+- **The Game API is now the Application API.** Every result that carried its URLs carries the new names beside the
+  old ones, with the same values: `application_api_url` and `application_api_ws_url` on `AppTokenResponse`,
+  `AppEndpoint` (`discovery.apps`), `AppRoute` and `DatacenterMove`. `game_api_url` and `game_api_ws_url` are
+  deprecated and go on January 1, 2027, when the Application API removes the old fields. A `WRONG_DATACENTER` from an
+  older API still moves, through its `gameApiUrl`.
+- **`set_app_budget`:** the monthly cap pauses the app at its limit (Application API v2.84.0), and `0` removes it.
+- **The async client's `tick()` outside an event loop** no longer raises when a background job is due: the job is
+  skipped and one warning is logged (a periodic job runs at its next interval).
+
 ## 0.38.0
 
 Vendors CrowdyCPP 0.91.0 and syncs CrowdyJS 18.38.0's schema and operations. Nothing is removed.
