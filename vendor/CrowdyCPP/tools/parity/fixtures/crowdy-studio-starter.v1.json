@@ -1,8 +1,8 @@
 {
   "contractVersion": "crowdy.studio-starter/1",
   "crowdyJs": {
-    "version": "18.39.0",
-    "commit": "090bc649f048b2144d137cfff0df58cfdefaf1d6"
+    "version": "18.39.1",
+    "commit": "0c5bd0bf976b164bdf2d956e7cee8feac9470cd0"
   },
   "modStarters": {
     "grid-mod": {

@@ -3,6 +3,20 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.39.1
+
+Vendors CrowdyCPP 0.93.0 and pins CrowdyJS 18.39.1, whose schema and operations are 18.39.0's. Your code needs no
+change.
+
+- **A dropped build-status read no longer ends a Studio deploy.** Until this release, one dropped read of a build's
+  status ended a `CrowdyStudioController` deploy. A dropped read is one with no answer (a network failure, a body
+  that does not parse, or a timeout), an HTTP 5xx or 429 that is not the API's answer, or `PLATFORM_BUSY`. The
+  controller's build wait now counts it as a missed poll toward `compile_poll_limit`, waiting at least the API's
+  `retryAfterMs`, and a wait that runs out after one names the last failure. A CLIENT-only project's mod listing and
+  mod starter get one more try. `exec.wait_for_mod_build` (async and blocking) reads again until `timeout_ms`, then
+  raises the last failure. A refusal still ends the wait at once, and the controller never repeats a build, deploy,
+  switch-on, attach, or consent call.
+
 ## 0.39.0
 
 Vendors CrowdyCPP 0.92.0 and syncs CrowdyJS 18.39.0's schema and operations. **Needs Application API v2.85.0.**

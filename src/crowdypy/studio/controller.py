@@ -26,6 +26,7 @@ from typing import Any, Literal, Protocol
 
 import msgspec
 
+from crowdypy._dropped_read import is_dropped_read, retry_after_ms_of
 from crowdypy.domains.crowdy_studio import (
     CrowdyStudioOfflineError,
     CrowdyStudioPairingPreference,
@@ -1833,8 +1834,21 @@ class CrowdyStudioController:
     async def _await_mod_build(
         self, target: CrowdyStudioTarget, name: str, build_id: str, operation: int
     ) -> Any:
+        """Poll a mod build, a mod's or a CLIENT half's, recording its log; ``None`` when it did
+        not succeed. A dropped status read (no answer, an answer that is not the API's, or
+        ``PLATFORM_BUSY``) is a missed poll: it counts toward the limit, and the wait goes on."""
+        missed: BaseException | None = None
         for _ in range(self._compile_poll_limit):
-            build = await self._mods.mod_build_status(self._app_id, build_id)
+            try:
+                build = await self._mods.mod_build_status(self._app_id, build_id)
+            except Exception as error:
+                if not is_dropped_read(error):
+                    raise
+                missed = error
+                self._check_operation(operation)
+                await self._sleep(max(self._compile_poll_ms, retry_after_ms_of(error)))
+                self._check_operation(operation)
+                continue
             self._check_operation(operation)
             if build.status == "succeeded":
                 self._record_build(target, build.log or "")
@@ -1850,6 +1864,8 @@ class CrowdyStudioController:
             await self._sleep(self._compile_poll_ms)
             self._check_operation(operation)
         timeout = f"Compilation timed out after {self._compile_poll_limit} polls"
+        if missed is not None:
+            timeout += f"; the last status read that failed: {missed}"
         self._record_build(target, timeout)
         self._update(runtime=CrowdyStudioRuntimeStatus("COMPILE_FAILED", target, timeout))
         return None
@@ -1901,12 +1917,9 @@ class CrowdyStudioController:
         return artifact
 
     async def _ensure_client_only_mod(self, name: str, operation: int) -> None:
+        mods = await self._read_again_once(lambda: self._mods.my_mods(self._app_id), operation)
         mine = next(
-            (
-                mod
-                for mod in await self._mods.my_mods(self._app_id)
-                if str(mod.grid_id) == self._grid_id and mod.name == name
-            ),
+            (mod for mod in mods if str(mod.grid_id) == self._grid_id and mod.name == name),
             None,
         )
         self._check_operation(operation)
@@ -1921,7 +1934,9 @@ class CrowdyStudioController:
                     "COMPILING", "SERVER", f"Deploying the mod starter as {name}"
                 )
             )
-            starter = await self._mods.mod_starter(self._app_id)
+            starter = await self._read_again_once(
+                lambda: self._mods.mod_starter(self._app_id), operation
+            )
             self._check_operation(operation)
             queued = await self._mods.mod_build(
                 self._app_id,
@@ -2277,6 +2292,18 @@ class CrowdyStudioController:
             await self._sleep_fn(ms)
         else:
             await asyncio.sleep(ms / 1000)
+
+    async def _read_again_once(self, read: Callable[[], Awaitable[Any]], operation: int) -> Any:
+        """A read in a deploy, read once more after a dropped read (``is_dropped_read``)."""
+        try:
+            return await read()
+        except Exception as error:
+            if not is_dropped_read(error):
+                raise
+            self._check_operation(operation)
+            await self._sleep(max(self._compile_poll_ms, retry_after_ms_of(error)))
+            self._check_operation(operation)
+            return await read()
 
     def _offline(self) -> bool:
         return self._is_online is not None and self._is_online() is False
