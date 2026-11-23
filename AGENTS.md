@@ -274,6 +274,18 @@ The replication system saturates the local network stack, so the binding
   boolean `max` reads as None). The billing roots CrowdyJS also leaves unwrapped (the allowance
   pool, the smallest top-ups, the card requirement) are browser exclusions in
   `tools/parity/classifications.toml`.
+- Since 0.39.1 (CrowdyCPP 0.93.0, CrowdyJS 18.39.1) `src/crowdypy/_dropped_read.py` (not exported)
+  is the rule for which failed read to read again, the same as CrowdyJS's `src/dropped-read.ts`
+  and CrowdyCPP's `crowdy/graphql/dropped_read.hpp`; change the three together. A dropped read is
+  `CrowdyNetworkError` (a body that does not parse arrives as one), `CrowdyTimeoutError`, a
+  `CrowdyHttpError` 5xx or 429 whose body carries no GraphQL errors, or a fault
+  `player_fault_of` reads as `blame == "PLATFORM"` with an explicit `retryable` (`PLATFORM_BUSY`);
+  `CrowdyProtocolError` is the SDK's own refusal and is not one. The controller's `_await_mod_build`
+  counts a dropped read as a missed poll (waiting at least `retryAfterMs`), `_read_again_once`
+  reads the CLIENT-only rider's `my_mods` and `mod_starter` once more, and
+  `ExecAPI.wait_for_mod_build` (and its blocking twin) reads again until `timeout_ms`. Tests: the
+  `DroppingMods` fake in `tests/unit/test_studio_controller.py`, `scripted_graphql` in
+  `tests/unit/domains/test_studio_exec_domains.py`.
 - Since 0.34.0 (CrowdyCPP 0.87.0, CrowdyJS 18.33.0, ck-api v2.73.0) the Studio controller sends
   `{"projectId", "revision"}` as the third argument of `mod_build` / `mod_client_build` (the
   test `Mods` fake records it in `studios`), and `create_project` asks the platform's CLIENT half
