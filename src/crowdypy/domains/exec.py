@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 import msgspec
 
 from crowdypy._default_origin import CROWDY_DEFAULT_HTTP_ORIGIN
+from crowdypy._dropped_read import is_dropped_read, retry_after_ms_of
 from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import ExecModScope
 from crowdypy.domains._base import Domain, omit_none, sleep
@@ -983,16 +984,25 @@ class ExecAPI(Domain):
         timeout_ms: float | None = None,
     ) -> ExecBuild:
         """Poll a mod build, server or CLIENT, until it succeeds or fails, like
-        :meth:`wait_for_build`.
+        :meth:`wait_for_build`. A dropped status read (no answer, an HTTP 5xx or 429 that is not
+        the API's answer, or ``PLATFORM_BUSY``) is read again until ``timeout_ms``, then raised;
+        a refusal is raised at once.
         """
         until = time.monotonic() + (600_000 if timeout_ms is None else timeout_ms) / 1000
+        interval = 2_000 if interval_ms is None else interval_ms
         while True:
-            build = await self.mod_build_status(app_id, build_id)
+            try:
+                build = await self.mod_build_status(app_id, build_id)
+            except Exception as error:
+                if not is_dropped_read(error) or time.monotonic() > until:
+                    raise
+                await sleep(max(interval, retry_after_ms_of(error)) / 1000)
+                continue
             if build.status in ("succeeded", "failed"):
                 return build
             if time.monotonic() > until:
                 raise CrowdyError(f"build {build_id} is still {build.status}")
-            await sleep((2_000 if interval_ms is None else interval_ms) / 1000)
+            await sleep(interval / 1000)
 
     async def mod_deploy(
         self, app_id: str | int, grid_id: str | int, name: str, build_id: str
