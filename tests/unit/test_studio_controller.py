@@ -21,7 +21,13 @@ from crowdypy.domains.crowdy_studio import (
     CrowdyStudioReferenceFile,
     CrowdyStudioRevisionConflictError,
 )
-from crowdypy.errors import CrowdyGraphQLError
+from crowdypy.errors import (
+    CrowdyGraphQLError,
+    CrowdyHttpError,
+    CrowdyNetworkError,
+    CrowdyTimeoutError,
+    CrowdyUserCodeFaultError,
+)
 from crowdypy.player_host import CrowdyAgentError
 from crowdypy.studio import (
     CrowdyStudioAtomicFileChange,
@@ -562,6 +568,124 @@ async def test_compile_failures_and_timeouts() -> None:
         "COMPILE_FAILED",
         "Compilation timed out after 3 polls",
     )
+
+
+class DroppingMods(Mods):
+    """Mods whose reads drop with ``drops[name]``, in turn, before answering."""
+
+    def __init__(self, drops: dict[str, list[BaseException]], **options: Any) -> None:
+        super().__init__(**options)
+        self.drops = drops
+
+    def _drop(self, name: str) -> None:
+        queue = self.drops.get(name)
+        if queue:
+            self.calls.append((f"{name}:dropped",))
+            raise queue.pop(0)
+
+    async def mod_build_status(self, app_id: Any, build_id: str) -> Any:
+        self._drop("status")
+        return await super().mod_build_status(app_id, build_id)
+
+    async def my_mods(self, app_id: Any) -> list[Any]:
+        self._drop("my_mods")
+        self.calls.append(("my_mods",))
+        return await super().my_mods(app_id)
+
+    async def mod_starter(self, app_id: Any) -> Any:
+        self._drop("starter")
+        return await super().mod_starter(app_id)
+
+
+def busy() -> CrowdyUserCodeFaultError:
+    return CrowdyUserCodeFaultError(
+        [
+            {
+                "message": "the platform is busy; retry shortly",
+                "extensions": {"code": "PLATFORM_BUSY", "blame": "PLATFORM", "retryable": True},
+            }
+        ]
+    )
+
+
+SERVER_ONLY = make_project(kind="SERVER", files=[("SERVER", "src/lib.rs", "x")])
+
+
+async def test_a_dropped_build_status_read_is_a_missed_poll() -> None:
+    mods = DroppingMods(
+        {
+            "status": [
+                CrowdyNetworkError("socket hang up"),
+                CrowdyTimeoutError(30_000),
+                CrowdyHttpError(502, "<html>Bad Gateway</html>"),
+                busy(),
+            ]
+        }
+    )
+    controller, _, _ = await studio(SERVER_ONLY, mods=mods)
+    result = await controller.test_draft()
+    assert result.status == "RUNNING", result.message
+    assert [call[0] for call in mods.calls].count("status:dropped") == 4
+    assert ("deploy", "quest-server", "b-server") in mods.calls
+
+
+async def test_a_refused_build_status_read_still_ends_the_deploy() -> None:
+    for refusal in (
+        CrowdyGraphQLError([{"message": "no build of yours", "extensions": {"code": "NOT_FOUND"}}]),
+        CrowdyHttpError(401, "Unauthorized"),
+        CrowdyHttpError(
+            500, '{"errors":[{"message":"boom","extensions":{"code":"INTERNAL_SERVER_ERROR"}}]}'
+        ),
+    ):
+        mods = DroppingMods({"status": [refusal]})
+        controller, _, _ = await studio(SERVER_ONLY, mods=mods)
+        result = await controller.test_draft()
+        assert result.status == "FAILED"
+        assert [call[0] for call in mods.calls].count("status:dropped") == 1
+        assert not any(call[0] == "deploy" for call in mods.calls)
+
+
+async def test_a_build_wait_that_runs_out_after_missed_polls_names_the_last_failure() -> None:
+    mods = DroppingMods({"status": [CrowdyNetworkError("connect ECONNREFUSED") for _ in range(3)]})
+    controller, _, _ = await studio(SERVER_ONLY, mods=mods, compile_poll_limit=3)
+    result = await controller.test_draft()
+    assert (result.status, result.message) == (
+        "COMPILE_FAILED",
+        "Compilation timed out after 3 polls; the last status read that failed: "
+        "Network error: connect ECONNREFUSED",
+    )
+
+
+async def test_a_client_only_projects_listing_and_starter_are_read_once_more() -> None:
+    brokers: list[Broker] = []
+
+    def factory(options: CrowdyStudioBrokerOptions) -> Broker:
+        brokers.append(Broker(options))
+        return brokers[-1]
+
+    mods = DroppingMods(
+        {
+            "my_mods": [CrowdyHttpError(503, "Service Unavailable")],
+            "starter": [CrowdyTimeoutError(30_000)],
+        }
+    )
+    project = make_project(
+        kind="CLIENT", files=[("CLIENT", "Cargo.toml", '[package]\nname = "q"\n')]
+    )
+    controller, _, _ = await studio(project, mods=mods, broker_factory=factory)
+    result = await controller.deploy_live()
+    assert result.status == "RUNNING", result.message
+    order = [call[0] for call in mods.calls]
+    assert order[order.index("my_mods:dropped") + 1] == "my_mods"
+    assert order[order.index("starter:dropped") + 1] == "starter"
+
+    # A second dropped read of the same thing ends the deploy.
+    mods.calls.clear()
+    mods.drops["my_mods"] = [CrowdyHttpError(503, "Service Unavailable") for _ in range(2)]
+    again = await controller.deploy_live()
+    assert again.status == "FAILED"
+    assert "HTTP 503" in again.message
+    assert [call[0] for call in mods.calls].count("my_mods:dropped") == 2
 
 
 async def test_a_full_stack_run_needs_a_client_host_and_runs_in_it() -> None:
