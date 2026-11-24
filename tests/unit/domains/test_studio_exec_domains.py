@@ -1657,6 +1657,90 @@ async def test_a_build_names_its_studio_source_and_the_platform_serves_the_start
     assert ("ExecModClientStarter", {"appId": "77"}) in sent(api)
 
 
+def scripted_graphql(session: Any, answers: list[Any]) -> tuple[AsyncGraphQLClient, list[str]]:
+    """A client whose requests answer from ``answers`` in turn: an exception is raised as the
+    transport's, an ``httpx.Response`` is returned as it is, anything else is the JSON body.
+    The last answer repeats."""
+    sent: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(msgspec.json.decode(request.content).get("operationName"))
+        answer = answers.pop(0) if len(answers) > 1 else answers[0]
+        if isinstance(answer, Exception):
+            raise answer
+        if isinstance(answer, httpx.Response):
+            return answer
+        return httpx.Response(200, content=msgspec.json.encode(answer))
+
+    client = AsyncGraphQLClient(
+        session,
+        endpoint="https://ck.example.test/graphql",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    return client, sent
+
+
+def mod_build_status(status: str) -> dict[str, Any]:
+    return {"data": {"execModBuildStatus": {**BUILD, "status": status}}}
+
+
+async def test_wait_for_mod_build_reads_a_dropped_status_again(
+    session: Any, slept: list[float]
+) -> None:
+    busy = {
+        "errors": [
+            {
+                "message": "the platform is busy; retry shortly",
+                "extensions": {
+                    "code": "PLATFORM_BUSY",
+                    "blame": "PLATFORM",
+                    "retryable": True,
+                    "retryAfterMs": 5_000,
+                },
+            }
+        ]
+    }
+    graphql, sent = scripted_graphql(
+        session,
+        [
+            httpx.ConnectError("connection reset by peer"),
+            httpx.Response(502, text="<html>Bad Gateway</html>"),
+            busy,
+            mod_build_status("building"),
+            mod_build_status("succeeded"),
+        ],
+    )
+    built = await ExecAPI(graphql).wait_for_mod_build("77", "b1", interval_ms=250)
+    assert built.status == "succeeded"
+    assert len(sent) == 5
+    # The busy answer asked for five seconds.
+    assert slept == [0.25, 0.25, 5.0, 0.25]
+
+
+async def test_wait_for_mod_build_raises_a_refusal_at_once(
+    session: Any, slept: list[float]
+) -> None:
+    graphql, sent = scripted_graphql(
+        session, [{"errors": [{"message": "no build b9", "extensions": {"code": "NOT_FOUND"}}]}]
+    )
+    with pytest.raises(CrowdyGraphQLError, match="no build b9"):
+        await ExecAPI(graphql).wait_for_mod_build("77", "b9")
+    assert (len(sent), slept) == (1, [])
+
+    graphql, sent = scripted_graphql(session, [httpx.Response(401, text="Unauthorized")])
+    with pytest.raises(CrowdyHttpError):
+        await ExecAPI(graphql).wait_for_mod_build("77", "b9")
+    assert len(sent) == 1
+
+
+async def test_wait_for_mod_build_raises_the_last_dropped_read_past_its_deadline(
+    session: Any, slept: list[float]
+) -> None:
+    graphql, _ = scripted_graphql(session, [httpx.ConnectError("connect ECONNREFUSED")])
+    with pytest.raises(CrowdyNetworkError, match="ECONNREFUSED"):
+        await ExecAPI(graphql).wait_for_mod_build("77", "b1", timeout_ms=0)
+
+
 async def test_mods_pass_their_arguments_and_map_results(
     graphql: AsyncGraphQLClient, api: MockApi, slept: list[float]
 ) -> None:
