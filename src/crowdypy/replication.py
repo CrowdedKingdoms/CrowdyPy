@@ -229,6 +229,14 @@ class Notification:
             return self.extras[0]
 
     @property
+    def verified(self) -> bool:
+        """A generic error's: true when the frame arrived inside a MESSAGE_BUNDLE_SIGNED whose
+        HMAC held (CrowdyCPP 0.94.0). An error frame is 3 bytes with no HMAC of its own, so one
+        that arrives any other way is the word of whoever could put a datagram on the
+        session's flow. A player's connection acts on either, as it always has."""
+        return bool(self.extras[1])
+
+    @property
     def state(self) -> ConnState:
         """A status row's connection state."""
         return ConnState(self.extras[0])
@@ -548,7 +556,9 @@ class _ConnectionCore:
 
     def stats(self) -> dict[str, Any]:
         """CrowdyCPP's cumulative counters: a local diagnostic, not a bill (egress is what is
-        billed, measured at the platform's interface)."""
+        billed, measured at the platform's interface). ``wrong_app`` and
+        ``unsigned_notifications`` count two checks only a fleet session makes
+        (:mod:`crowdypy.fleet`) and stay 0 here."""
         result: dict[str, Any] = self._native.stats()
         return result
 
