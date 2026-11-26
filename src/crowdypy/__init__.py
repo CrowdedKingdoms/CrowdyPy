@@ -224,12 +224,24 @@ _LAZY: dict[str, str] = {
     "Notification": "crowdypy.replication",
     "ConnState": "crowdypy.replication",
     "TokenMaterial": "crowdypy.replication",
+    # fleet sessions: an organization's game server carrying its players (server side only)
+    "AsyncFleetSession": "crowdypy.fleet",
+    "FleetSession": "crowdypy.fleet",
+    "FleetBatch": "crowdypy.fleet",
+    "FleetCarryOutcome": "crowdypy.fleet",
+    "FleetCarryResult": "crowdypy.fleet",
+    "FleetNotCarriedError": "crowdypy.fleet",
+    "FleetPlayer": "crowdypy.fleet",
+    "FleetPlayerToken": "crowdypy.fleet",
+    "FleetReleased": "crowdypy.fleet",
+    "FleetSendRefused": "crowdypy.fleet",
 }
 _SUBMODULES = {
     "codecs",
     "enums",
     "errors",
     "exec_gateway",
+    "fleet",
     "inputs",
     "kit",
     "media",
@@ -736,6 +748,36 @@ if TYPE_CHECKING:
     )
     from crowdypy.exec_gateway import (
         ExecConnection as ExecConnection,
+    )
+    from crowdypy.fleet import (
+        AsyncFleetSession as AsyncFleetSession,
+    )
+    from crowdypy.fleet import (
+        FleetBatch as FleetBatch,
+    )
+    from crowdypy.fleet import (
+        FleetCarryOutcome as FleetCarryOutcome,
+    )
+    from crowdypy.fleet import (
+        FleetCarryResult as FleetCarryResult,
+    )
+    from crowdypy.fleet import (
+        FleetNotCarriedError as FleetNotCarriedError,
+    )
+    from crowdypy.fleet import (
+        FleetPlayer as FleetPlayer,
+    )
+    from crowdypy.fleet import (
+        FleetPlayerToken as FleetPlayerToken,
+    )
+    from crowdypy.fleet import (
+        FleetReleased as FleetReleased,
+    )
+    from crowdypy.fleet import (
+        FleetSendRefused as FleetSendRefused,
+    )
+    from crowdypy.fleet import (
+        FleetSession as FleetSession,
     )
     from crowdypy.graphql import (
         AsyncGraphQLClient as AsyncGraphQLClient,
