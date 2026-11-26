@@ -3,6 +3,68 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.40.0
+
+Vendors CrowdyCPP 0.94.0 and syncs CrowdyJS 18.40.0's schema and operations. Your code needs no change, and
+nothing here changes a client that does not use it. This release adds fleet sessions. They need Application API
+v2.89.0 or later, realtime servers v0.50.3, and ck-exec 0.25.0 for the hub connection. All three have been on dev,
+test, and prod since November 26, 2026. Fleet sessions stay off for an organization until a Crowded Kingdoms
+operator switches them on, and the organization also needs org-managed players. Until then, the Application API
+refuses `fleet_sessions.open` with `FORBIDDEN`. Every other call needs what 0.39.0 needs: Application API v2.85.0
+or later. The README's [Game servers: fleet sessions](README.md#game-servers-fleet-sessions) is the guide.
+
+A fleet session is one realtime session a game server opens for itself, in which it carries the players who are on
+it. It runs on a server your organization runs. An org token and a fleet token never go to a player's device or
+into a browser page.
+
+- **`client.fleet_sessions`** (also `client.admin.fleet_sessions`), on the async client and the blocking one:
+  `open(app_id)`, `refresh({"appId", "gameTokenId", "currentServer"})`, and `close({"appId", "gameTokenId"})` wrap
+  `openFleetSession`, `refreshFleetSession`, and `closeFleetSession`, with the organization's org token (`cko_...`,
+  scope `fleet:session`) as the client's bearer. `open` and `refresh` answer a `FleetSessionAnswer`: `token`,
+  `game_token_id`, `app_id`, `expires_at`, `max_players`, `server`. Its repr never shows the token. The org token
+  that opened a session is the one that refreshes and closes it: another org token of the same organization gets
+  `NOT_FOUND` from `refresh` and `False` from `close`. Revoking an org token ends every session and hub connection
+  it opened. A session that is neither refreshed nor closed ends at its `expires_at`, 24 hours after it was opened
+  or last refreshed. The calls refuse before any request where Python runs in a browser page or on a phone.
+- **`crowdypy.fleet`**: `AsyncFleetSession` for an asyncio loop and `FleetSession` for a loop of your own, over
+  CrowdyCPP's `replication::FleetSession`. `connect`, `carry`, `carry_nowait`, `release`, a send for a carried
+  player for each of `client.udp`'s sends, `send_actor_updates` for a tick of players in one call, `set_speakers`,
+  handlers that receive the players a notification is for, `refresh_due`, `refresh_input`, `apply_refresh`, `stats`,
+  and `close`. A carry's result is a `FleetCarryResult` whose `status` is a `FleetCarryOutcome`. After a player's
+  token is refreshed, `carry(FleetPlayerToken(token, game_token_id, replaces=old_id))` keeps the player carried:
+  sends name the new id from the moment the new `FLEET_CARRY` is sent, and a late message about the old id is
+  ignored (`stats()["replaced_id_frames"]`). A carry answered "no live token" is sent once more, 250 ms later,
+  before it settles (`stats()["no_live_token_retries"]`). The `generic_error` handler receives
+  `(notification, verified)`: a refusal that arrived alone carries no signature, so `verified` is false for it,
+  and the session changes nothing on a refusal. A send for a player the session does not carry now raises
+  `FleetNotCarriedError`.
+- **`client.exec.connect_as_server(app_id)`** and `server_endpoint(app_id)` wrap `execConnectAsServer`: one hub
+  connection for a game server. `call_as(player, node_type, key, method, args)` and `call_as_raw` on the
+  connection make a call for one of the organization's players (client frame `0x05`) and raise `CrowdyExecError`
+  `Denied`, with nothing sent, on a connection that is not a server's. `AsyncExecConnection.open_as_server` and
+  `ExecConnection.open_as_server`, the `is_server` property, and the `ExecCallAs` frame are new.
+- **Refusals:** `org_token_required_of` (`ORG_TOKEN_REQUIRED`), `fleet_session_limit_of` (`FLEET_SESSION_LIMIT`),
+  `fleet_session_not_found_of` (`NOT_FOUND` on a refresh), and `platform_busy_of` (`PLATFORM_BUSY`, a
+  `CrowdyPlatformBusy` with `retry_after_ms`), each with its `*_CODE` constant.
+- **Wire codecs** in `crowdypy.wire`: `fleet_carry_proof`, `encode_fleet_carry` (49), `encode_fleet_release` (50),
+  `verify_fleet_frame`, `parse_fleet_carry_result` (51), `parse_fleet_released` (52), and `parse_fleet_delivery`
+  (53), with the `FLEET_*` constants, `FleetCarryStatus`, `FleetReleaseReason`, `SessionReleaseReason`,
+  `ClientCapability` (with `BOUND_CONTROL` and `FLEET_OWN_STATE`), `SpeakerListMode`, `MAX_MEDIA_SPEAKERS`, and
+  `CONTROL_NONCE_BYTES`. `MessageType` gains 47 and 49 to 53.
+- **On a player's connection:** a `generic_error` notification has `verified`, true when the refusal arrived inside
+  a signed bundle whose HMAC held. A player's connection acts on a refusal either way, as before. `stats()` gains
+  `wrong_app` and `unsigned_notifications`, which stay 0 there.
+- **Where the session differs from CrowdyJS's `FleetSession`:** ids are `int`; the table has no limit of its own,
+  so no carry ends `tableFull`; the session sends no heartbeat for an actor by itself, so call `send_heartbeat`
+  every 2 seconds for an idle actor; `state` is a `ConnState`; and a `silence_timeout_ms` under 4,500 that is not 0
+  is raised to 4,500.
+- **Unchanged:** `client.udp`, what a player's session advertises, and every existing call. The SDK still has no
+  wrapper for `mintManagedPlayerToken`.
+
+`schema.gql` and the generated inputs are the Application API's at v2.89.1. Beside the fleet session fields they
+carry the project profile's review, the organization's compute ceiling, and `portalReturnAllowed`; the SDK wraps
+none of those in this change.
+
 ## 0.39.1
 
 Vendors CrowdyCPP 0.93.0 and pins CrowdyJS 18.39.1, whose schema and operations are 18.39.0's. Your code needs no

@@ -105,7 +105,8 @@ python scripts/ci/check_pin_tiers.py --crowdyjs ../CrowdyJS --crowdycpp ../Crowd
 
 The parity gate is **strict** (since 0.4.0): every difference from CrowdyJS carries a
 reviewed classification (`native-equivalent` or `browser-exclusion`), a stale or missing one
-fails, and a `portable-gap` fails the build. Something new in CrowdyJS that CrowdyPy lacks is
+fails, and a `portable-gap` fails the build. Since 0.40.0 it also reads CrowdyJS's fleet
+session (`src/fleet/session.ts`, outside the directories CrowdyCPP's gate reads). Something new in CrowdyJS that CrowdyPy lacks is
 ported in the same change that moves the pin; it is not parked as a gap.
 
 The gate reads a CrowdyJS class field initialised with `=` (`readonly profile = new Relay()`)
@@ -146,6 +147,64 @@ confirms its email (`EMAIL_CONFIRMATION_REQUIRED`). `is_email_confirmation_requi
 (`domains/portal.py`) mirrors CrowdyJS's `isEmailConfirmationRequiredError`, and
 `auth.resend_confirmation_email` is the remedy. The live e2e suites sign up with the tier's
 provisioning token, which the gate does not ask, so they need no change.
+
+## Fleet sessions (0.40.0)
+
+One realtime session an organization's game server opens for itself and carries its players on
+(Application API v2.89.0, realtime servers v0.50.3, ck-exec 0.25.0 for the hub connection;
+CrowdyJS 18.40.0, CrowdyCPP 0.94.0). An org token and a fleet token are server-side credentials:
+nothing here may put one on a player's device, in a log line or in a repr.
+
+- **The Application API.** `client.fleet_sessions` (`domains/fleet_sessions.py`, async source, so
+  `scripts/unasync.py` generates the blocking one) and `exec.server_endpoint` /
+  `exec.connect_as_server`. `exec_gateway.py` holds both connections by hand: `call_as`,
+  `call_as_raw`, `open_as_server`, `is_server` and the `ExecCallAs` frame (`0x05`, held to the
+  shared `exec-client-frames.json`). `_server_only.py` is CrowdyJS's `src/server-only.ts`: the five
+  calls refuse before any request where Python is not a server (`sys.platform` `emscripten`,
+  `android`, `ios`). The SDK still wraps no `mintManagedPlayerToken`.
+- **The binding.** `native/fleet_binding.cpp` binds CrowdyCPP's `replication::FleetSession` under
+  the performance rules below. `FleetConfig::reassign` stays unset, so the network thread asks
+  Python for nothing and a move is read from `move_ordered`. A carry has no native callback: its
+  result is a row of a later batch, like a release (52), a session release (28), a named refusal
+  (254), an error (3) and a status (255). `FleetBatch` is a `NotificationBatch`'s columns plus
+  `listed`, `recipient_offsets` and `recipient_ids`.
+- **The facade.** `src/crowdypy/fleet.py` holds `AsyncFleetSession` and `FleetSession` by hand, as
+  `replication.py` holds a player's two connections. It keeps no token in a Python attribute (a
+  test reads `vars(fleet)`). CrowdyCPP acts on a `FLEET_CARRY_RESULT`, and reports a carry nothing
+  answered, inside `poll()`, and a silence queues no event. So an awaited `carry` polls every 50
+  ms while it waits, the asyncio reader wakes once a second with nothing to read
+  (`_HOUSEKEEPING_S`), and the blocking session relies on the game's `poll()` every tick. A test
+  that answers a carry polls before it expects the session to have acted on the answer.
+- **`MIN_SILENCE_TIMEOUT_MS` (4,500).** CrowdyCPP 0.94.0 holds the capabilities interval to a
+  third of the silence timeout and skips its silence check while the last capabilities are
+  younger than 1,000 ms, so at its own minimum of 3,000 ms a silence is never counted (measured:
+  no move order in 7.5 s at 3,000 ms, one at 4.5 s at 4,500 ms). The facade raises a shorter
+  timeout. When a CrowdyCPP release fixes it, drop the floor, the README's fifth difference and
+  the test that names it.
+- **Differences from CrowdyJS's `FleetSession`**, each classified in the parity matrix (the gate
+  reads `src/fleet/session.ts` since 0.40.0, `FleetSession` against `AsyncFleetSession`): ids are
+  `int`, no table limit (`tableFull`, `tableLimit`), no automatic actor heartbeat (`forgetActor`),
+  `state` for `status`, no `tick` or `settled`. `carry_nowait`, `send_actor_updates` and the
+  `send_refused` handler are CrowdyPy's and CrowdyCPP's own.
+- **A player's connection** gained what CrowdyCPP 0.94.0 added to the types already bound:
+  `Notification.verified`, `wrong_app` and `unsigned_notifications` in `stats()`, and `ERRC`
+  through `NotCarried` (`register_replication` loops to the last `Errc`: move it when CrowdyCPP
+  adds one).
+- **Tests.** `tests/unit/test_fleet_session.py` runs both sessions against a fake realtime server
+  (`QUIET` switches the silence timeout and the periodic capabilities off; one test waits 4.5 s
+  for a silence), `test_fleet_wire.py` holds the codec to CrowdyCPP's golden bytes, and
+  `domains/test_fleet_sessions.py` covers the calls and the refusals.
+- **Benchmarks** (`benchmarks/README.md`, "Re-check, 0.40.0"). A batch row for a carried player
+  costs 1.09x a player's connection's. Two findings are CrowdyCPP's and are open there: 0.94.0
+  receives about 14% fewer notifications a second than 0.93.0 in section 2, with either
+  binding, and in both versions `disconnect()` does not return while datagrams arrive faster
+  than the network thread verifies them (its read loop ends only on a short batch). Section 2
+  stops its blaster before it closes for that reason. Neither can be fixed here: `vendor/` is
+  never edited.
+- **The live suite has not run.** `tests/e2e/test_e2e_fleet_sessions.py` reads `CROWDY_FLEET_API_URL`,
+  `CROWDY_FLEET_APP_ID` and `CROWDY_FLEET_ORG_TOKEN` (a module-level `E2E_REQUIRES` replaces the
+  `CROWDY_E2E_*` four in `conftest.py`). Run it on dev before 0.40.0 moves to test, and record
+  the run in `docs/e2e-coverage.md`.
 
 ## Releasing
 

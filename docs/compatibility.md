@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.39.1`
+- CrowdyPy `0.40.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -33,6 +33,14 @@ A consumer on one tier pins only that tier's versions: pip ignores pre-releases 
 requirement names one exactly, the same way a caret never matches an npm prerelease.
 
 ## Server compatibility
+
+- 0.40.0's fleet sessions (`client.fleet_sessions`, `crowdypy.fleet`) need Application API v2.89.0 or later and
+  realtime servers v0.50.3, and `client.exec.connect_as_server` with `call_as` needs ck-exec 0.25.0 as well. All
+  three have been on dev, test, and prod since November 26, 2026. A Crowded Kingdoms operator switches fleet
+  sessions on for an organization, which also needs org-managed players; until then `fleet_sessions.open` answers
+  `FORBIDDEN`. An older Application API answers the four calls with a GraphQL validation error. Hubs built with
+  ckx-sdk before 0.15 answer a server's call `Denied` until they are built again. Nothing else in 0.40.0 needs
+  more than 0.39.0 does (Application API v2.85.0).
 
 - ck-exec (`client.exec`) runs on dev and test, and on prod from its migration; a Game API that does not serve the
   `exec*` roots answers those calls with a GraphQL validation error.
