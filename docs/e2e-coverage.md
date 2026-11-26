@@ -22,6 +22,7 @@ Unconfigured, every suite skips, so `pytest` in CI records skips, not live passe
 | `CROWDY_E2E_PLAYER_EMAIL`, `CROWDY_E2E_PLAYER_PASSWORD` | no | the teen safety suite's existing-account scenario: an existing player outside the app's organization (it reads `hasSafetyModerator` as `None` and lists its own input-log sessions); it also needs `CROWDY_E2E_OWNER_PASSWORD`, and registers nobody. CrowdyCPP's suite reads the same pair. Unset, it skips |
 | `CROWDY_E2E_UNDER13_SIGNUP=1` | no | the teen safety suite also tries a sign-up under 13 and expects `AGE_REQUIREMENT_NOT_MET`. Since ck-api v2.61.0 that refusal stops every sign-up and `record_player_age` from the same address and user agent for 24 hours, so never set it on a machine others register from (the builder) |
 | `CROWDY_E2E_PROVISIONING_TOKEN` | dev and test | dev and test are staff-only, so a new derived player is refused (`TIER_ACCESS_REQUIRED`) unless `register` carries a provisioning token covering its address. Use the `harness` token (Secrets Manager `infra-cp/<tier>/loadtest/provisioning-token-harness`, `token` key), which covers `crowdy-e2e*@test.invalid`, with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` (the `*` needs at least one character, so the bare `crowdy-e2e@test.invalid` is refused for a suite that registers the base address). Sent on `register` only; other tiers ignore it |
+| `CROWDY_FLEET_API_URL`, `CROWDY_FLEET_APP_ID`, `CROWDY_FLEET_ORG_TOKEN` | fleet suite | the fleet session suite's own three (the names CrowdyJS's and CrowdyCPP's fleet suites read), in place of the `CROWDY_E2E_*` four: the Application API's origin, an app of an organization with managed players and fleet sessions switched on and text chat granted, and an org token (`cko_...`) of that organization with the scopes `players:mint` and `fleet:session`, kept outside the repository. Optional: `CROWDY_FLEET_HUB_APP_ID` (with `CROWDY_FLEET_HUB_NODE_TYPE`, `CROWDY_FLEET_HUB_KEY`, `CROWDY_FLEET_HUB_METHOD`) for the hub step, and `CROWDY_FLEET_CHUNK` (the players stand in `7200,7200,7200` unless set). Unset, the suite skips |
 
 ```bash
 pytest tests/e2e -q
@@ -51,6 +52,18 @@ suites.
 | `test_e2e_open_grid_exec_gateway.py` | as a throwaway org admin (`CROWDY_E2E_THROWAWAY_OWNER=1`): open a nested grid, read it back, a player holds its keys, a player-code key is refused `BAD_REQUEST`, close it; the tier's ck-exec gateway passes `exec_gateway_refusal`, a connection pings, and a tampered connect token is `Denied` with the gateway's HTTP 401 reason | `e2e_open_grid_exec_gateway` |
 | `test_e2e_studio.py` | the headless Studio controller creates a project from the mod starter, edits it with autosave, and archives it (optional: needs `CROWDY_E2E_STUDIO_GRID_ID`) | `e2e_crowdy_studio` |
 | `test_e2e_input_log.py` | read-only, as the owner: the app's sessions list with `missingRecords` on every node (the Game API release after v2.40.2 accepts the selection), one session's inputs page when there is one, and a cancelled read stops with the client still usable | `e2e_input_log` |
+| `test_e2e_fleet_sessions.py` | **Not run yet (see below).** As an organization's two game servers, with its org token: each opens a fleet session (`fleet_sessions.open`) and connects; four managed players sign in (the test's own `mintManagedPlayerToken` request, which the SDK does not wrap); X carries two and Y two; an actor update from X's player reaches Y once, plain, and does not come back to X; a spatial text arrives inside a delivery that lists its players; a crossing (Y carries X's player, X hears `released` with reason 1, X's next send raises `FleetNotCarriedError`, and no Application API call is made); a refresh keeps the token, the server and the carries; a carried player's refreshed token is carried with `replaces` and no release; optionally `exec.connect_as_server` with `call` and `call_as`; every player is released, both sessions are closed (`close` answers true, then false, and a refresh `NOT_FOUND`); and each session's `wrong_app`, `unsigned_notifications` and `hmac_failures` are 0. It leaves four managed players, `crowdypy-fleet-e2e-0` to `-3`, which every run reuses | `e2e_fleet_session` |
+
+### The fleet session suite has not run
+
+`test_e2e_fleet_sessions.py` was written on 2026-11-26 for 0.40.0 and has **not** run against
+any deployment: there was no org token with `fleet:session` to run it with, and dev and test
+were being switched off. Until a run is recorded in the table below, what holds the fleet
+session is the unit suite against a fake realtime server (`tests/unit/test_fleet_session.py`),
+the codec's golden bytes (`tests/unit/test_fleet_wire.py`, CrowdyCPP's vectors), the mocked
+Application API (`tests/unit/domains/test_fleet_sessions.py`) and CrowdyCPP's own live suite
+for the native core (`e2e_fleet_session`). Run it on dev before 0.40.0 moves to test, and
+record the run here.
 
 ## Live runs
 

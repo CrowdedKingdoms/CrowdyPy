@@ -19,6 +19,9 @@ Configuration (the variables CrowdyCPP's suites read):
   ``infra-cp/<tier>/loadtest/provisioning-token-harness``, its ``token`` key) covers
   ``crowdy-e2e*@test.invalid``, so use ``CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid``.
 - ``CROWDY_E2E_SLOW=1``: the long-running suites.
+
+A suite that plays another part names its own variables in a module-level ``E2E_REQUIRES``
+and is skipped by those instead: ``test_e2e_fleet_sessions.py`` reads ``CROWDY_FLEET_*``.
 """
 
 from __future__ import annotations
@@ -81,8 +84,12 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         ):
             continue
         item.add_marker(pytest.mark.e2e)
-        if missing:
-            item.add_marker(pytest.mark.skip(reason=f"e2e unconfigured: {', '.join(missing)}"))
+        # A suite with its own configuration names it (the fleet session suite plays an
+        # organization's servers with an org token, not the players of CROWDY_E2E_*).
+        own = getattr(getattr(item, "module", None), "E2E_REQUIRES", None)
+        absent = missing if own is None else [name for name in own if not _env(name)]
+        if absent:
+            item.add_marker(pytest.mark.skip(reason=f"e2e unconfigured: {', '.join(absent)}"))
         elif item.get_closest_marker("slow") and not CONFIG.slow:
             item.add_marker(pytest.mark.skip(reason="slow suite: set CROWDY_E2E_SLOW=1"))
 
