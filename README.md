@@ -535,12 +535,13 @@ Every notification handler receives `(notification, players)`:
   all of them may receive it.
 
 The session verifies every frame with the fleet token before a handler runs, and no option
-turns that off. A frame that fails is dropped and counted in `fleet.stats()`
-(`hmac_failures`, `unsigned_notifications`, `malformed`), and so is a notification that names
-another app than the session's (`wrong_app`). The largest datagram a fleet session is sent is
-1,242 bytes. On a hot path, read whole batches: `fleet.poll()` and `fleet.batches()` give a
-`FleetBatch`, whose columns are the ones a player's connection has, with `listed`,
-`recipient_offsets`, and `recipient_ids` for the players of each row.
+turns that off. It drops a frame that fails and counts it in `fleet.stats()`
+(`hmac_failures`, `unsigned_notifications`, `malformed`), and it does the same with a
+notification that names another app than the session's (`wrong_app`). The largest datagram a
+fleet session is sent is 1,242 bytes. A server that receives thousands of notifications a
+second reads whole batches: `fleet.poll()` and `fleet.batches()` give a `FleetBatch`, whose
+columns are the ones a player's connection has, with `listed`, `recipient_offsets`, and
+`recipient_ids` for the players of each row.
 
 ### A refused send is signed, and the handler says so
 
