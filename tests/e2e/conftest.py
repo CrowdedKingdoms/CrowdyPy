@@ -84,8 +84,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         ):
             continue
         item.add_marker(pytest.mark.e2e)
-        # A suite with its own configuration names it (the fleet session suite plays an
-        # organization's servers with an org token, not the players of CROWDY_E2E_*).
+        # A suite with its own configuration names it: the fleet session suite plays an
+        # organization's servers with an org token and reads CROWDY_FLEET_*.
         own = getattr(getattr(item, "module", None), "E2E_REQUIRES", None)
         absent = missing if own is None else [name for name in own if not _env(name)]
         if absent:

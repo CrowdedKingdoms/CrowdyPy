@@ -21,12 +21,12 @@ Optional: ``CROWDY_FLEET_HUB_APP_ID`` (also connect to hubs as the server, with
 ``CROWDY_FLEET_HUB_NODE_TYPE``, ``CROWDY_FLEET_HUB_KEY`` and ``CROWDY_FLEET_HUB_METHOD``), and
 ``CROWDY_FLEET_CHUNK`` (where the players stand, ``7200,7200,7200`` unless set).
 
-WHAT IT LEAVES ON THE TIER. Four managed players, ``crowdypy-fleet-e2e-0`` to ``-3``, which
+What it leaves on the tier: four managed players, ``crowdypy-fleet-e2e-0`` to ``-3``, which
 every run reuses and none deletes; their sign-ins, which last 10 minutes; and the usage of a
 few hundred datagrams. Both fleet sessions are closed and every player is released, whether
 the steps passed or not. It changes no setting of the organization or the app.
 
-NO TOKEN IS EVER PRINTED. No assertion takes a token as an operand, and a failure of a
+No token is ever printed. No assertion takes a token as an operand, and a failure of a
 request names its code and never its variables.
 """
 
