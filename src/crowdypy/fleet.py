@@ -1315,15 +1315,26 @@ class AsyncFleetSession(_FleetCore):
         loop = asyncio.get_running_loop()
         wake = self._wake_r
         assert wake is not None
-        while True:
-            try:
-                await asyncio.wait_for(loop.sock_recv(wake, 4096), _HOUSEKEEPING_S)
-            except TimeoutError:
-                pass  # nothing arrived: look at the move order and the carry deadlines
-            except (OSError, ValueError):
-                return
-            self._clear_wake()
-            self.poll()
+        # One read of the wake socket stays pending across the housekeeping passes: it is
+        # never cancelled for a timeout, so no wake is lost to a cancelled read.
+        waiting: asyncio.Future[bytes] | None = None
+        try:
+            while True:
+                if waiting is None:
+                    waiting = asyncio.ensure_future(loop.sock_recv(wake, 4096))
+                done, _ = await asyncio.wait({waiting}, timeout=_HOUSEKEEPING_S)
+                if done:
+                    try:
+                        waiting.result()
+                    except (OSError, ValueError):
+                        return
+                    waiting = None
+                    self._clear_wake()
+                # With nothing read, this pass looks at the move order and the carry deadlines.
+                self.poll()
+        finally:
+            if waiting is not None:
+                waiting.cancel()
 
 
 class FleetSession(_FleetCore):
