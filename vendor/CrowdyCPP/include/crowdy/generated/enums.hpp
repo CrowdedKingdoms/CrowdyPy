@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/application-api.graphql).
-// schema.gql sha256: f20601bed52d58acd1331708b824fcd1b61669f220b173a16e3952e09f84ee02
+// schema.gql sha256: 64f39f99793673ad67977674b20c08f767ba53b9ce740b1d215726116cf0b5b7
 // operations sha256: 2b4233c7ee65ea2ab6b163cb036808d8b516bb2a2e33c3f4df2b337c4ff13549
 
 #pragma once
@@ -1345,6 +1345,31 @@ inline std::optional<ProjectLogicLocation> projectLogicLocationFromString(std::s
   if (s == "CLIENTS") return ProjectLogicLocation::CLIENTS;
   if (s == "LIGHT_SERVER_CODE") return ProjectLogicLocation::LIGHT_SERVER_CODE;
   if (s == "FULL_SERVER_SIMULATION") return ProjectLogicLocation::FULL_SERVER_SIMULATION;
+  return std::nullopt;
+}
+
+enum class ProjectProfileStatus {
+  INCOMPLETE,
+  WAITING_FOR_REVIEW,
+  APPROVED,
+  DECLINED,
+};
+
+inline constexpr std::string_view toString(ProjectProfileStatus v) {
+  switch (v) {
+    case ProjectProfileStatus::INCOMPLETE: return "INCOMPLETE";
+    case ProjectProfileStatus::WAITING_FOR_REVIEW: return "WAITING_FOR_REVIEW";
+    case ProjectProfileStatus::APPROVED: return "APPROVED";
+    case ProjectProfileStatus::DECLINED: return "DECLINED";
+  }
+  return "";
+}
+
+inline std::optional<ProjectProfileStatus> projectProfileStatusFromString(std::string_view s) {
+  if (s == "INCOMPLETE") return ProjectProfileStatus::INCOMPLETE;
+  if (s == "WAITING_FOR_REVIEW") return ProjectProfileStatus::WAITING_FOR_REVIEW;
+  if (s == "APPROVED") return ProjectProfileStatus::APPROVED;
+  if (s == "DECLINED") return ProjectProfileStatus::DECLINED;
   return std::nullopt;
 }
 

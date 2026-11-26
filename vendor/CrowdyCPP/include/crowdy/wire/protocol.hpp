@@ -72,6 +72,26 @@ enum class MessageType : std::uint8_t {
   /// BoundControl and its nonce: the server will send this assignment's control frames
   /// only in the bound forms. [type][8B nonce][32B HMAC over the first 9 bytes].
   ControlBoundAck = 46,
+  /// Client -> server, a fleet session only: start carrying a player. The capabilities'
+  /// long-spatial layout (chunk (0,0,0), distance 0, no actor UUID, the fleet session's own
+  /// gameTokenId in the tail, signed with the fleet token); the app payload is
+  /// [8B player gameTokenId][8B epoch millis][32B proof] (wire::fleetCarryProof).
+  FleetCarry = 49,
+  /// Client -> server, a fleet session only: the player left the game. FleetCarry's layout;
+  /// the app payload is [8B player gameTokenId].
+  FleetRelease = 50,
+  /// Server -> client, a fleet session only: the answer to a FleetCarry.
+  /// [type][8B player gameTokenId][8B user id][1B status]; the user id is 0 unless the
+  /// status is 0 (carried). Signed as every fleet frame is: see namespace fleet.
+  FleetCarryResult = 51,
+  /// Server -> client, a fleet session only: a carry ended.
+  /// [type][8B player gameTokenId][1B reason].
+  FleetReleased = 52,
+  /// Server -> client, a fleet session only: one notification and the only carried players
+  /// who may receive it. [type][1B count][count x 8B player gameTokenId][the notification a
+  /// player's own session would be sent, in its unsigned form]; 1 to
+  /// fleet::kMaxDeliveryRecipients players.
+  FleetDelivery = 53,
 
   ActorUpdateRequest = 128,
   ActorUpdateNotification = 130,
@@ -151,19 +171,34 @@ inline constexpr std::uint32_t kBoundControl = 1u << 1;
 /// is otherwise not sent. A request rather than something this build reads, so it is not in
 /// kAll; Config::ownMediaEcho adds it.
 inline constexpr std::uint32_t kOwnMediaEcho = 1u << 2;
+/// A fleet session only: send it the state its own carried players sent, when another of its
+/// carried players is in range. A request like kOwnMediaEcho, so it is not in kAll;
+/// FleetSession::setFleetOwnState adds it.
+inline constexpr std::uint32_t kFleetOwnState = 1u << 3;
 /// Everything this SDK build can read.
 inline constexpr std::uint32_t kAll = kBundleSigned | kBoundControl;
 }  // namespace ClientCapability
 
 /// True for the long HMAC spatial layout: types 128-140, SingleActorMessage
 /// (142), the video pair and actor-left (143-145), plus the non-spatial
-/// ClientActorHeartbeat (26), ClientCapabilities (29) and ClientMediaSpeakers (47),
-/// which reuse it.
+/// ClientActorHeartbeat (26), ClientCapabilities (29), ClientMediaSpeakers (47), FleetCarry
+/// (49) and FleetRelease (50), which reuse it.
 inline constexpr bool isLongSpatialLayout(std::uint8_t t) noexcept {
   return (t >= 128 && t <= 140) || (t >= 142 && t <= 146) ||
          t == static_cast<std::uint8_t>(MessageType::ClientActorHeartbeat) ||
          t == static_cast<std::uint8_t>(MessageType::ClientCapabilities) ||
-         t == static_cast<std::uint8_t>(MessageType::ClientMediaSpeakers);
+         t == static_cast<std::uint8_t>(MessageType::ClientMediaSpeakers) ||
+         t == static_cast<std::uint8_t>(MessageType::FleetCarry) ||
+         t == static_cast<std::uint8_t>(MessageType::FleetRelease);
+}
+
+/// Long-spatial requests only a client originates and no server sends back: a receiver
+/// drops one rather than read it as a notification.
+inline constexpr bool isClientOnlyControlType(std::uint8_t t) noexcept {
+  return t == static_cast<std::uint8_t>(MessageType::ClientCapabilities) ||
+         t == static_cast<std::uint8_t>(MessageType::ClientMediaSpeakers) ||
+         t == static_cast<std::uint8_t>(MessageType::FleetCarry) ||
+         t == static_cast<std::uint8_t>(MessageType::FleetRelease);
 }
 
 /// How a ClientMediaSpeakers changes one kind's list (Buddy v0.49.0).
@@ -253,6 +288,55 @@ enum class ReleaseReason : std::uint8_t {
   /// connection goes Inactive and does not reassign until connect() is called.
   Idle = 5,
 };
+
+// ---- Fleet session messages ---------------------------------------------------
+// A fleet session is one realtime session of an organization's game server that carries
+// many players. A message it sends for a carried player is the message that player's own
+// session would send, with the tail's game token id the PLAYER's and the HMAC keyed with
+// the FLEET token; its own messages carry its own game token id.
+namespace fleet {
+/// The ASCII label a FleetCarry proof starts with (14 bytes, no terminator on the wire).
+inline constexpr char kCarryProofLabel[] = "ck-fleet-carry";
+constexpr std::size_t kCarryProofLabelSize = sizeof(kCarryProofLabel) - 1;  // 14
+/// label + fleet gameTokenId + player gameTokenId + epoch millis.
+constexpr std::size_t kCarryProofMessageSize = kCarryProofLabelSize + 8 + 8 + 8;  // 38
+// FleetCarry app payload: [8B player gameTokenId][8B epoch millis][32B proof]
+constexpr std::size_t kCarryPlayerOffset = 0;
+constexpr std::size_t kCarryEpochOffset = 8;
+constexpr std::size_t kCarryProofOffset = 16;
+constexpr std::size_t kCarryPayloadSize = 8 + 8 + kHmacTagSize;  // 48
+// FleetRelease app payload: [8B player gameTokenId]
+constexpr std::size_t kReleasePayloadSize = 8;
+// FleetCarryResult: [1B type=51][8B player gameTokenId][8B user id][1B status]
+constexpr std::size_t kCarryResultSize = 1 + 8 + 8 + 1;  // 18
+// FleetReleased: [1B type=52][8B player gameTokenId][1B reason]
+constexpr std::size_t kReleasedSize = 1 + 8 + 1;  // 10
+// FleetDelivery: [1B type=53][1B count][count x 8B player gameTokenId][notification]
+constexpr std::size_t kDeliveryHeaderSize = 2;
+/// The most players one FleetDelivery lists; the server splits a longer list over frames.
+constexpr std::size_t kMaxDeliveryRecipients = 32;
+
+// How the three server frames are signed (realtime servers v0.50.3). A session reads both
+// forms whatever it advertised:
+//
+//  - a member of a MESSAGE_BUNDLE_SIGNED (30): the frame as above, with no HMAC of its own
+//    (the bundle's one HMAC covers it). Only to a session that advertised BundleSigned.
+//  - alone in its datagram, or a member of a MESSAGE_BUNDLE (2): the frame followed by 32
+//    bytes, HMAC-SHA256(key = the fleet token's 64 octets, message = every byte of the
+//    frame from the type byte on, followed by the fleet token's 64 octets). To a session
+//    that did not advertise BundleSigned, and to any session for a FleetDelivery too large
+//    to be a bundle member (above kMaxBundledDeliverySize).
+constexpr std::size_t kCarryResultSignedSize = kCarryResultSize + kHmacTagSize;  // 50
+constexpr std::size_t kReleasedSignedSize = kReleasedSize + kHmacTagSize;        // 42
+/// The largest FleetDelivery that travels inside a MESSAGE_BUNDLE_SIGNED.
+constexpr std::size_t kMaxBundledDeliverySize = 1197;
+/// The largest datagram a fleet session is sent: a FleetDelivery for one player, alone, with
+/// its own HMAC (2 + 8 + a 1,200-byte notification + 32). Nothing else the server sends a
+/// client is above kMaxDatagramSize (1,232). Size receive buffers for this.
+constexpr std::size_t kMaxReceiveDatagramSize = 1242;
+/// The server refuses a FleetCarry whose time is further than this from its own (status 3).
+constexpr std::int64_t kCarryClockToleranceMs = 30 * 1000;
+}  // namespace fleet
 
 // ---- Channel message layouts ------------------------------------------------
 // Request (client -> server):

@@ -229,6 +229,12 @@ struct ChannelNotification {
 struct GenericError {
   std::uint8_t sequence;
   wire::ErrorCode code;
+  /// True when the frame arrived inside a MESSAGE_BUNDLE_SIGNED whose HMAC verified. An
+  /// error frame ([3][sequence][code]) carries no HMAC of its own, so one that arrives any
+  /// other way is the word of whoever could put a datagram on the session's flow. A
+  /// FleetSession changes no state on an unverified one; a Connection acts on either, as it
+  /// always has.
+  bool verified = false;
 };
 
 /// Notification handlers, mirroring CrowdyJS's UdpNotificationHandlers.
