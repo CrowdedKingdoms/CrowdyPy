@@ -113,3 +113,48 @@ under CPython 3.12.3 and the system's shared OpenSSL 3.0.13 rather than the whee
 CrowdyCPP 0.60.0's own `bench_send` section 5 (`sendActorUpdate` x200, Release, same machine
 and OpenSSL) measured 623.9 ns/entity, so one batch costs 1.04x CrowdyCPP's send path per
 entity (1.06x at 0.2.0).
+
+## Re-check, 0.40.0
+
+0.40.0 re-vendored CrowdyCPP 0.94.0, added `verified` to an error's row, and bound the fleet
+session. Both builds below ran back to back on the CKS builder on November 26, 2026, under
+CPython 3.12.3 and the system's shared OpenSSL 3.0.13, each from a clean build, so compare
+them with each other and with the 0.8.0 re-check, and leave the 0.2.0 tables aside.
+
+| | 0.39.1 (CrowdyCPP 0.93.0) | 0.40.0 (CrowdyCPP 0.94.0) |
+|---|---|---|
+| 1a. `send_actor_updates`, one batch of 200, two runs | 743.3, 739.0 ns/entity | 741.3, 742.4 ns/entity |
+| 1a. `native.send_spatial` x200, two runs | 928.6, 920.2 ns/entity | 918.9, 917.8 ns/entity |
+| 1a. `send_actor_update` x200, two runs | 1055.7, 1062.1 ns/entity | 1050.5, 1048.2 ns/entity |
+| 2. notifications delivered to Python, three interleaved runs | 1.795, 1.768, 1.732 million/s | 1.531, 1.498, 1.499 million/s |
+| 2. mean batch | 31 events | 20 events |
+| 4. echo round trip, p50 | 77.0 µs | 74.9 µs |
+
+The send path is unchanged. **Receiving is about 14% slower in section 2** (1.51 against 1.77 million
+notifications a second, with no ring drop and no HMAC failure in either build). The difference
+is in the vendored core: 0.39.1's binding compiled over CrowdyCPP 0.94.0 measured 1.49, 1.50, and
+1.52 million a second in the same session. Section 2 sends plain bundles of six notifications,
+each with its own HMAC, and at 0.94.0 the network thread no longer outpaces the blaster
+process. The cause inside CrowdyCPP is not identified here.
+
+That exposed a second property of CrowdyCPP's connection, in both versions: its network
+thread reads until a batch comes back short, so `disconnect()` does not return while datagrams
+arrive faster than the thread verifies them. Section 2 used to close the connection with the
+blaster still running, which hung once in six runs at 0.93.0 and in six of six at 0.94.0. The
+section now stops the blaster first.
+
+### 6. A fleet session's send cost per carried player
+
+`python benchmarks/bench_replication.py fleet` runs section 1a's conditions on a fleet
+session: one actor update for each of 200 carried players a frame, an 88-byte payload,
+bundling on, manual pump, and a peer that answers the 200 carries and is never read again.
+
+| 6. one actor update for each of 200 carried players | ns/entity | vs a player's connection (1a, same build) |
+|---|---|---|
+| `fleet.send_actor_updates`, one batch of 200 players | 811.6 | 1.09x |
+| `native.send_spatial` x200 (the raw binding) | 987.0 | 1.07x |
+| `fleet.send_actor_update` x200 (the Python API) | 1149.3 | 1.10x |
+
+Before it signs, a send for a carried player looks the player up in the session's table, and
+afterwards it records the sequence number the message left under, each under a lock. Together
+they are the 70 ns a batch row costs over a player's connection.

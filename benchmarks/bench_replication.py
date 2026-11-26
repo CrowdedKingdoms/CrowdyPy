@@ -2,7 +2,7 @@
 """CrowdyPy's replication benchmarks, offline, on 127.0.0.1.
 
     python benchmarks/bench_replication.py all
-    python benchmarks/bench_replication.py send | receive | latency | echo | jitter
+    python benchmarks/bench_replication.py send | receive | latency | echo | jitter | fleet
 
 Every peer (the draining server, the notification blaster, the echo server) runs in its own
 process, so nothing it does competes with the client for the GIL. Compare the send numbers
@@ -208,6 +208,85 @@ def bench_send(frames: int = 2000, entities: int = 200) -> dict[str, float]:
         peer.close()
 
 
+def bench_fleet_send(frames: int = 2000, players: int = 200) -> dict[str, float]:
+    """A fleet session under bench_send section 5's conditions: one actor update for each of
+    200 carried players a frame, manual pump, no flush per frame. The peer answers the
+    carries (in this process: nothing is timed until every player is carried) and is never
+    read again."""
+    from crowdypy.fleet import FleetPlayerToken, FleetSession  # CrowdyPy 0.40.0 and later
+
+    peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
+    peer.bind(("127.0.0.1", 0))
+    peer.settimeout(5.0)
+    answer = {
+        "token": TOKEN,
+        "gameTokenId": "9001",
+        "appId": "7",
+        "maxPlayers": 256,
+        "server": {"ip4": "127.0.0.1", "clientPort": peer.getsockname()[1]},
+    }
+    fleet = FleetSession(
+        answer, manual_pump=True, session_ready_wait_ms=0, silence_timeout_ms=0,
+        capabilities_interval_ms=3_600_000,
+    )  # fmt: skip
+    try:
+        fleet.connect()
+        fleet.pump(0)
+        ids = list(range(1000, 1000 + players))
+        for player in ids:
+            fleet.carry_nowait(FleetPlayerToken(f"{player:p>64}", player))
+        while fleet.carried_count < players:
+            fleet.flush_sends()
+            data, client = peer.recvfrom(4096)
+            for message in wire.split_datagram(data):
+                if message[0] != MessageType.FLEET_CARRY:
+                    continue
+                carried = wire.parse_long_spatial(message).payload[:8]
+                result = bytes([MessageType.FLEET_CARRY_RESULT]) + carried + carried + b"\0"
+                peer.sendto(result + wire.spatial_hmac(TOKEN, result), client)
+            fleet.pump(5)
+            fleet.poll()
+
+        uuid = "0123456789abcdef0123456789abcdef"
+        id_rows = np.array(ids, dtype=np.int64)
+        chunk_rows = np.array([(10, 20, 30)] * players, dtype=np.int64)
+        uuid_rows = np.frombuffer((uuid * players).encode(), dtype=np.uint8)
+        payload_rows = PAYLOAD * players
+        native = fleet.native
+        kind = int(MessageType.ACTOR_UPDATE_REQUEST)
+
+        def frame_api() -> None:
+            for player in ids:
+                fleet.send_actor_update(player, (10, 20, 30), uuid, PAYLOAD)
+
+        def frame_native() -> None:
+            for player in ids:
+                native.send_spatial(player, kind, 10, 20, 30, uuid, PAYLOAD, 8, 1)
+
+        def frame_batch() -> None:
+            fleet.send_actor_updates(
+                id_rows, chunk_rows, uuid_rows, payload_rows, stride=len(PAYLOAD), flush=False
+            )
+
+        results: dict[str, float] = {}
+        for name, frame in (
+            ("send_actor_update x200 (Python API)", frame_api),
+            ("native.send_spatial x200 (raw binding)", frame_native),
+            ("send_actor_updates, one batch of 200", frame_batch),
+        ):
+            for _ in range(50):
+                frame()
+            start = time.perf_counter_ns()
+            for _ in range(frames):
+                frame()
+            results[name] = (time.perf_counter_ns() - start) / (frames * players)
+        return results
+    finally:
+        fleet.close()
+        peer.close()
+
+
 def bench_send_draining(frames: int = 500, entities: int = 200) -> dict[str, float]:
     """The same frames with the network thread running, a peer process draining every
     datagram, and a flush at the end of each frame: closer to a game, and what it costs."""
@@ -248,6 +327,11 @@ def bench_receive(seconds: float = 5.0, per_bundle: int = 6) -> dict[str, float]
                     batches += 1
             elapsed = time.perf_counter() - start
             stats = conn.stats()
+            # Stop the blaster before the connection closes. CrowdyCPP's network thread reads
+            # until a batch comes back short, so a close under a flood it cannot outpace
+            # never returns.
+            peer.close()
+            time.sleep(0.2)
     finally:
         peer.close()
     return {
@@ -344,11 +428,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("which", choices=["all", "send", "receive", "latency", "echo", "jitter"])
+    sections = ["send", "receive", "latency", "echo", "jitter", "fleet"]
+    parser.add_argument("which", choices=["all", *sections])
     args = parser.parse_args(argv)
-    which = (
-        {"send", "receive", "latency", "echo", "jitter"} if args.which == "all" else {args.which}
-    )
+    which = set(sections) if args.which == "all" else {args.which}
 
     print(f"CrowdyPy replication benchmarks: Python {platform.python_version()}"
           f"{' (free-threaded)' if not getattr(sys, '_is_gil_enabled', lambda: True)() else ''}, "
@@ -383,6 +466,11 @@ def main(argv: list[str]) -> int:
         print("\n5. Game-loop jitter: 60 Hz asyncio loop sending 200 entities a frame while")
         print(f"   receiving ~60k notifications/s ({received} received, frame lateness in ms)")
         print(f"  {percentiles(lateness)}")
+    if "fleet" in which:
+        print("\n6. A fleet session's send cost per carried player, section 1a's conditions")
+        print("    (one actor update for each of 200 carried players a frame)")
+        for name, value in bench_fleet_send().items():
+            print(f"  {name:44s} {value:8.1f} ns/entity")
     return 0
 
 
