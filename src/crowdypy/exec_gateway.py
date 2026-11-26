@@ -140,17 +140,13 @@ _U64_MAX = 2**64 - 1
 def exec_player_id(player: int | str) -> int:
     """A player's user id as the 64-bit number a call-as frame carries: an ``int`` or a decimal
     string, from 0 to 2^64 - 1. :class:`ValueError` for anything else."""
-    refused = ValueError(f"player must be a whole number from 0 to 2^64 - 1: {player!r}")
-    if isinstance(player, bool):
-        raise refused
-    if isinstance(player, int):
+    value = -1
+    if isinstance(player, int) and not isinstance(player, bool):
         value = player
     elif isinstance(player, str) and player.isascii() and player.isdigit():
         value = int(player)
-    else:
-        raise refused
     if not 0 <= value <= _U64_MAX:
-        raise refused
+        raise ValueError(f"player must be a whole number from 0 to 2^64 - 1: {player!r}")
     return value
 
 

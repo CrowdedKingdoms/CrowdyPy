@@ -45,6 +45,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import operator
+import re
 import select
 import socket
 import threading
@@ -150,6 +152,7 @@ HANDLER_NAMES: Final = frozenset(
 
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
+_DECIMAL = re.compile(r"-?[0-9]+")
 
 
 class FleetCarryOutcome(StrEnum):
@@ -295,21 +298,35 @@ class FleetNotCarriedError(CrowdyReplicationError):
 
 
 def _id(value: int | str, what: str) -> int:
-    """``value`` as the 64-bit integer the wire carries."""
-    refused = CrowdyReplicationError(
+    """``value`` as the 64-bit integer the wire carries: an ``int`` (or anything that is an
+    index, such as a numpy integer) or a decimal string."""
+    if type(value) is int:  # the hot path: every send names its player
+        number = value
+    elif isinstance(value, str) and _DECIMAL.fullmatch(value.strip()):
+        number = int(value)
+    elif isinstance(value, (bool, str)):
+        raise _bad_id(value, what)
+    else:
+        try:
+            number = operator.index(value)
+        except TypeError:
+            raise _bad_id(value, what) from None
+    if not _INT64_MIN <= number <= _INT64_MAX:
+        raise _bad_id(value, what)
+    return number
+
+
+def _bad_id(value: object, what: str) -> CrowdyReplicationError:
+    return CrowdyReplicationError(
         f"{what} must be a whole 64-bit number: {value!r}", code="InvalidArgument"
     )
-    if isinstance(value, bool):
-        raise refused
-    if isinstance(value, int):
-        number = value
-    elif isinstance(value, str) and value.strip().lstrip("-").isdigit():
-        number = int(value)
-    else:
-        raise refused
-    if not _INT64_MIN <= number <= _INT64_MAX:
-        raise refused
-    return number
+
+
+def _send_refused(exc: Exception, player: int) -> CrowdyReplicationError:
+    """What a refused send raises: :class:`FleetNotCarriedError` for a player the session does
+    not carry now, the native refusal otherwise."""
+    error = _replication_error(exc)
+    return FleetNotCarriedError(player) if error.code == "NotCarried" else error
 
 
 def _silence(timeout_ms: int) -> int:
@@ -776,10 +793,7 @@ class _FleetCore:
         try:
             return send(player_id, *args)
         except ValueError as exc:
-            error = _replication_error(exc)
-            if error.code == "NotCarried":
-                raise FleetNotCarriedError(player_id) from None
-            raise error from None
+            raise _send_refused(exc, player_id) from None
 
     def _spatial(
         self,
@@ -791,10 +805,16 @@ class _FleetCore:
         distance: int,
         decay: int,
     ) -> int:
-        result: int = self._send(
-            self._native.send_spatial,
-            player, kind, chunk[0], chunk[1], chunk[2], uuid, payload, distance, decay,
-        )  # fmt: skip
+        # The per-entity path of a server that does not batch: an int in range goes straight
+        # to the native send.
+        if type(player) is not int or not _INT64_MIN <= player <= _INT64_MAX:
+            player = _id(player, "the player gameTokenId")
+        try:
+            result: int = self._native.send_spatial(
+                player, kind, chunk[0], chunk[1], chunk[2], uuid, payload, distance, decay
+            )
+        except ValueError as exc:
+            raise _send_refused(exc, player) from None
         return result
 
     def send_actor_update(
