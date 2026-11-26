@@ -8,7 +8,15 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from crowdypy.errors import CrowdyHttpError, CrowdyNetworkError, CrowdyTimeoutError, player_fault_of
+from crowdypy.errors import (
+    CrowdyHttpError,
+    CrowdyNetworkError,
+    CrowdyTimeoutError,
+    player_fault_of,
+    retry_after_ms_of,
+)
+
+__all__ = ["is_dropped_read", "retry_after_ms_of"]
 
 
 def is_dropped_read(error: BaseException) -> bool:
@@ -26,15 +34,6 @@ def is_dropped_read(error: BaseException) -> bool:
         errors = _graphql_errors_in(error.body)
         return errors is None or _is_busy(errors[0])
     return _is_busy(error)
-
-
-def retry_after_ms_of(error: BaseException) -> float:
-    """The wait the API asked for before the next read (``extensions.retryAfterMs``), or 0."""
-    extensions = getattr(error, "extensions", None)
-    value = extensions.get("retryAfterMs") if isinstance(extensions, Mapping) else None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        return 0.0
-    return float(value)
 
 
 def _is_busy(value: object) -> bool:

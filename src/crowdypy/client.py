@@ -35,6 +35,7 @@ from crowdypy.domains.crowdy_studio_agent import CrowdyStudioAgentAPI
 from crowdypy.domains.crowdy_studio_github import CrowdyStudioGitHubTransport
 from crowdypy.domains.discovery import DiscoveryDomain
 from crowdypy.domains.exec import ExecAPI
+from crowdypy.domains.fleet_sessions import FleetSessionsAPI
 from crowdypy.domains.game_apps import GameAppsAPI
 from crowdypy.domains.grids import GridsAPI
 from crowdypy.domains.host import HostAPI
@@ -133,6 +134,10 @@ class AsyncCrowdyClient:
         self.platform = PlatformAPI(self.graphql)
         self.organizations = OrganizationsAPI(self.graphql)
         self.managed_players = ManagedPlayersAPI(self.graphql)
+        #: Fleet sessions for the organization's own game servers: open, refresh and close,
+        #: with the organization's org token as this client's bearer. For a server the
+        #: organization runs: an org token and a fleet token never go to a player's device.
+        self.fleet_sessions = FleetSessionsAPI(self.graphql)
         self.app_access = AppAccessAPI(self.graphql)
         self.billing = BillingAPI(self.graphql)
         self.payments = PaymentsAPI(self.graphql)
@@ -166,6 +171,7 @@ class AsyncCrowdyClient:
         self.admin = AdminAPI(
             organizations=self.organizations,
             managed_players=self.managed_players,
+            fleet_sessions=self.fleet_sessions,
             apps=self.apps,
             app_access=self.app_access,
             billing=self.billing,
