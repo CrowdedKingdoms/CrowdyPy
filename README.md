@@ -654,7 +654,7 @@ CrowdyPy's session is CrowdyCPP's `replication::FleetSession`, so five things di
   connection, where CrowdyJS has `status`. The `session_released` and `move_ordered`
   handlers report what CrowdyJS's `released` status does.
 - **The shortest silence timeout is 4,500 ms.** A shorter `silence_timeout_ms` that is not 0
-  is raised to it. CrowdyCPP 0.94.0 holds the capabilities interval to a third of the
+  is raised to it. CrowdyCPP 0.94.1 holds the capabilities interval to a third of the
   timeout, and it never counts a silence while that interval is 1,000 ms or less.
 
 The wire codecs are in `crowdypy.wire` for a server that builds the messages itself:

@@ -127,8 +127,9 @@ _CARRY_TIMED_OUT: Final[int] = _r.FLEET_CARRY_TIMED_OUT
 _CARRY_CHECK_S = 0.05
 #: The shortest silence timeout this session keeps. CrowdyCPP holds the capabilities interval
 #: to a third of the timeout and gives each capabilities message 1,000 ms to be acknowledged
-#: before it counts the silence. Under about 3,300 ms the two are equal and the timeout never
-#: passes (CrowdyCPP 0.94.0), so a shorter one that is not 0 is raised to this.
+#: before it counts the silence. At 3,000 ms the two are equal and the timeout never passes
+#: (CrowdyCPP 0.94.0 and 0.94.1; it passes from 3,300 ms), so a shorter one that is not 0 is
+#: raised to this.
 MIN_SILENCE_TIMEOUT_MS: Final[int] = 4_500
 
 #: How often an asyncio session looks at itself when no event wakes it: a move ordered by the

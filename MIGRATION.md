@@ -5,7 +5,7 @@ new minor may change the API. Read the section for every minor you skip.
 
 ## 0.40.0
 
-Vendors CrowdyCPP 0.94.0 and syncs CrowdyJS 18.40.0's schema and operations. Your code needs no change, and
+Vendors CrowdyCPP 0.94.1 and syncs CrowdyJS 18.40.0's schema and operations. Your code needs no change, and
 nothing here changes a client that does not use it. This release adds fleet sessions. They need Application API
 v2.89.0 or later, realtime servers v0.50.3, and ck-exec 0.25.0 for the hub connection. All three have been on dev,
 test, and prod since November 26, 2026. Fleet sessions stay off for an organization until a Crowded Kingdoms

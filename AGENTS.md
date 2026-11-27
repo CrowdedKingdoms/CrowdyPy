@@ -152,8 +152,13 @@ provisioning token, which the gate does not ask, so they need no change.
 
 One realtime session an organization's game server opens for itself and carries its players on
 (Application API v2.89.0, realtime servers v0.50.3, ck-exec 0.25.0 for the hub connection;
-CrowdyJS 18.40.0, CrowdyCPP 0.94.0). An org token and a fleet token are server-side credentials:
+CrowdyJS 18.40.0, CrowdyCPP 0.94.1). An org token and a fleet token are server-side credentials:
 nothing here may put one on a player's device, in a log line or in a repr.
+
+0.40.0 vendors CrowdyCPP 0.94.1 because 0.94.0 never left dev: a CrowdyPy promotion needs the
+pinned CrowdyCPP version tagged on the target tier. 0.94.1 changes no API: its four fleet
+documents moved from the headers to its generated operations, and the vendored `src/` is
+byte for byte 0.94.0's.
 
 - **The Application API.** `client.fleet_sessions` (`domains/fleet_sessions.py`, async source, so
   `scripts/unasync.py` generates the blocking one) and `exec.server_endpoint` /
@@ -175,11 +180,11 @@ nothing here may put one on a player's device, in a log line or in a repr.
   ms while it waits, the asyncio reader wakes once a second with nothing to read
   (`_HOUSEKEEPING_S`), and the blocking session relies on the game's `poll()` every tick. A test
   that answers a carry polls before it expects the session to have acted on the answer.
-- **`MIN_SILENCE_TIMEOUT_MS` (4,500).** CrowdyCPP 0.94.0 holds the capabilities interval to a
-  third of the silence timeout and skips its silence check while the last capabilities are
-  younger than 1,000 ms, so at its own minimum of 3,000 ms a silence is never counted (measured:
-  no move order in 7.5 s at 3,000 ms, one at 4.5 s at 4,500 ms). The facade raises a shorter
-  timeout. When a CrowdyCPP release fixes it, drop the floor, the README's fifth difference and
+- **`MIN_SILENCE_TIMEOUT_MS` (4,500).** CrowdyCPP 0.94.1 (as 0.94.0) holds the capabilities
+  interval to a third of the silence timeout and skips its silence check while the last
+  capabilities are younger than 1,000 ms, so at its own minimum of 3,000 ms a silence is never
+  counted (measured through the raw binding: no move order in 30 s at 3,000 and 3,002 ms, one
+  at 3.3 s at 3,300 ms and at 4.5 s at 4,500 ms). The facade raises a shorter timeout. When a CrowdyCPP release fixes it, drop the floor, the README's fifth difference and
   the test that names it.
 - **Differences from CrowdyJS's `FleetSession`**, each classified in the parity matrix (the gate
   reads `src/fleet/session.ts` since 0.40.0, `FleetSession` against `AsyncFleetSession`): ids are
@@ -195,10 +200,10 @@ nothing here may put one on a player's device, in a log line or in a repr.
   for a silence), `test_fleet_wire.py` holds the codec to CrowdyCPP's golden bytes, and
   `domains/test_fleet_sessions.py` covers the calls and the refusals.
 - **Benchmarks** (`benchmarks/README.md`, "Re-check, 0.40.0"). A batch row for a carried player
-  costs 1.09x a player's connection's. Two findings are CrowdyCPP's and are open there: 0.94.0
-  receives about 14% fewer notifications a second than 0.93.0 in section 2, with either
-  binding, and in both versions `disconnect()` does not return while datagrams arrive faster
-  than the network thread verifies them (its read loop ends only on a short batch). Section 2
+  costs 1.10x a player's connection's. Two findings are CrowdyCPP's and are open there: 0.94.1
+  (as 0.94.0) receives about 17% fewer notifications a second than 0.93.0 in section 2, with
+  either binding, and `disconnect()` does not return while datagrams arrive faster than the
+  network thread verifies them (its read loop ends only on a short batch). Section 2
   stops its blaster before it closes for that reason. Neither can be fixed here: `vendor/` is
   never edited.
 - **The live suite has not run.** `tests/e2e/test_e2e_fleet_sessions.py` reads `CROWDY_FLEET_API_URL`,
