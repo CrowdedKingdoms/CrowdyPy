@@ -5,7 +5,7 @@ are in `pyproject.toml` (`[project].version`, `[tool.crowdypy.crowdyjs]`,
 `[tool.crowdypy.crowdycpp]`); `tests/unit/test_release_versions.py` refuses this page when
 its version disagrees.
 
-- CrowdyPy `0.40.0`
+- CrowdyPy `0.41.0`
 - API surface: CrowdyJS (the pinned version and commit in `pyproject.toml`); the generated
   `docs/parity-matrix.md` lists every covered method, every native equivalent and every
   browser exclusion with its reason. The gate is strict: there are no portable gaps, and a
@@ -34,6 +34,14 @@ requirement names one exactly, the same way a caret never matches an npm prerele
 
 ## Server compatibility
 
+- 0.41.0 selects `userId` on every call that answers an app token (`portal.mint_app_token`, `exchange_code`,
+  `refresh`, `exchange_managed_player_assertion`, and `sign_in_with_minecraft`), so those need Application API
+  v2.90.0; so do `managed_players.remove_many` and an `ip6` in a fleet refresh's `currentServer`.
+  `managed_players.settings` selects the fleet limits (v2.89.0) and `exec.org_compute_ceiling` needs v2.88.0. An
+  older Application API answers these with a GraphQL validation error. The refused-keepalive report
+  (`not_present`) describes realtime servers v0.51.0; an older server accepts a keepalive wherever it is sent, so
+  no report is made. Application API v2.90.0, realtime servers v0.51.0, and ck-exec 0.26.1 have been on dev, test,
+  and prod since November 27, 2026.
 - 0.40.0's fleet sessions (`client.fleet_sessions`, `crowdypy.fleet`) need Application API v2.89.0 or later and
   realtime servers v0.50.3, and `client.exec.connect_as_server` with `call_as` needs ck-exec 0.25.0 as well. All
   three have been on dev, test, and prod since November 26, 2026. A Crowded Kingdoms operator switches fleet

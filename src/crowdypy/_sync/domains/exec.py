@@ -323,7 +323,7 @@ def _gateway_name(gateway_url: object) -> str:
     """A gateway URL as an error message may show it: its scheme, host and port, and nothing
     after them. The URL comes beside a connect token, so a URL that already carries
     ``?token=``, or the token passed in the URL's place, must not reach a message. What is not
-    a URL is described, never shown."""
+    a URL is described by its length or its type."""
     if not isinstance(gateway_url, str):
         return f"a gateway URL of type {type(gateway_url).__name__}"
     try:

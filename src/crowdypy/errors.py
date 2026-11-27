@@ -668,7 +668,7 @@ _BLANKS: Final = re.compile(r"[\x00-\x20\x7f]+")
 def _server_text(text: object, max_chars: int = _SERVER_TEXT_MAX_CHARS) -> str:
     """Text a server sent, made fit to log or to keep: every run of whitespace and control
     characters is one space, the ends are trimmed, and it is cut at ``max_chars`` bytes of
-    UTF-8, never inside a character. CrowdyCPP's ``serverText``."""
+    UTF-8, on a character boundary. CrowdyCPP's ``serverText``."""
     if not isinstance(text, str):
         return ""
     out = _BLANKS.sub(" ", text).strip(" ")
