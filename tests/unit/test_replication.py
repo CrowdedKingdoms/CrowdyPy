@@ -21,14 +21,29 @@ import numpy as np
 import pytest
 
 from crowdypy import _native, media, wire
-from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
+from crowdypy.errors import (
+    MAX_RETRY_AFTER_WAIT_MS,
+    ApiFailure,
+    CrowdyGraphQLError,
+    CrowdyRealtimeError,
+    CrowdyReplicationError,
+    retry_wait_ms,
+)
 from crowdypy.replication import (
+    KEEPALIVE_ANSWER_WAIT_MS,
+    NOT_PRESENT,
+    NOT_PRESENT_ENDED,
+    NOT_PRESENT_IDLE_MS,
+    RECEIVE_PASS_DATAGRAMS,
     STATUS,
+    ActorNotPresent,
     Assignment,
     AsyncReplicationConnection,
     ConnState,
+    NotPresentEnd,
     ReplicationConnection,
     TokenMaterial,
+    connect_address,
 )
 from crowdypy.wire import DecayRate, MessageType, ReleaseReason
 
@@ -305,7 +320,7 @@ def test_an_error_says_whether_a_signed_bundle_vouched_for_it(server: FakeServer
             (6, wire.ErrorCode.INVALID_REQUEST, True),
         ]
         stats = connection.stats()
-        # A fleet session's two checks; a player's connection makes neither.
+        # Nothing was dropped: an error frame has no HMAC in its layout.
         assert (stats["wrong_app"], stats["unsigned_notifications"]) == (0, 0)
     assert _native.replication.ERRC["NotCarried"] == 15
 
@@ -772,3 +787,239 @@ def test_after_the_servers_acknowledgement_legacy_control_is_dropped(server: Fak
         assert connection.stats()["legacy_control_dropped"] == 2
         assert provider.assigned == 1
         assert connection.state == ConnState.CONNECTED
+
+
+# ---- CrowdyCPP 0.95.0: refused keepalives, refused assignments, what a connection drops ----
+
+
+def wait_for_events(connection: ReplicationConnection, want: int) -> list[Any]:
+    """``want`` rows that are not the connection's status rows."""
+    rows: list[Any] = []
+    deadline = time.monotonic() + 3.0
+    while len(rows) < want and time.monotonic() < deadline:
+        connection.wait(0.2)
+        rows.extend(row for row in connection.poll() if row.type != STATUS)
+    return rows
+
+
+def test_a_refused_keepalive_is_reported_once_and_ends_when_the_actor_moves(
+    server: FakeServer,
+) -> None:
+    seen: list[tuple[Any, ...]] = []
+    refusal = wire.ErrorCode.UNAUTHORIZED
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        connection.subscribe(
+            {
+                "any": lambda event: seen.append(("any", event.type)),
+                "generic_error": lambda e: seen.append(("error", e.keepalive, e.verified)),
+                "not_present": lambda report: seen.append(("not_present", report)),
+                "not_present_ended": lambda report, end: seen.append(("ended", report, end)),
+            }
+        )
+        assert connection.not_present(ME) is None
+        first = connection.send_heartbeat((1, 2, 3), ME)
+        server.recv()
+        # A player's session is sent every refusal alone, with no signature.
+        server.send(bytes([MessageType.GENERIC_ERROR, first, refusal]))
+        rows = wait_for_events(connection, 2)
+        report = ActorNotPresent(ME, (1, 2, 3), first, False, None)
+        assert [row.type for row in rows] == [MessageType.GENERIC_ERROR, NOT_PRESENT]
+        assert (rows[1].not_present, rows[1].not_present_end) == (report, None)
+        assert rows[0].not_present is None
+        # The report is the connection's own row: `any` is for what the server sent.
+        assert seen == [
+            ("any", MessageType.GENERIC_ERROR),
+            ("error", True, False),
+            ("not_present", report),
+        ]
+        assert connection.not_present(ME) == report
+        assert connection.not_present(OTHER) is None
+
+        # The refusals that follow reach generic_error only: one report stands.
+        second = connection.send_heartbeat((1, 2, 3), ME)
+        server.recv()
+        server.send(bytes([MessageType.GENERIC_ERROR, second, refusal]))
+        rows = wait_for_events(connection, 1)
+        assert [(row.type, row.keepalive) for row in rows] == [(MessageType.GENERIC_ERROR, True)]
+        stats = connection.stats()
+        assert (stats["keepalives_refused"], stats["not_present_reports"]) == (2, 1)
+
+        # A refusal that answers no keepalive is not one.
+        sequence = connection.send_text_packet((1, 2, 3), ME, "hi")
+        server.recv()
+        server.send(bytes([MessageType.GENERIC_ERROR, sequence, refusal]))
+        rows = wait_for_events(connection, 1)
+        assert [(row.type, row.keepalive) for row in rows] == [(MessageType.GENERIC_ERROR, False)]
+
+        # The actor's next keepalive names another chunk: the report ends, and nothing is
+        # known of the new place yet.
+        del seen[:]
+        connection.send_heartbeat((9, 9, 9), ME)
+        rows = wait_for_events(connection, 1)
+        assert [row.type for row in rows] == [NOT_PRESENT_ENDED]
+        assert (rows[0].not_present, rows[0].not_present_end) == (report, NotPresentEnd.MOVED)
+        assert seen == [("ended", report, NotPresentEnd.MOVED)]
+        assert connection.not_present(ME) is None
+        # Nothing here changed the connection.
+        assert connection.state == ConnState.CONNECTED
+
+
+def test_a_not_present_row_answers_no_send(server: FakeServer) -> None:
+    # The row carries the refused keepalive's sequence and the actor, as an echo would.
+    with ReplicationConnection(Provider(server), token(), app_id=7, **QUIET) as connection:
+        sequence = connection.send_heartbeat((1, 2, 3), ME)
+        server.recv()
+        server.send(bytes([MessageType.GENERIC_ERROR, sequence, wire.ErrorCode.UNAUTHORIZED]))
+        deadline = time.monotonic() + 3
+        batch = connection.poll()
+        while NOT_PRESENT not in list(batch.types) and time.monotonic() < deadline:
+            connection.wait(0.2)
+            batch = connection.poll()
+        kinds = list(batch.types)
+        assert kinds[-2:] == [MessageType.GENERIC_ERROR, NOT_PRESENT]
+        # The refusal answers the send, never the report.
+        assert batch.match(sequence, ME) == len(kinds) - 2
+        assert batch.match((sequence + 1) % 256, ME) == -1
+
+
+class RefusingProvider(Provider):
+    """An assignment the Application API refuses until ``refuse`` is cleared."""
+
+    def __init__(self, server: FakeServer, error: Exception) -> None:
+        super().__init__(server)
+        self.error: Exception | None = error
+
+    def assign_server(self) -> Assignment:
+        if self.error is not None:
+            raise self.error
+        return super().assign_server()
+
+
+def test_a_refused_assignment_says_why_and_waits_30_seconds_at_most(server: FakeServer) -> None:
+    busy = CrowdyGraphQLError(
+        [
+            {
+                "message": "the platform is busy\nask again",
+                "extensions": {"code": "PLATFORM_BUSY", "retryAfterMs": 3_600_000},
+            }
+        ]
+    )
+    provider = RefusingProvider(server, busy)
+    connection = ReplicationConnection(provider, token(), app_id=7, **QUIET)
+    try:
+        assert connection.last_assignment_failure() == ApiFailure()
+        assert not connection.last_assignment_failure().failed()
+        with pytest.raises(CrowdyReplicationError) as refused:
+            connection.connect()
+        failure = connection.last_assignment_failure()
+        # The server's hour is the SDK's 30 seconds, and its message one line.
+        assert failure == ApiFailure(
+            "Rejected", "PLATFORM_BUSY", 30_000, "the platform is busy ask again"
+        )
+        assert failure.failed()
+        assert failure.platform_busy()
+        assert refused.value.code == "Rejected"
+        assert refused.value.failure == failure
+
+        provider.error = CrowdyGraphQLError(
+            [{"message": "no access", "extensions": {"code": "ACCESS_NOT_GRANTED"}}]
+        )
+        with pytest.raises(CrowdyReplicationError) as refused:
+            connection.connect()
+        failure = connection.last_assignment_failure()
+        assert failure == ApiFailure("Rejected", "ACCESS_NOT_GRANTED", 0, "no access")
+        assert not failure.platform_busy()
+
+        provider.error = None
+        connection.connect()
+        wait_for_state(connection, ConnState.CONNECTED)
+        assert connection.state == ConnState.CONNECTED
+        assert not connection.last_assignment_failure().failed()
+    finally:
+        connection.close()
+
+
+def unsigned(note: bytes) -> bytes:
+    """A notification with containsAuth 0 and no HMAC of its own."""
+    body = bytearray(note)
+    body[35] = 0
+    del body[-41:-9]
+    return bytes(body)
+
+
+def test_a_players_connection_drops_what_nothing_signed_and_what_is_another_apps(
+    server: FakeServer,
+) -> None:
+    kind = MessageType.CLIENT_TEXT_NOTIFICATION
+    options = {**QUIET, "advertise_capabilities": True}
+    with ReplicationConnection(Provider(server), token(), app_id=7, **options) as connection:
+        server.recv()
+        signed = wire.encode_long_spatial(
+            TOKEN, kind, 7, (1, 2, 3), OTHER, b"forged",
+            distance=8, game_token_id=1_700_000_000_000,
+        )  # fmt: skip
+        server.send(unsigned(signed))
+        server.send(
+            wire.encode_long_spatial(
+                TOKEN,
+                kind,
+                8,
+                (1, 2, 3),
+                OTHER,
+                b"another app's",
+                distance=8,
+                game_token_id=1_700_000_000_000,
+            )
+        )
+        server.notify(kind, OTHER, b"its own")
+        rows = wait_for_events(connection, 1)
+        assert [(row.type, row.payload) for row in rows] == [(kind, b"its own")]
+        stats = connection.stats()
+        assert (stats["unsigned_notifications"], stats["wrong_app"]) == (1, 1)
+
+
+def test_a_token_expired_that_nothing_verified_does_not_reassign(server: FakeServer) -> None:
+    provider = Provider(server)
+    options = {**QUIET, "advertise_capabilities": True}
+    with ReplicationConnection(provider, token(), app_id=7, **options) as connection:
+        server.recv()
+        server.send(bytes([MessageType.GENERIC_ERROR, 5, wire.ErrorCode.TOKEN_EXPIRED]))
+        rows = wait_for_events(connection, 1)
+        assert [(row.error_code, row.verified) for row in rows] == [
+            (wire.ErrorCode.TOKEN_EXPIRED, False)
+        ]
+        # It asks the session provider for a fresh token instead, and keeps its server.
+        deadline = time.monotonic() + 5
+        while not provider.refreshed and time.monotonic() < deadline:
+            connection.wait(0.05)
+            connection.poll()
+        assert len(provider.refreshed) == 1
+        assert connection.stats()["unverified_token_expired"] == 1
+        assert (provider.assigned, connection.state) == (1, ConnState.CONNECTED)
+
+
+def test_the_address_a_connection_opens_its_socket_to() -> None:
+    both = Assignment("203.0.113.10", "2001:db8::10", 7777)
+    assert connect_address(both) == "203.0.113.10"
+    assert connect_address(both, prefer_ipv6=True) == "2001:db8::10"
+    assert connect_address(Assignment("", "2001:db8::10", 7777)) == "2001:db8::10"
+    assert connect_address(Assignment("203.0.113.10", "", 7777), prefer_ipv6=True) == (
+        "203.0.113.10"
+    )
+    assert connect_address(Assignment("", "", 7777)) == ""
+
+
+def test_the_limits_are_crowdycpps() -> None:
+    native = _native.replication
+    assert (KEEPALIVE_ANSWER_WAIT_MS, NOT_PRESENT_IDLE_MS) == (3_000, 30_000)
+    assert RECEIVE_PASS_DATAGRAMS == 1_024
+    assert MAX_RETRY_AFTER_WAIT_MS == native.MAX_RETRY_AFTER_WAIT_MS == 30_000
+    for hint in (-5, 0, 1, 200, 29_999, 30_000, 30_001, 2**40):
+        assert retry_wait_ms(hint) == native.retry_wait_ms(hint)
+    assert [retry_wait_ms(h) for h in (None, True, float("nan"), float("inf"), 0.5)] == [
+        0,
+        0,
+        0,
+        30_000,
+        0.5,
+    ]

@@ -216,6 +216,15 @@ class PySession {
       conn_.rowsLocked().push(static_cast<std::uint8_t>(wire::MessageType::ChunkChangedNotification),
                               app, chunk, nullptr, 0, 0, {updatedAtMs, 0, 0, 0}, {});
     };
+    // A refused keepalive's report and its end are rows too, as on a connection with no
+    // session attached: `not_present` and `not_present_ended` reach the same subscribers.
+    config.onNotPresent = [this](const replication::ActorNotPresent& report) {
+      conn_.rowsLocked().presence(report, 0);
+    };
+    config.onNotPresentEnded = [this](const replication::ActorNotPresent& report,
+                                      replication::NotPresentEnd end) {
+      conn_.rowsLocked().presence(report, static_cast<std::uint8_t>(end));
+    };
     {
       std::lock_guard lock(conn_.consumerMutex());
       session::WorldSessionServices services;
@@ -315,6 +324,16 @@ class PySession {
       std::lock_guard lock(conn_.consumerMutex());
       return live().actorUuid();
     }()); }
+
+  std::optional<nb::tuple> notPresent() {
+    std::optional<replication::ActorNotPresent> report;
+    {
+      std::lock_guard lock(conn_.consumerMutex());
+      report = live().notPresent();
+    }
+    if (!report) return std::nullopt;
+    return not_present_tuple(*report);
+  }
 
   nb::tuple selfChunk() {
     return chunk_tuple([&] {
@@ -862,6 +881,9 @@ void register_session(nb::module_& m) {
       .def("watch_chunks", &PySession::setWatchChunks, nb::arg("on"))
       .def("watch_voxels", &PySession::setWatchVoxels, nb::arg("on"))
       .def_prop_ro("actor_uuid", &PySession::actorUuid)
+      .def("not_present", &PySession::notPresent,
+           "The not-present report that stands for this session's actor, as "
+           "replication.Connection.not_present gives it, or None.")
       .def("self_chunk", &PySession::selfChunk)
       .def("self_joined", &PySession::selfJoined)
       .def("join", &PySession::join, nb::arg("x"), nb::arg("y"), nb::arg("z"), nb::arg("state"))
