@@ -693,6 +693,8 @@ CrowdyClient& CrowdyClient::operator=(CrowdyClient&& other) noexcept {
 
 domains::ModerationAPI& CrowdyClient::moderation() { return admin_->moderation(); }
 
+domains::FleetSessionsAPI& CrowdyClient::fleetSessions() { return admin_->fleetSessions(); }
+
 replication::ReplicationClient& CrowdyClient::replication() {
   if (!replication_) {
     auto provider = std::make_shared<ClientSessionProvider>(

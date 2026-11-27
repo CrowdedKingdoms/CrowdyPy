@@ -56,6 +56,7 @@ nanobind_add_module(_native
   FREE_THREADED
   NB_STATIC
   LTO
+  native/fleet_binding.cpp
   native/module.cpp
   native/replication_binding.cpp
   native/session_binding.cpp

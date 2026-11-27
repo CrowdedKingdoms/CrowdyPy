@@ -199,6 +199,96 @@ std::vector<nb::bytes> split_datagram(nb::handle datagram_obj) {
   return out;
 }
 
+// ----- fleet session messages (49 to 53): protocol.hpp, namespace fleet
+
+nb::bytes fleet_carry_proof(nb::handle player_token_obj, std::int64_t fleet_game_token_id,
+                            std::int64_t player_game_token_id, std::int64_t epoch_millis) {
+  const wire::ScrubbedToken64 player(token_from(player_token_obj));
+  std::uint8_t proof[wire::kHmacTagSize];
+  if (!wire::fleetCarryProof(crypto(), player.token, fleet_game_token_id, player_game_token_id,
+                             epoch_millis, proof))
+    raise(Errc::CryptoUnavailable, "HMAC-SHA256 failed");
+  return to_bytes(Bytes(proof, sizeof(proof)));
+}
+
+/// A message under the fleet session's own game token id: the capabilities' layout (chunk
+/// (0,0,0), distance 0, no actor uuid), signed with the fleet token.
+nb::bytes encode_fleet_control(wire::MessageType type, const wire::Token64& fleet_token,
+                               std::int64_t app_id, Bytes payload,
+                               std::int64_t fleet_game_token_id, std::uint8_t sequence) {
+  wire::LongSpatialParams p;
+  p.type = type;
+  p.appId = app_id;
+  p.distance = 0;
+  p.decay = wire::DecayRate::None;
+  p.payload = payload;
+  p.gameTokenId = fleet_game_token_id;
+  p.sequence = sequence;
+  std::uint8_t buf[wire::kMaxDatagramSize];
+  auto n = wire::encodeLongSpatial(crypto(), p, fleet_token, MutableBytes(buf, sizeof(buf)));
+  if (!n.ok()) raise(n.error(), "cannot encode this fleet message");
+  return to_bytes(Bytes(buf, n.value()));
+}
+
+nb::bytes encode_fleet_carry(nb::handle fleet_token_obj, std::int64_t app_id,
+                             std::int64_t fleet_game_token_id, nb::handle player_token_obj,
+                             std::int64_t player_game_token_id, std::int64_t epoch_millis,
+                             std::uint8_t sequence) {
+  const wire::ScrubbedToken64 fleet(token_from(fleet_token_obj));
+  const wire::ScrubbedToken64 player(token_from(player_token_obj));
+  std::uint8_t payload[wire::fleet::kCarryPayloadSize];
+  const auto n = wire::encodeFleetCarryPayload(crypto(), player.token, fleet_game_token_id,
+                                               player_game_token_id, epoch_millis,
+                                               MutableBytes(payload, sizeof(payload)));
+  if (!n.ok()) raise(n.error(), "cannot encode this FLEET_CARRY payload");
+  return encode_fleet_control(wire::MessageType::FleetCarry, fleet.token, app_id,
+                              Bytes(payload, n.value()), fleet_game_token_id, sequence);
+}
+
+nb::bytes encode_fleet_release(nb::handle fleet_token_obj, std::int64_t app_id,
+                               std::int64_t fleet_game_token_id,
+                               std::int64_t player_game_token_id, std::uint8_t sequence) {
+  const wire::ScrubbedToken64 fleet(token_from(fleet_token_obj));
+  std::uint8_t payload[wire::fleet::kReleasePayloadSize];
+  const auto n =
+      wire::encodeFleetReleasePayload(player_game_token_id, MutableBytes(payload, sizeof(payload)));
+  if (!n.ok()) raise(n.error(), "cannot encode this FLEET_RELEASE payload");
+  return encode_fleet_control(wire::MessageType::FleetRelease, fleet.token, app_id,
+                              Bytes(payload, n.value()), fleet_game_token_id, sequence);
+}
+
+/// The frame without its HMAC, once the fleet token's HMAC over it has held.
+nb::bytes verify_fleet_frame(nb::handle fleet_token_obj, nb::handle message_obj) {
+  const wire::ScrubbedToken64 fleet(token_from(fleet_token_obj));
+  BufferView message(message_obj);
+  const auto frame = wire::verifyFleetFrame(crypto(), message.bytes(), fleet.token);
+  if (!frame.ok()) raise(frame.error(), "not a fleet frame the fleet token signed");
+  return to_bytes(frame.value());
+}
+
+nb::tuple parse_fleet_carry_result(nb::handle frame_obj) {
+  BufferView frame(frame_obj);
+  const auto v = wire::parseFleetCarryResult(frame.bytes());
+  if (!v.ok()) raise(v.error(), "not a FLEET_CARRY_RESULT");
+  return nb::make_tuple(v->playerGameTokenId, v->userId, v->status);
+}
+
+nb::tuple parse_fleet_released(nb::handle frame_obj) {
+  BufferView frame(frame_obj);
+  const auto v = wire::parseFleetReleased(frame.bytes());
+  if (!v.ok()) raise(v.error(), "not a FLEET_RELEASED");
+  return nb::make_tuple(v->playerGameTokenId, v->reason);
+}
+
+nb::tuple parse_fleet_delivery(nb::handle frame_obj) {
+  BufferView frame(frame_obj);
+  const auto v = wire::parseFleetDelivery(frame.bytes());
+  if (!v.ok()) raise(v.error(), "not a FLEET_DELIVERY");
+  nb::list players;
+  for (std::size_t i = 0; i < v->count; ++i) players.append(v->recipient(i));
+  return nb::make_tuple(nb::tuple(players), to_bytes(v->notification));
+}
+
 }  // namespace
 
 void register_wire(nb::module_& m) {
@@ -215,6 +305,19 @@ void register_wire(nb::module_& m) {
   m.attr("VOXEL_STATE_MAX_BYTES") = wire::voxel::kMaxStateSize;
   m.attr("MAX_DISTANCE") = wire::kMaxDistance;
   m.attr("CLIENT_CAPABILITIES_ALL") = wire::ClientCapability::kAll;
+  m.attr("CLIENT_CAPABILITY_BUNDLE_SIGNED") = wire::ClientCapability::kBundleSigned;
+  m.attr("CLIENT_CAPABILITY_BOUND_CONTROL") = wire::ClientCapability::kBoundControl;
+  m.attr("CLIENT_CAPABILITY_OWN_MEDIA_ECHO") = wire::ClientCapability::kOwnMediaEcho;
+  m.attr("CLIENT_CAPABILITY_FLEET_OWN_STATE") = wire::ClientCapability::kFleetOwnState;
+  m.attr("CONTROL_NONCE_SIZE") = wire::kControlNonceSize;
+  m.attr("MAX_SPEAKERS") = wire::kMaxSpeakers;
+  m.attr("FLEET_MAX_RECEIVE_DATAGRAM_SIZE") = wire::fleet::kMaxReceiveDatagramSize;
+  m.attr("FLEET_MAX_DELIVERY_RECIPIENTS") = wire::fleet::kMaxDeliveryRecipients;
+  m.attr("FLEET_CARRY_PROOF_LABEL") = wire::fleet::kCarryProofLabel;
+  m.attr("FLEET_CARRY_CLOCK_TOLERANCE_MS") = wire::fleet::kCarryClockToleranceMs;
+  m.attr("FLEET_CARRY_PAYLOAD_SIZE") = wire::fleet::kCarryPayloadSize;
+  m.attr("FLEET_CARRY_RESULT_SIZE") = wire::fleet::kCarryResultSize;
+  m.attr("FLEET_RELEASED_SIZE") = wire::fleet::kReleasedSize;
 
   m.def("spatial_hmac", &spatial_hmac, nb::arg("token"), nb::arg("prefix"));
   m.def("encode_long_spatial", &encode_long_spatial, nb::arg("token"), nb::arg("type"),
@@ -241,6 +344,18 @@ void register_wire(nb::module_& m) {
         nb::arg("z"), nb::arg("voxel_type"), nb::arg("state"));
   m.def("parse_voxel_payload", &parse_voxel_payload, nb::arg("payload"));
   m.def("encode_event_payload", &encode_event_payload, nb::arg("event_type"), nb::arg("state"));
+  m.def("fleet_carry_proof", &fleet_carry_proof, nb::arg("player_token"),
+        nb::arg("fleet_game_token_id"), nb::arg("player_game_token_id"), nb::arg("epoch_millis"));
+  m.def("encode_fleet_carry", &encode_fleet_carry, nb::arg("fleet_token"), nb::arg("app_id"),
+        nb::arg("fleet_game_token_id"), nb::arg("player_token"),
+        nb::arg("player_game_token_id"), nb::arg("epoch_millis"), nb::arg("sequence"));
+  m.def("encode_fleet_release", &encode_fleet_release, nb::arg("fleet_token"),
+        nb::arg("app_id"), nb::arg("fleet_game_token_id"), nb::arg("player_game_token_id"),
+        nb::arg("sequence"));
+  m.def("verify_fleet_frame", &verify_fleet_frame, nb::arg("fleet_token"), nb::arg("message"));
+  m.def("parse_fleet_carry_result", &parse_fleet_carry_result, nb::arg("frame"));
+  m.def("parse_fleet_released", &parse_fleet_released, nb::arg("frame"));
+  m.def("parse_fleet_delivery", &parse_fleet_delivery, nb::arg("frame"));
   m.def("bundle", &bundle, nb::arg("messages"));
   m.def("split_datagram", &split_datagram, nb::arg("datagram"));
 }

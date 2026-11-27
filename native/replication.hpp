@@ -64,6 +64,21 @@ inline std::int16_t i16_arg(int value, const char* what) {
   return static_cast<std::int16_t>(value);
 }
 
+/// One kind's change for setSpeakers: the mode is wire::SpeakerMode (0 keep, 1 only, 2
+/// everyone) and the names are 32-character actor uuids.
+inline replication::SpeakerList speaker_list(int mode, const std::vector<std::string>& names) {
+  if (mode < 0 || mode > 2) raise(Errc::InvalidArgument, "a speaker list mode is 0, 1 or 2");
+  replication::SpeakerList out;
+  out.mode = static_cast<wire::SpeakerMode>(mode);
+  for (const std::string& name : names) {
+    core::ActorUuid id{};
+    if (name.size() != id.size()) raise(Errc::InvalidArgument, "an actor uuid is 32 characters");
+    std::memcpy(id.data(), name.data(), id.size());
+    out.names.push_back(id);
+  }
+  return out;
+}
+
 inline std::uint8_t sent(const Result<std::uint8_t>& result, const char* what) {
   if (!result.ok()) raise(result.error(), what);
   return result.value();
@@ -249,8 +264,8 @@ class QueueLogger final : public core::ILogger {
 /// a voxel update (x, y, z, voxelType) with the voxel state as the payload, a
 /// client or server event (eventType) with the event state as the payload, an
 /// actor-left (reason), a channel message or channel audio (channelId) with the sender
-/// in the uuid column, an error (code) with the failed send's sequence, a status row
-/// (state).
+/// in the uuid column, an error (code, then 1 when it arrived inside a signed bundle whose
+/// HMAC held) with the failed send's sequence, a status row (state).
 struct Rows {
   std::vector<std::uint8_t> type;
   std::vector<std::int64_t> appId;
@@ -415,6 +430,44 @@ inline TokenInfo token_info(const std::string& token, std::int64_t gameTokenId, 
   info.expiresAtEpochMs = expiresAtMs;
   info.authorizedOnCurrentServer = authorized;
   return info;
+}
+
+/// CrowdyCPP's connection counters as a dict; a fleet session adds its own to it.
+inline nb::dict stats_dict(const replication::Connection::Stats& s) {
+  nb::dict d;
+  d["datagrams_sent"] = s.datagramsSent;
+  d["datagrams_received"] = s.datagramsReceived;
+  d["messages_sent"] = s.messagesSent;
+  d["messages_received"] = s.messagesReceived;
+  d["bytes_sent"] = s.bytesSent;
+  d["bytes_received"] = s.bytesReceived;
+  d["bundles_sent"] = s.bundlesSent;
+  d["sends_deferred"] = s.sendsDeferred;
+  d["sends_failed"] = s.sendsFailed;
+  d["messages_dropped"] = s.messagesDropped;
+  d["hmac_failures"] = s.hmacFailures;
+  d["signed_bundles_received"] = s.signedBundlesReceived;
+  d["malformed"] = s.malformed;
+  d["ring_dropped"] = s.ringDropped;
+  d["reconnects"] = s.reconnects;
+  d["idle_releases_after_input"] = s.idleReleasesAfterInput;
+  d["stale_bound_control"] = s.staleBoundControl;
+  d["legacy_reconnects_suppressed"] = s.legacyReconnectsSuppressed;
+  d["bound_control_acks"] = s.boundControlAcks;
+  d["legacy_control_dropped"] = s.legacyControlDropped;
+  // A fleet session's two checks; always 0 on a player's connection, which makes neither.
+  d["wrong_app"] = s.wrongApp;
+  d["unsigned_notifications"] = s.unsignedNotifications;
+  d["last_server_epoch_ms"] = s.lastServerEpochMs;
+  nb::dict sentByType;
+  nb::dict receivedByType;
+  for (std::size_t i = 0; i < s.messagesSentByType.size(); ++i) {
+    if (s.messagesSentByType[i]) sentByType[nb::int_(i)] = s.messagesSentByType[i];
+    if (s.messagesReceivedByType[i]) receivedByType[nb::int_(i)] = s.messagesReceivedByType[i];
+  }
+  d["messages_sent_by_type"] = sentByType;
+  d["messages_received_by_type"] = receivedByType;
+  return d;
 }
 
 class PyConnection {
@@ -699,20 +752,8 @@ class PyConnection {
   /// Modes are wire::SpeakerMode (0 keep, 1 only, 2 everyone); names are 32-character actor uuids.
   void setSpeakers(int voiceMode, const std::vector<std::string>& voice, int videoMode,
                    const std::vector<std::string>& video) {
-    const auto list = [](int mode, const std::vector<std::string>& names) {
-      if (mode < 0 || mode > 2) raise(Errc::InvalidArgument, "a speaker list mode is 0, 1 or 2");
-      replication::SpeakerList out;
-      out.mode = static_cast<wire::SpeakerMode>(mode);
-      for (const std::string& name : names) {
-        core::ActorUuid id{};
-        if (name.size() != id.size()) raise(Errc::InvalidArgument, "an actor uuid is 32 characters");
-        std::memcpy(id.data(), name.data(), id.size());
-        out.names.push_back(id);
-      }
-      return out;
-    };
-    replication::SpeakerList v = list(voiceMode, voice);
-    replication::SpeakerList w = list(videoMode, video);
+    replication::SpeakerList v = speaker_list(voiceMode, voice);
+    replication::SpeakerList w = speaker_list(videoMode, video);
     Status status;
     {
       nb::gil_scoped_release release;
@@ -753,40 +794,7 @@ class PyConnection {
     return connection_->pump(timeoutMs);
   }
 
-  nb::dict stats() const {
-    const auto s = connection_->stats();
-    nb::dict d;
-    d["datagrams_sent"] = s.datagramsSent;
-    d["datagrams_received"] = s.datagramsReceived;
-    d["messages_sent"] = s.messagesSent;
-    d["messages_received"] = s.messagesReceived;
-    d["bytes_sent"] = s.bytesSent;
-    d["bytes_received"] = s.bytesReceived;
-    d["bundles_sent"] = s.bundlesSent;
-    d["sends_deferred"] = s.sendsDeferred;
-    d["sends_failed"] = s.sendsFailed;
-    d["messages_dropped"] = s.messagesDropped;
-    d["hmac_failures"] = s.hmacFailures;
-    d["signed_bundles_received"] = s.signedBundlesReceived;
-    d["malformed"] = s.malformed;
-    d["ring_dropped"] = s.ringDropped;
-    d["reconnects"] = s.reconnects;
-    d["idle_releases_after_input"] = s.idleReleasesAfterInput;
-    d["stale_bound_control"] = s.staleBoundControl;
-    d["legacy_reconnects_suppressed"] = s.legacyReconnectsSuppressed;
-    d["bound_control_acks"] = s.boundControlAcks;
-    d["legacy_control_dropped"] = s.legacyControlDropped;
-    d["last_server_epoch_ms"] = s.lastServerEpochMs;
-    nb::dict sentByType;
-    nb::dict receivedByType;
-    for (std::size_t i = 0; i < s.messagesSentByType.size(); ++i) {
-      if (s.messagesSentByType[i]) sentByType[nb::int_(i)] = s.messagesSentByType[i];
-      if (s.messagesReceivedByType[i]) receivedByType[nb::int_(i)] = s.messagesReceivedByType[i];
-    }
-    d["messages_sent_by_type"] = sentByType;
-    d["messages_received_by_type"] = receivedByType;
-    return d;
-  }
+  nb::dict stats() const { return stats_dict(connection_->stats()); }
 
   std::vector<std::pair<int, std::string>> drainLogs() const { return logger_.drain(); }
 
@@ -851,7 +859,7 @@ class PyConnection {
     };
     h.genericError = [this](const replication::GenericError& e) {
       rows_.push(static_cast<std::uint8_t>(wire::MessageType::GenericError), 0, {}, nullptr, 0,
-                 e.sequence, {static_cast<std::int64_t>(e.code), 0, 0, 0}, {});
+                 e.sequence, {static_cast<std::int64_t>(e.code), e.verified ? 1 : 0, 0, 0}, {});
     };
     h.status = [this](ConnState s) {
       rows_.push(kStatusRow, 0, {}, nullptr, 0, 0, {static_cast<std::int64_t>(s), 0, 0, 0}, {});

@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 6ccea6287e843b5e0513ad9c77b7a4851a5c4819f90619e6e5082973d9784ab6
+schema.gql sha256: 5d55598fc5fdc74445bec5072e071ed466fdab32d85e71193c0d6e091710d036
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrmSyncMode, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, FreeTierLevel, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, ProjectLogicLocation, ProjectStage, ProjectWorldShape, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrmSyncMode, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, FreeTierLevel, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, ProjectLogicLocation, ProjectProfileStatus, ProjectStage, ProjectWorldShape, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class AcceptedDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
@@ -198,6 +198,12 @@ class ClientVideoPacketInput(msgspec.Struct, kw_only=True, omit_defaults=True, r
     distance: int | None | UnsetType = UNSET
     decay_rate: int | None | UnsetType = UNSET
     sequence_number: int | None | UnsetType = UNSET
+
+
+class CloseFleetSessionInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'game_token_id': 'gameTokenId'}):
+    'The fleet session to end.'
+    app_id: str
+    game_token_id: str
 
 
 class CompleteLoginLinkInput(msgspec.Struct, kw_only=True, omit_defaults=True):
@@ -737,6 +743,11 @@ class NearbyGridsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename=
     high_chunk: ChunkCoordinatesInput
 
 
+class OpenFleetSessionInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
+    'The app to open a fleet session in.'
+    app_id: str
+
+
 class ProvisionManagedPlayersInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
     org_id: str
     players: list[ManagedPlayerSpecInput]
@@ -785,6 +796,13 @@ class RecordPlayerAgeInput(msgspec.Struct, kw_only=True, omit_defaults=True, ren
     birth_date: str
     country: str
     parental_confirmation: bool | None | UnsetType = UNSET
+
+
+class RefreshFleetSessionInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'game_token_id': 'gameTokenId', 'current_server': 'currentServer'}):
+    'The fleet session to keep, and where it is connected.'
+    app_id: str
+    game_token_id: str
+    current_server: CurrentServerInput | None | UnsetType = UNSET
 
 
 class RegisterOrgSigningKeyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'public_jwk': 'publicJwk', 'app_ids': 'appIds'}):
@@ -1094,6 +1112,15 @@ class SetMemberRolesInput(msgspec.Struct, kw_only=True, omit_defaults=True, rena
     role_ids: list[str]
 
 
+class SetOrgComputeCeilingInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'max_instances': 'maxInstances', 'max_reserved_mb': 'maxReservedMb'}):
+    "An organization's own compute ceiling, or its return to the platform's default."
+    org_id: str
+    max_instances: int | None | UnsetType = UNSET
+    max_reserved_mb: int | None | UnsetType = UNSET
+    clear: bool | None | UnsetType = UNSET
+    reason: str
+
+
 class SetOrgFreeTierAgreementInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'start_month': 'startMonth', 'end_month': 'endMonth'}):
     'Operator only: records a written agreement for a larger free allowance (whole months, starting next month or later), or revokes one.'
     org_id: str
@@ -1104,23 +1131,28 @@ class SetOrgFreeTierAgreementInput(msgspec.Struct, kw_only=True, omit_defaults=T
     reason: str
 
 
-class SetOrgManagedPlayerSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'max_players': 'maxPlayers', 'mints_per_minute': 'mintsPerMinute', 'default_session_ttl_seconds': 'defaultSessionTtlSeconds', 'max_session_ttl_seconds': 'maxSessionTtlSeconds'}):
+class SetOrgManagedPlayerSettingsInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'max_players': 'maxPlayers', 'mints_per_minute': 'mintsPerMinute', 'default_session_ttl_seconds': 'defaultSessionTtlSeconds', 'max_session_ttl_seconds': 'maxSessionTtlSeconds', 'fleet_sessions_enabled': 'fleetSessionsEnabled', 'max_fleet_sessions': 'maxFleetSessions', 'max_fleet_players': 'maxFleetPlayers'}):
     org_id: str
     enabled: bool
     max_players: str | None | UnsetType = UNSET
     mints_per_minute: int | None | UnsetType = UNSET
     default_session_ttl_seconds: int | None | UnsetType = UNSET
     max_session_ttl_seconds: int | None | UnsetType = UNSET
+    fleet_sessions_enabled: bool | None | UnsetType = UNSET
+    max_fleet_sessions: int | None | UnsetType = UNSET
+    max_fleet_players: int | None | UnsetType = UNSET
 
 
-class SetOrgProjectProfileInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'what_building': 'whatBuilding', 'world_shape': 'worldShape', 'players_per_world_launch': 'playersPerWorldLaunch', 'players_in_view_launch': 'playersInViewLaunch', 'players_per_world_year1': 'playersPerWorldYear1', 'players_in_view_year1': 'playersInViewYear1', 'launch_date': 'launchDate', 'logic_location': 'logicLocation', 'current_networking': 'currentNetworking', 'current_networking_monthly_cost_cents': 'currentNetworkingMonthlyCostCents', 'reference_consent': 'referenceConsent'}):
-    'Answers to the project profile. An omitted field keeps its answer; null clears it. Complete when every answer is in.'
+class SetOrgProjectProfileInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'what_building': 'whatBuilding', 'world_shape': 'worldShape', 'players_per_world_launch': 'playersPerWorldLaunch', 'agents_per_world_launch': 'agentsPerWorldLaunch', 'players_in_view_launch': 'playersInViewLaunch', 'players_per_world_year1': 'playersPerWorldYear1', 'agents_per_world_year1': 'agentsPerWorldYear1', 'players_in_view_year1': 'playersInViewYear1', 'launch_date': 'launchDate', 'logic_location': 'logicLocation', 'current_networking': 'currentNetworking', 'current_networking_monthly_cost_cents': 'currentNetworkingMonthlyCostCents', 'starting_from_scratch': 'startingFromScratch', 'reference_consent': 'referenceConsent', 'anything_else': 'anythingElse'}):
+    'Answers to the project profile. An omitted field keeps its answer; null clears it. Complete when every answer but anythingElse is in; startingFromScratch true answers the networking question.'
     org_id: str
     what_building: str | None | UnsetType = UNSET
     world_shape: ProjectWorldShape | None | UnsetType = UNSET
     players_per_world_launch: int | None | UnsetType = UNSET
+    agents_per_world_launch: int | None | UnsetType = UNSET
     players_in_view_launch: int | None | UnsetType = UNSET
     players_per_world_year1: int | None | UnsetType = UNSET
+    agents_per_world_year1: int | None | UnsetType = UNSET
     players_in_view_year1: int | None | UnsetType = UNSET
     stage: ProjectStage | None | UnsetType = UNSET
     launch_date: str | None | UnsetType = UNSET
@@ -1128,7 +1160,16 @@ class SetOrgProjectProfileInput(msgspec.Struct, kw_only=True, omit_defaults=True
     logic_location: ProjectLogicLocation | None | UnsetType = UNSET
     current_networking: str | None | UnsetType = UNSET
     current_networking_monthly_cost_cents: int | None | UnsetType = UNSET
+    starting_from_scratch: bool | None | UnsetType = UNSET
     reference_consent: bool | None | UnsetType = UNSET
+    anything_else: str | None | UnsetType = UNSET
+
+
+class SetOrgProjectProfileReviewInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId'}):
+    "Operator only: Crowded Kingdoms' decision on an organization's project profile, or back to waiting for review."
+    org_id: str
+    status: ProjectProfileStatus
+    reason: str
 
 
 class SetPlayerTrialPoolInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'effective_from': 'effectiveFrom'}):
@@ -1431,6 +1472,7 @@ __all__ = [
     'ClientEventNotificationInput',
     'ClientTextPacketInput',
     'ClientVideoPacketInput',
+    'CloseFleetSessionInput',
     'CompleteLoginLinkInput',
     'CreateAccessTierInput',
     'CreateActorInput',
@@ -1499,12 +1541,14 @@ __all__ = [
     'MintManagedPlayerTokenInput',
     'NearbyGridPermissionsInput',
     'NearbyGridsInput',
+    'OpenFleetSessionInput',
     'ProvisionManagedPlayersInput',
     'PublishCrowdyStudioCommonFileInput',
     'PublishFileInput',
     'RangedChannelMessageInput',
     'RateCardBandInput',
     'RecordPlayerAgeInput',
+    'RefreshFleetSessionInput',
     'RegisterOrgSigningKeyInput',
     'RegisterUserInput',
     'ReinstateOrganizationInput',
@@ -1538,9 +1582,11 @@ __all__ = [
     'SetHostedGameListingInput',
     'SetLegalHoldInput',
     'SetMemberRolesInput',
+    'SetOrgComputeCeilingInput',
     'SetOrgFreeTierAgreementInput',
     'SetOrgManagedPlayerSettingsInput',
     'SetOrgProjectProfileInput',
+    'SetOrgProjectProfileReviewInput',
     'SetPlayerTrialPoolInput',
     'SetQuotaInput',
     'SetRateCardInput',

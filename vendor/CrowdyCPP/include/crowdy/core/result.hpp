@@ -32,6 +32,9 @@ enum class Errc {
   /// A response was larger than the client accepts (0.85.0): its body, decompressed,
   /// passed HttpRequest::maxResponseBytes. Nothing of it was parsed.
   ResponseTooLarge,
+  /// A FleetSession send named a player the session does not carry now (never carried,
+  /// released, carried by another session, or a carry not yet confirmed). Nothing was sent.
+  NotCarried,
 };
 
 inline const char* errcName(Errc e) {
@@ -51,6 +54,7 @@ inline const char* errcName(Errc e) {
     case Errc::WouldBlock: return "WouldBlock";
     case Errc::Cancelled: return "Cancelled";
     case Errc::ResponseTooLarge: return "ResponseTooLarge";
+    case Errc::NotCarried: return "NotCarried";
   }
   return "Unknown";
 }

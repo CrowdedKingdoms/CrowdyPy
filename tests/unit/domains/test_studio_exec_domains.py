@@ -148,6 +148,8 @@ PORTED: dict[type, set[str]] = {
         "connect",
         "connect_as_developer",
         "developer_endpoint",
+        "server_endpoint",
+        "connect_as_server",
         "logs",
         "instances",
         "versions",

@@ -18,6 +18,7 @@ from crowdypy.domains.exec import CrowdyExecError, ExecEndpoint
 from crowdypy.exec_gateway import (
     AsyncExecConnection,
     ExecCall,
+    ExecCallAs,
     ExecConnection,
     ExecPing,
     ExecPong,
@@ -26,6 +27,7 @@ from crowdypy.exec_gateway import (
     ExecSubscribe,
     decode_exec_frame,
     encode_exec_frame,
+    exec_player_id,
 )
 
 FIXTURE = json.loads(
@@ -35,11 +37,16 @@ FIXTURE = json.loads(
 )
 
 
-def client_frame(spec: dict[str, Any]) -> ExecCall | ExecSubscribe | ExecPing:
+def client_frame(spec: dict[str, Any]) -> ExecCall | ExecCallAs | ExecSubscribe | ExecPing:
     kind = spec["kind"]
     if kind == "call":
         payload = bytes.fromhex(spec["payloadHex"])
         return ExecCall(spec["rid"], spec["nodeType"], spec["key"], spec["method"], payload)
+    if kind == "callAs":
+        payload = bytes.fromhex(spec["payloadHex"])
+        return ExecCallAs(
+            spec["rid"], spec["player"], spec["nodeType"], spec["key"], spec["method"], payload
+        )
     if kind in ("subscribe", "unsubscribe"):
         return ExecSubscribe(
             spec["rid"], spec["nodeType"], spec["key"], spec["topic"], kind == "unsubscribe"
@@ -66,6 +73,20 @@ def test_server_frames_decode_as_the_fixture(case: dict[str, Any]) -> None:
         assert frame == ExecPong(spec["nonce"])
 
 
+@pytest.mark.parametrize("player", [-1, 2**64, "1.5", "-3", "", " 7", True, 4.0, None])
+def test_a_call_as_player_is_a_whole_number_of_64_bits(player: Any) -> None:
+    with pytest.raises(ValueError, match="from 0 to 2\\^64 - 1"):
+        exec_player_id(player)
+    with pytest.raises(ValueError):
+        encode_exec_frame(ExecCallAs(1, player, "player", "k", "grant"))
+
+
+def test_a_call_as_player_is_taken_as_an_int_or_its_decimal_string() -> None:
+    assert exec_player_id(0) == 0
+    assert exec_player_id("42") == 42
+    assert exec_player_id(2**64 - 1) == exec_player_id("18446744073709551615") == 2**64 - 1
+
+
 def test_a_malformed_frame_is_bad_request() -> None:
     for data in (b"\x81\x01", b"\x99", b"\x82\x05ab"):
         with pytest.raises(CrowdyExecError) as caught:
@@ -84,6 +105,8 @@ class Gateway:
         self.moved = False
         self.deny = False
         self.end_access: str | None = None
+        #: Every binary message received, as sent.
+        self.frames: list[bytes] = []
 
     async def handle(self, ws: ServerConnection) -> None:
         path = ws.request.path if ws.request is not None else ""
@@ -93,11 +116,16 @@ class Gateway:
             return
         async for message in ws:
             assert isinstance(message, bytes)
+            self.frames.append(message)
             tag = message[0]
             rid = int.from_bytes(message[1:5], "little")
             if tag == 0x04:
                 await ws.send(b"\x84" + message[1:5])
                 continue
+            player: int | None = None
+            if tag == 0x05:  # call-as: the player's id follows the request id
+                player = int.from_bytes(message[5:13], "little")
+                message = message[:5] + message[13:]
             node_len = message[5]
             node = message[6 : 6 + node_len].decode()
             at = 6 + node_len
@@ -127,7 +155,10 @@ class Gateway:
                 )  # AppError
             else:
                 args = msgspec.msgpack.decode(payload)
-                reply = msgspec.msgpack.encode({"echo": args, "host": self.host})
+                answer = {"echo": args, "host": self.host}
+                if player is not None:
+                    answer["player"] = str(player)
+                reply = msgspec.msgpack.encode(answer)
                 await ws.send(b"\x81" + rid.to_bytes(4, "little") + b"\x00" + reply)
 
 
@@ -199,6 +230,59 @@ async def test_a_4401_close_is_denied(gateways: tuple[Gateway, Gateway]) -> None
     await connection.close()
 
 
+async def test_a_server_connection_calls_for_a_player_with_frame_05(
+    gateways: tuple[Gateway, Gateway],
+) -> None:
+    a, _ = gateways
+    connection = await AsyncExecConnection.open_as_server(
+        f"ws://127.0.0.1:{a.port}", "server-token", call_timeout=3
+    )
+    assert connection.is_server
+    assert await connection.call_as(42, "player", "42", "grant", {"gold": 10}) == {
+        "echo": {"gold": 10},
+        "host": "host-a",
+        "player": "42",
+    }
+    # The fixture's frame, with the request id this connection allocated.
+    assert a.frames[-1] == encode_exec_frame(
+        ExecCallAs(1, 42, "player", "42", "grant", bytes.fromhex("81a4676f6c640a"))
+    )
+    assert (
+        a.frames[-1].hex()
+        == "05010000002a0000000000000006706c6179657202003432056772616e7481a4676f6c640a"
+    )
+    # A user id past 2^53 travels whole, as an int or its decimal string.
+    big = 18446744073709551614
+    assert (await connection.call_as(str(big), "arena", "m1", "state"))["player"] == str(big)
+    assert (await connection.call_as(big, "arena", "m1", "state"))["player"] == str(big)
+    reply = await connection.call_as_raw(7, "lobby", "", "report", msgspec.msgpack.encode(None))
+    assert msgspec.msgpack.decode(reply)["player"] == "7"
+    # The server's own call is an ordinary call frame.
+    assert "player" not in await connection.call("lobby", "", "report", {"players": 3})
+    assert a.frames[-1][0] == 0x01
+    with pytest.raises(ValueError):
+        await connection.call_as(-1, "player", "k", "grant")
+    await connection.close()
+
+
+async def test_call_as_is_denied_locally_on_a_connection_that_is_not_a_servers(
+    gateways: tuple[Gateway, Gateway],
+) -> None:
+    a, _ = gateways
+    connection = await AsyncExecConnection.open(f"ws://127.0.0.1:{a.port}", "t", call_timeout=3)
+    assert not connection.is_server
+    for call in (
+        connection.call_as(42, "player", "42", "grant", {"gold": 10}),
+        connection.call_as_raw(42, "player", "42", "grant"),
+    ):
+        with pytest.raises(CrowdyExecError) as caught:
+            await call
+        assert caught.value.status == "Denied"
+        assert "connect_as_server" in caught.value.message
+    assert a.frames == []  # nothing was sent: a gateway closes a connection sent this frame
+    await connection.close()
+
+
 def test_the_blocking_connection_calls_and_subscribes() -> None:
     gateway = Gateway("host-sync")
     ready = threading.Event()
@@ -230,7 +314,30 @@ def test_the_blocking_connection_calls_and_subscribes() -> None:
         assert got.wait(3)
         assert values == [{"hp": 99}]
         assert connection.ping() >= 0
+        assert not connection.is_server
+        before = len(gateway.frames)
+        with pytest.raises(CrowdyExecError) as denied:
+            connection.call_as(42, "player", "42", "grant")
+        assert denied.value.status == "Denied"
+        assert len(gateway.frames) == before
         connection.close()
+
+        server = ExecConnection.open_as_server(
+            f"ws://127.0.0.1:{gateway.port}", "server-token", call_timeout=3
+        )
+        assert server.is_server
+        assert server.call_as("42", "player", "42", "grant", {"gold": 10}) == {
+            "echo": {"gold": 10},
+            "host": "host-sync",
+            "player": "42",
+        }
+        assert gateway.frames[-1][0] == 0x05
+        assert msgspec.msgpack.decode(server.call_as_raw(9, "player", "9", "grant", b"\xc0")) == {
+            "echo": None,
+            "host": "host-sync",
+            "player": "9",
+        }
+        server.close()
     finally:
         assert stop is not None
         loop.call_soon_threadsafe(stop.set_result, None)
