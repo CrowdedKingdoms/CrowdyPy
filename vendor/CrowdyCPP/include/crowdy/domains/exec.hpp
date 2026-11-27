@@ -12,6 +12,7 @@
 #include "crowdy/domains/domain_base.hpp"
 #include "crowdy/graphql/dispatcher.hpp"
 #include "crowdy/generated/enums.hpp"
+#include "crowdy/generated/operations.hpp"
 #include "crowdy/graphql/json.hpp"
 #include "crowdy/graphql/websocket.hpp"
 
@@ -649,19 +650,12 @@ class ExecAPI : public DomainBase {
   // ORG_LEGAL_ACCEPTANCE_REQUIRED, PLATFORM_BUSY with `retryAfterMs`. Revoking the org token
   // closes the hub connections it opened.
 
-  /// The document `serverEndpoint` and `connectAsServer` send. Written here because the
-  /// published schema this SDK generates its operations from does not carry the field yet.
+  /// The document `serverEndpoint` and `connectAsServer` send: generated from
+  /// operations/exec/Exec.graphql since 0.94.1, under the names 0.94.0 gave it here.
   static constexpr std::string_view kExecConnectAsServerDocument =
-      R"gql(mutation ExecConnectAsServer($appId: BigInt!, $nodeType: String, $key: String) {
-  execConnectAsServer(appId: $appId, nodeType: $nodeType, key: $key) {
-    gatewayUrl
-    token
-    host
-    expiresAt
-  }
-})gql";
-
-  static constexpr std::string_view kExecConnectAsServerOperationName = "ExecConnectAsServer";
+      gen::exec::kExecConnectAsServerIsolatedDocument;
+  static constexpr std::string_view kExecConnectAsServerOperationName =
+      gen::exec::kExecConnectAsServerOperationName;
 
   /// A host and a server connect token for `appId` (`execConnectAsServer`), blocking: what
   /// `ExecConnection::openAsServer` takes. The token lasts a minute and opens one socket;

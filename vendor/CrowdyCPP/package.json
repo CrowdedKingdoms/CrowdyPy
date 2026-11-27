@@ -1,6 +1,6 @@
 {
   "name": "crowdycpp-maintainer-tools",
-  "version": "0.94.0",
+  "version": "0.94.1",
   "private": true,
   "type": "module",
   "description": "Offline parity and schema maintenance tools for CrowdyCPP",
@@ -29,8 +29,8 @@
   },
   "publishedSchemaSnapshot": {
     "url": "https://docs.crowdedkingdoms.com/schema/application-api.graphql",
-    "sourceBlob": "912a3c41be8e35edb980ab45d29c5fb4753c0710",
-    "snapshotSha256": "64f39f99793673ad67977674b20c08f767ba53b9ce740b1d215726116cf0b5b7",
-    "syncedAt": "2026-11-26T21:37:36.146Z"
+    "sourceBlob": "946e79cc83842c2a5129264b1bbb9a3f6e72469f",
+    "snapshotSha256": "e5208bcab442f867d017408ab63a1467289ac05e6df6ff28a1cee9a0e72ed087",
+    "syncedAt": "2026-11-26T22:47:07.372Z"
   }
 }

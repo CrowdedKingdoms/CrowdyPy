@@ -9,6 +9,7 @@
 #include "crowdy/core/clock.hpp"
 #include "crowdy/domains/domain_base.hpp"
 #include "crowdy/domains/types.hpp"
+#include "crowdy/generated/operations.hpp"
 #include "crowdy/replication/fleet_session.hpp"
 
 /// client.admin().fleetSessions(): the Application API's part of a fleet session
@@ -45,8 +46,9 @@
 /// | `SCOPE_MISSING` | the app is not in the org token's app list | `errorWithCode` |
 /// | `FEATURE_DISABLED` | the tier does not serve org-managed players | `errorWithCode` |
 ///
-/// The documents are written here, as PortalAPI's are, because the published schema this
-/// SDK generates its operations from does not carry the fields yet.
+/// The three documents are generated from operations/fleetSessions/FleetSessions.graphql
+/// (crowdy/generated/operations.hpp, namespace gen::fleetSessions) since 0.94.1; the
+/// constants below are those, under the names 0.94.0 gave them.
 namespace crowdy::domains {
 
 class FleetSessionsAPI : public DomainBase {
@@ -57,47 +59,11 @@ class FleetSessionsAPI : public DomainBase {
   using CloseCallback = std::function<void(graphql::GraphQLOutcome, bool closed)>;
 
   static constexpr std::string_view kOpenFleetSessionDocument =
-      R"gql(mutation OpenFleetSession($input: OpenFleetSessionInput!) {
-  openFleetSession(input: $input) {
-    token
-    gameTokenId
-    appId
-    expiresAt
-    maxPlayers
-    server {
-      serverId
-      ip4
-      ip6
-      clientPort
-      status
-      clients
-    }
-  }
-})gql";
-
+      gen::fleetSessions::kOpenFleetSessionIsolatedDocument;
   static constexpr std::string_view kRefreshFleetSessionDocument =
-      R"gql(mutation RefreshFleetSession($input: RefreshFleetSessionInput!) {
-  refreshFleetSession(input: $input) {
-    token
-    gameTokenId
-    appId
-    expiresAt
-    maxPlayers
-    server {
-      serverId
-      ip4
-      ip6
-      clientPort
-      status
-      clients
-    }
-  }
-})gql";
-
+      gen::fleetSessions::kRefreshFleetSessionIsolatedDocument;
   static constexpr std::string_view kCloseFleetSessionDocument =
-      R"gql(mutation CloseFleetSession($input: CloseFleetSessionInput!) {
-  closeFleetSession(input: $input)
-})gql";
+      gen::fleetSessions::kCloseFleetSessionIsolatedDocument;
 
   /// Open a fleet session in one of the organization's apps (`openFleetSession`), when the
   /// game server starts. The answer is the session's token and gameTokenId, when it expires
