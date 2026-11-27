@@ -56,8 +56,9 @@ suites.
 
 ### The fleet session suite's first run
 
-`test_e2e_fleet_sessions.py` was written on 2026-11-26 for 0.40.0 and first ran on dev on
-2026-11-27, three times, each passing (the last row of the table below). The optional hub
+`test_e2e_fleet_sessions.py` was written on 2026-11-26 for 0.40.0 and first ran on
+2026-11-27: on dev from the branch and on test from the published `0.40.0rc1` wheel, three
+times each, every run passing (the last two rows of the table below). The optional hub
 step (`exec.connect_as_server`, `call` and `call_as`) has not run against a deployment:
 those runs had no app with a hub in the organization. The mocked Application API and the
 gateway's unit suite hold it until a run with `CROWDY_FLEET_HUB_APP_ID` is recorded here.
@@ -88,6 +89,7 @@ gateway's unit suite hold it until a run with `CROWDY_FLEET_HUB_APP_ID` is recor
 | 2026-11-13 | dev tier (ck-api v2.70.0, replication servers v0.46.0), app `96701660793088`, and test tier (the same releases), app `101970621262848`, the `harness` provisioning token | 0.33.0 (branch `feat/vendor-0.85.0`, vendoring CrowdyCPP `dev/v0.85.0`: the voxels-write floor and the read limits) | dev and test: `test_e2e_chunk_store` and `test_e2e_replication`, 4 passed on each |
 | 2026-11-13 | test tier (ck-api v2.70.0), app `101970621262848`, the `harness` provisioning token | `crowdypy 0.33.0rc1` from PyPI (the `test/v0.33.0` release, installed into a clean Python 3.12 with uv) | `test_e2e_chunk_store`, `test_e2e_replication` and `test_e2e_identity`: 8 passed |
 | 2026-11-27 | dev tier (Application API v2.89.1, replication server v0.50.3), an app of an organization with fleet sessions switched on, an org token with `players:mint` and `fleet:session` | 0.40.0 (branch `feat/fleet-sessions` at `fcb923c`, vendoring CrowdyCPP `dev/v0.94.1`) | `test_e2e_fleet_sessions.py`: 1 passed, three runs in a row (7.6 s, 8.6 s, 8.5 s); the hub step not run (no `CROWDY_FLEET_HUB_APP_ID`) |
+| 2026-11-27 | test tier (Application API v2.89.1, replication server v0.50.3), an app of an organization with fleet sessions switched on, an org token with `players:mint` and `fleet:session` | `crowdypy 0.40.0rc1` from PyPI (installed into a clean Python 3.12 with uv) | `test_e2e_fleet_sessions.py`: 1 passed, three runs in a row (7.8 s, 8.4 s, 8.4 s); the hub step not run (no `CROWDY_FLEET_HUB_APP_ID`) |
 
 ## Not covered here
 
