@@ -37,6 +37,8 @@
 /// the game thread. Callbacks always fire on the poll() caller.
 namespace crowdy::replication {
 
+class FleetSession;
+
 class Connection {
  public:
   Connection(Config config, std::shared_ptr<ISessionProvider> provider,
@@ -329,6 +331,19 @@ class Connection {
     /// recently (0.83.0): a 22 signs fixed bytes, so a captured one verifies for the
     /// game token's life, and each honoured one moves the player to another server.
     std::uint64_t legacyReconnectsSuppressed = 0;
+    /// A fleet session only (FleetSession::stats()): notifications dropped because they
+    /// named another app than the session's, plain or inside a FLEET_DELIVERY. A fleet
+    /// session is in one app, so state or a communication of another app is never its own,
+    /// however it was signed, and it reaches no handler. THIS SHOULD NEVER HAPPEN: anything
+    /// but 0 is worth reporting to Crowded Kingdoms (the log names the app, the message type
+    /// and the chunk at the first one and at every doubling of the count). Always 0 on a
+    /// player's Connection, which does not make this check.
+    std::uint64_t wrongApp = 0;
+    /// A fleet session only: plain notifications dropped because nothing signed them (no
+    /// HMAC of their own, and not inside a signed bundle whose HMAC held). The realtime
+    /// servers send a fleet session nothing unsigned, so anything but 0 is worth reporting
+    /// too. Always 0 on a player's Connection, which takes such a notification as it is.
+    std::uint64_t unsignedNotifications = 0;
     std::int64_t lastServerEpochMs = 0;
     /// Messages sent, by wire opcode (actor/voxel/audio/text/event/channel/
     /// heartbeat requests).
@@ -351,8 +366,12 @@ class Connection {
   // One parsed inbound message, copied off the receive buffer for the ring.
   // Assignment copies only the used bytes, not the whole buffer.
   struct Event {
-    enum class Kind : std::uint8_t { Spatial, Channel, Error, Status } kind = Kind::Spatial;
+    /// Fleet: a FLEET_CARRY_RESULT, FLEET_RELEASED or FLEET_DELIVERY, queued only for the
+    /// connection inside a FleetSession.
+    enum class Kind : std::uint8_t { Spatial, Channel, Error, Status, Fleet } kind = Kind::Spatial;
     ConnState statusValue = ConnState::Idle;
+    /// The message was a member of a MESSAGE_BUNDLE_SIGNED whose HMAC verified.
+    bool verified = false;
     std::uint16_t len = 0;
     // Raw wire bytes of a single (unbundled) message.
     std::uint8_t data[wire::kMaxDatagramSize];
@@ -362,6 +381,7 @@ class Connection {
     Event& operator=(const Event& other) {
       kind = other.kind;
       statusValue = other.statusValue;
+      verified = other.verified;
       len = other.len;
       if (len > 0) std::memcpy(data, other.data, len);
       return *this;
@@ -379,9 +399,63 @@ class Connection {
   };
   Credentials credentials() const;
 
-  Result<std::uint8_t> sendLongSpatial(wire::MessageType type, const SpatialSend& p);
+  // ----- What a FleetSession adds (crowdy/replication/fleet_session.hpp) -----
+  //
+  // A fleet session is this connection opened with a fleet token, sending for the players
+  // it carries. Every other connection leaves `fleet_` null and each `Sender` null, and
+  // behaves exactly as it did before these existed.
+  friend class FleetSession;
+  /// Whose gameTokenId a send's tail carries. Null is the session's own; a FleetSession
+  /// passes the carried player the message is for. The HMAC is keyed with this
+  /// connection's token either way.
+  using Sender = const std::int64_t*;
+  struct FleetHooks {
+    /// poll(): one FLEET_CARRY_RESULT, FLEET_RELEASED or FLEET_DELIVERY that the receive
+    /// path verified (its own HMAC, or its signed bundle's) and parsed, without its HMAC.
+    std::function<void(Bytes message)> message;
+    /// The net thread or pump(), at the end of every housekeeping pass.
+    std::function<void()> tick;
+    /// The net thread or pump(), after each capabilities advertisement.
+    std::function<void()> advertised;
+    /// The net thread or pump(): a COMMAND_SESSION_RELEASED (28, or 45 bound to this
+    /// assignment) that verified, with any reason but the idle one. The same frame then
+    /// reaches `message` from poll() as the two bytes [45][reason].
+    std::function<void(std::uint8_t reason)> sessionReleased;
+    /// Any sending thread: a message left with this sequence number, for the carried player
+    /// `player` (the game token id its tail names), or 0 for one of the session's own.
+    std::function<void(std::uint8_t sequence, std::int64_t player)> sent;
+    /// Flags added to every CLIENT_CAPABILITIES (ClientCapability::kFleetOwnState).
+    std::atomic<std::uint32_t> capabilities{0};
+  };
+  std::unique_ptr<FleetHooks> fleet_;
+
+  Result<std::uint8_t> sendLongSpatial(wire::MessageType type, const SpatialSend& p,
+                                       Sender as = nullptr);
   Result<std::uint8_t> sendChannelRequest(wire::MessageType type, std::int64_t channelId,
-                                          const core::ActorUuid& uuid, Bytes payload);
+                                          const core::ActorUuid& uuid, Bytes payload,
+                                          Sender as = nullptr);
+  // The public sends of the same names call these with a null Sender.
+  Result<std::uint8_t> sendVoxelUpdateAs(Sender as, const wire::ChunkCoord& chunk,
+                                         const core::ActorUuid& uuid, std::int16_t x,
+                                         std::int16_t y, std::int16_t z, std::int16_t voxelType,
+                                         Bytes voxelState, std::uint8_t distance,
+                                         wire::DecayRate decay);
+  Result<std::size_t> sendVideoFrameAs(Sender as, const wire::ChunkCoord& chunk,
+                                       const core::ActorUuid& uuid, Bytes frame,
+                                       std::uint16_t frameId, std::uint8_t codec,
+                                       std::uint8_t distance, wire::DecayRate decay);
+  Result<std::uint8_t> sendClientEventAs(Sender as, const wire::ChunkCoord& chunk,
+                                         const core::ActorUuid& uuid, std::uint16_t eventType,
+                                         Bytes state, std::uint8_t distance,
+                                         wire::DecayRate decay);
+  Result<std::uint8_t> sendSingleActorMessageAs(Sender as, const wire::ChunkCoord& targetChunk,
+                                                const core::ActorUuid& targetUuid, Bytes payload);
+  Result<std::uint8_t> sendRangedChannelMessageAs(Sender as, std::int64_t channelId,
+                                                  const core::ActorUuid& uuid, Bytes payload,
+                                                  const wire::ChunkCoord& origin,
+                                                  std::uint32_t maxDistance);
+  Result<std::uint8_t> sendHeartbeatAs(Sender as, const wire::ChunkCoord& chunk,
+                                       const core::ActorUuid& uuid);
   /// Hand one encoded message to the send path: straight to the socket when
   /// Config::bundleSends is off, otherwise into the pending bundle (flushing
   /// first when it is full or its window has passed).
@@ -438,9 +512,27 @@ class Connection {
   std::thread netThread_;
 
   std::int64_t readyAtMs_ = 0;
-  std::int64_t lastRecvMs_ = 0;
+  /// Written where datagrams are received and read by the watchdog in housekeeping. Both
+  /// run on the network thread (or the pump() caller); atomic so a host that pumps from
+  /// more than one thread still reads a whole value.
+  std::atomic<std::int64_t> lastRecvMs_{0};
+  /// Sends the socket refused with a fault (Errc::SocketError), for the log's pacing.
+  std::atomic<std::uint64_t> socketFaults_{0};
+  /// Monotonic ms of the last frame the server signed and this connection verified (a
+  /// signed bundle, a bound or legacy control frame, a frame with its own HMAC), or of the
+  /// assignment when none has arrived on it yet. A fleet session's silence is measured from
+  /// it (FleetSession::checkSilence); a player's watchdog keeps to lastRecvMs_.
+  std::atomic<std::int64_t> lastVerifiedMs_{0};
+  /// A fleet session dropped a notification that was not its own (Stats::wrongApp,
+  /// unsignedNotifications): count it, and name it in the log at the first and at every
+  /// doubling of the count. Network thread.
+  void countNotOwn(bool wrongApp, const wire::LongSpatialView& view);
+  /// A fleet session's realtime server released it for a reason that is not idleness: tell
+  /// the session now (network thread) and queue the frame for its handler (poll()).
+  void fleetSessionReleased(std::uint8_t reason);
   std::int64_t lastCapsMs_ = 0;  ///< monotonic ms of the last CLIENT_CAPABILITIES; 0 = none yet
-  std::int64_t lastSendMs_ = 0;
+  /// Written by whichever thread sends and read by the watchdog on the network thread.
+  std::atomic<std::int64_t> lastSendMs_{0};
   /// Set by the receive path on a verified idle release; housekeeping goes Inactive.
   std::atomic<bool> idleReleased_{false};
   std::atomic<bool> reconnectRequested_{false};
@@ -458,7 +550,8 @@ class Connection {
   mutable std::mutex speakersMutex_;
   std::optional<std::vector<core::ActorUuid>> voiceSpeakers_;
   std::optional<std::vector<core::ActorUuid>> videoSpeakers_;
-  Result<std::uint8_t> sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video);
+  Result<std::uint8_t> sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video,
+                                        Sender as = nullptr);
   void resendSpeakerLists();
 
   /// Monotonic ms of the last send that counts as gameplay input (0: none yet).

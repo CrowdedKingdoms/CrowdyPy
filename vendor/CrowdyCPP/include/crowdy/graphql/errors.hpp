@@ -169,6 +169,19 @@ inline constexpr std::string_view kAssertionRejectedCode = "ASSERTION_REJECTED";
 /// provisioning; see orgLegalAcceptanceRequiredOf().
 inline constexpr std::string_view kOrgLegalAcceptanceRequiredCode =
     "ORG_LEGAL_ACCEPTANCE_REQUIRED";
+/// extensions.code for a field that takes an org token (`cko_...`) and was called with any
+/// other bearer, or from a browser (HTTP 403); see orgTokenRequiredOf().
+inline constexpr std::string_view kOrgTokenRequiredCode = "ORG_TOKEN_REQUIRED";
+/// extensions.code for openFleetSession when the organization holds as many fleet sessions
+/// as it may (HTTP 403); see fleetSessionLimitOf().
+inline constexpr std::string_view kFleetSessionLimitCode = "FLEET_SESSION_LIMIT";
+/// extensions.code for "nothing by that name that you may see": on refreshFleetSession, a
+/// session that expired, was closed, or was opened with another org token; see
+/// fleetSessionNotFoundOf().
+inline constexpr std::string_view kNotFoundCode = "NOT_FOUND";
+/// extensions.code for a refusal the platform makes because it is busy, with how long to
+/// wait in extensions.retryAfterMs; see platformBusyOf().
+inline constexpr std::string_view kPlatformBusyCode = "PLATFORM_BUSY";
 /// extensions.code for an input-log read that cannot be served right now (the log
 /// is unreachable); retryable with the same cursor.
 inline constexpr std::string_view kInputLogTemporarilyUnavailableCode =
@@ -349,6 +362,41 @@ inline std::optional<AssertionRejected> assertionRejectedOf(
 /// retrying. Mirrors CrowdyJS orgLegalAcceptanceRequiredOf.
 inline bool orgLegalAcceptanceRequiredOf(const std::vector<GraphQLErrorDetail>& errors) {
   return errorWithCode(errors, kOrgLegalAcceptanceRequiredCode) != nullptr;
+}
+
+/// True when a field that takes an org token was refused ORG_TOKEN_REQUIRED: the bearer was a
+/// session token, an app token or a fleet token. The fleet session calls and
+/// execConnectAsServer take the organization's org token and nothing else. (An org token sent
+/// from a browser is refused ORG_TOKEN_NOT_ALLOWED.)
+/// Not fixed by retrying.
+inline bool orgTokenRequiredOf(const std::vector<GraphQLErrorDetail>& errors) {
+  return errorWithCode(errors, kOrgTokenRequiredCode) != nullptr;
+}
+
+/// True when openFleetSession was refused FLEET_SESSION_LIMIT: the organization holds as many
+/// fleet sessions as it may (`orgManagedPlayerSettings.maxFleetSessions`, 512 unless an
+/// operator set another). Close a session that is no longer used, or ask for a higher number.
+/// Not fixed by retrying at once.
+inline bool fleetSessionLimitOf(const std::vector<GraphQLErrorDetail>& errors) {
+  return errorWithCode(errors, kFleetSessionLimitCode) != nullptr;
+}
+
+/// True when refreshFleetSession was refused NOT_FOUND: the session expired, was closed, or
+/// was opened with another org token. Open a new session; the same refresh cannot succeed.
+inline bool fleetSessionNotFoundOf(const std::vector<GraphQLErrorDetail>& errors) {
+  return errorWithCode(errors, kNotFoundCode) != nullptr;
+}
+
+/// A PLATFORM_BUSY refusal: the platform is shedding load, and the same call can succeed
+/// later. `retryAfterMs` is how long the API asked the caller to wait (extensions.retryAfterMs,
+/// GraphQLErrorDetail::retryAfterMs), absent when it named no wait.
+struct PlatformBusy {
+  std::optional<std::int64_t> retryAfterMs;
+};
+inline std::optional<PlatformBusy> platformBusyOf(const std::vector<GraphQLErrorDetail>& errors) {
+  const GraphQLErrorDetail* e = errorWithCode(errors, kPlatformBusyCode);
+  if (!e) return std::nullopt;
+  return PlatformBusy{e->retryAfterMs};
 }
 
 /// True when an input-log read failed in a way worth repeating with the SAME cursor

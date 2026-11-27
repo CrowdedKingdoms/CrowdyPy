@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "crowdy/domains/domain_base.hpp"
+#include "crowdy/domains/fleet_sessions.hpp"
 #include "crowdy/domains/game_apps.hpp"
 #include "crowdy/domains/types.hpp"
 #include "crowdy/generated/enums.hpp"
@@ -1442,6 +1443,7 @@ class AdminAPI {
                     GameAppsAPI* gameApps = nullptr)
       : organizations_(management),
         managedPlayers_(management),
+        fleetSessions_(management),
         apps_(management),
         appAccess_(management),
         billing_(management),
@@ -1455,6 +1457,9 @@ class AdminAPI {
   OrganizationsAPI& organizations() { return organizations_; }
   /// Org-managed players: the organization's own players and signing keys.
   ManagedPlayersAPI& managedPlayers() { return managedPlayers_; }
+  /// Fleet sessions for the organization's own game servers: open, refresh and close, with
+  /// the organization's org token as this client's bearer.
+  FleetSessionsAPI& fleetSessions() { return fleetSessions_; }
   AppsAPI& apps() { return apps_; }
   AppAccessAPI& appAccess() { return appAccess_; }
   BillingAPI& billing() { return billing_; }
@@ -1471,6 +1476,7 @@ class AdminAPI {
  private:
   OrganizationsAPI organizations_;
   ManagedPlayersAPI managedPlayers_;
+  FleetSessionsAPI fleetSessions_;
   AppsAPI apps_;
   AppAccessAPI appAccess_;
   BillingAPI billing_;

@@ -1,6 +1,7 @@
 #include "crowdy/replication/connection.hpp"
 
 #include "crowdy/media/video_frames.hpp"
+#include "dispatch.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -115,8 +116,9 @@ Status Connection::doAssign() {
   }
 
   readyAtMs_ = clock_.monotonicMillis() + config_.sessionReadyWaitMs;
-  lastRecvMs_ = 0;
-  lastSendMs_ = 0;
+  lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+  lastRecvMs_.store(0, std::memory_order_relaxed);
+  lastSendMs_.store(0, std::memory_order_relaxed);
   lastCapsMs_ = 0;  // a new server knows nothing about us
   {
     // A new nonce per assignment, so a control frame bound to an earlier one is refused.
@@ -189,7 +191,7 @@ void Connection::disconnect() {
 Status Connection::sendDatagram(const std::uint8_t* data, std::size_t len) {
   Status st = socket_.send(Bytes(data, len));
   if (st.ok()) {
-    lastSendMs_ = clock_.monotonicMillis();
+    lastSendMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
     std::lock_guard lock(statsMutex_);
     ++stats_.datagramsSent;
     stats_.bytesSent += len;
@@ -198,13 +200,56 @@ Status Connection::sendDatagram(const std::uint8_t* data, std::size_t len) {
   // A deferred datagram never reached the wire, so it must not advance
   // lastSendMs_: the silence watchdog reassigns when sends are flowing and
   // nothing comes back, and backpressure is not traffic going out.
-  std::lock_guard lock(statsMutex_);
-  if (st.code == Errc::WouldBlock) {
-    ++stats_.sendsDeferred;
-  } else {
-    ++stats_.sendsFailed;
+  {
+    std::lock_guard lock(statsMutex_);
+    if (st.code == Errc::WouldBlock) {
+      ++stats_.sendsDeferred;
+    } else {
+      ++stats_.sendsFailed;
+    }
+  }
+  // A fault the socket reported (not a full buffer, and not a socket that is closed between
+  // two servers) is named, with the operating system's code, at the first and then at every
+  // doubling of their count: enough to say which fault it is without a line per datagram.
+  if (st.code == Errc::SocketError) {
+    const std::uint64_t faults = socketFaults_.fetch_add(1, std::memory_order_relaxed) + 1;
+    if ((faults & (faults - 1)) == 0 && logger_.enabled(core::LogLevel::Warn)) {
+      logger_.log(core::LogLevel::Warn,
+                  "a datagram could not be sent: SocketError, system error " +
+                      std::to_string(socket_.lastSendFault()) + " (" + std::to_string(faults) +
+                      " so far)");
+    }
   }
   return st;
+}
+
+void Connection::fleetSessionReleased(std::uint8_t reason) {
+  if (fleet_->sessionReleased) fleet_->sessionReleased(reason);
+  Event e;
+  e.kind = Event::Kind::Fleet;
+  e.data[0] = static_cast<std::uint8_t>(MessageType::CommandSessionReleasedBound);
+  e.data[1] = reason;
+  e.len = 2;
+  e.verified = true;
+  if (ring_.tryPush(e)) signalEvents();
+}
+
+void Connection::countNotOwn(bool wrongApp, const wire::LongSpatialView& view) {
+  std::uint64_t count = 0;
+  {
+    std::lock_guard lock(statsMutex_);
+    count = wrongApp ? ++stats_.wrongApp : ++stats_.unsignedNotifications;
+  }
+  if ((count & (count - 1)) != 0 || !logger_.enabled(core::LogLevel::Warn)) return;
+  logger_.log(core::LogLevel::Warn,
+              std::string(wrongApp ? "dropped a notification of another app: app "
+                                   : "dropped a notification nothing signed: app ") +
+                  std::to_string(view.appId) + ", message type " +
+                  std::to_string(static_cast<int>(view.type)) + ", chunk (" +
+                  std::to_string(view.chunk.x) + ", " + std::to_string(view.chunk.y) + ", " +
+                  std::to_string(view.chunk.z) + "), " + std::to_string(count) +
+                  " so far. The realtime server should never send a fleet session this: "
+                  "report it to Crowded Kingdoms");
 }
 
 void Connection::countMessageSent(std::uint8_t type) {
@@ -320,7 +365,8 @@ int Connection::receiveWaitMs(int maxWaitMs) {
   return remaining < maxWaitMs ? static_cast<int>(remaining) : maxWaitMs;
 }
 
-Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const SpatialSend& p) {
+Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const SpatialSend& p,
+                                                 Sender as) {
   if (!socket_.isOpen()) return Errc::NotConnected;
   // One lock for everything the token owns: the id, the key and the pre-keyed
   // MAC used to sign with it. Reading them separately took the same lock twice
@@ -338,7 +384,7 @@ Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const Spatial
   params.decay = p.decay;
   params.uuid = p.uuid;
   params.payload = p.payload;
-  params.gameTokenId = creds.gameTokenId;
+  params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
   params.sequence = nextSequence();
 
   std::uint8_t buf[wire::kMaxDatagramSize];
@@ -348,6 +394,8 @@ Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const Spatial
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
   noteGameplaySend(type, p);
+  if (fleet_ && fleet_->sent)
+    fleet_->sent(params.sequence, params.gameTokenId != creds.gameTokenId ? params.gameTokenId : 0);
   return params.sequence;
 }
 
@@ -416,6 +464,14 @@ Result<std::uint8_t> Connection::sendVoxelUpdate(const wire::ChunkCoord& chunk,
                                                  std::int16_t y, std::int16_t z,
                                                  std::int16_t voxelType, Bytes voxelState,
                                                  std::uint8_t distance, wire::DecayRate decay) {
+  return sendVoxelUpdateAs(nullptr, chunk, uuid, x, y, z, voxelType, voxelState, distance, decay);
+}
+
+Result<std::uint8_t> Connection::sendVoxelUpdateAs(Sender as, const wire::ChunkCoord& chunk,
+                                                   const core::ActorUuid& uuid, std::int16_t x,
+                                                   std::int16_t y, std::int16_t z,
+                                                   std::int16_t voxelType, Bytes voxelState,
+                                                   std::uint8_t distance, wire::DecayRate decay) {
   if (voxelState.size() > wire::voxel::kMaxStateSize) return Errc::InvalidArgument;
   std::uint8_t payload[wire::kMaxLongSpatialPayload];
   auto pn = wire::encodeVoxelPayload(x, y, z, voxelType, voxelState,
@@ -427,13 +483,20 @@ Result<std::uint8_t> Connection::sendVoxelUpdate(const wire::ChunkCoord& chunk,
   p.payload = Bytes(payload, pn.value());
   p.distance = distance;
   p.decay = decay;
-  return sendLongSpatial(MessageType::VoxelUpdateRequest, p);
+  return sendLongSpatial(MessageType::VoxelUpdateRequest, p, as);
 }
 
 Result<std::uint8_t> Connection::sendClientEvent(const wire::ChunkCoord& chunk,
                                                  const core::ActorUuid& uuid,
                                                  std::uint16_t eventType, Bytes state,
                                                  std::uint8_t distance, wire::DecayRate decay) {
+  return sendClientEventAs(nullptr, chunk, uuid, eventType, state, distance, decay);
+}
+
+Result<std::uint8_t> Connection::sendClientEventAs(Sender as, const wire::ChunkCoord& chunk,
+                                                   const core::ActorUuid& uuid,
+                                                   std::uint16_t eventType, Bytes state,
+                                                   std::uint8_t distance, wire::DecayRate decay) {
   std::uint8_t payload[wire::kMaxLongSpatialPayload];
   auto pn = wire::encodeEventPayload(eventType, state, MutableBytes(payload, sizeof(payload)));
   if (!pn.ok()) return pn.error();
@@ -443,13 +506,20 @@ Result<std::uint8_t> Connection::sendClientEvent(const wire::ChunkCoord& chunk,
   p.payload = Bytes(payload, pn.value());
   p.distance = distance;
   p.decay = decay;
-  return sendLongSpatial(MessageType::ClientEventNotification, p);
+  return sendLongSpatial(MessageType::ClientEventNotification, p, as);
 }
 
 Result<std::size_t> Connection::sendVideoFrame(const wire::ChunkCoord& chunk,
                                                const core::ActorUuid& uuid, Bytes frame,
                                                std::uint16_t frameId, std::uint8_t codec,
                                                std::uint8_t distance, wire::DecayRate decay) {
+  return sendVideoFrameAs(nullptr, chunk, uuid, frame, frameId, codec, distance, decay);
+}
+
+Result<std::size_t> Connection::sendVideoFrameAs(Sender as, const wire::ChunkCoord& chunk,
+                                                 const core::ActorUuid& uuid, Bytes frame,
+                                                 std::uint16_t frameId, std::uint8_t codec,
+                                                 std::uint8_t distance, wire::DecayRate decay) {
   const auto fragments =
       media::fragmentFrame(frame, frameId, static_cast<media::VideoCodec>(codec));
   if (fragments.empty()) return Errc::InvalidArgument;  // empty, or > 16 fragments
@@ -460,7 +530,7 @@ Result<std::size_t> Connection::sendVideoFrame(const wire::ChunkCoord& chunk,
     p.payload = Bytes(fragment.data(), fragment.size());
     p.distance = distance;
     p.decay = decay;
-    auto r = sendLongSpatial(MessageType::ClientVideoPacket, p);
+    auto r = sendLongSpatial(MessageType::ClientVideoPacket, p, as);
     if (!r.ok()) return r.error();
   }
   return fragments.size();
@@ -469,13 +539,20 @@ Result<std::size_t> Connection::sendVideoFrame(const wire::ChunkCoord& chunk,
 Result<std::uint8_t> Connection::sendSingleActorMessage(const wire::ChunkCoord& targetChunk,
                                                         const core::ActorUuid& targetUuid,
                                                         Bytes payload) {
+  return sendSingleActorMessageAs(nullptr, targetChunk, targetUuid, payload);
+}
+
+Result<std::uint8_t> Connection::sendSingleActorMessageAs(Sender as,
+                                                          const wire::ChunkCoord& targetChunk,
+                                                          const core::ActorUuid& targetUuid,
+                                                          Bytes payload) {
   SpatialSend p;
   p.chunk = targetChunk;
   p.uuid = targetUuid;
   p.payload = payload;
   p.distance = 0;  // ignored by the server for single-actor messages
   p.decay = wire::DecayRate::None;
-  return sendLongSpatial(MessageType::SingleActorMessage, p);
+  return sendLongSpatial(MessageType::SingleActorMessage, p, as);
 }
 
 Result<std::uint8_t> Connection::sendChannelMessage(std::int64_t channelId,
@@ -489,7 +566,8 @@ Result<std::uint8_t> Connection::sendChannelAudio(std::int64_t channelId,
 }
 
 Result<std::uint8_t> Connection::sendChannelRequest(MessageType type, std::int64_t channelId,
-                                                    const core::ActorUuid& uuid, Bytes payload) {
+                                                    const core::ActorUuid& uuid, Bytes payload,
+                                                    Sender as) {
   if (!socket_.isOpen()) return Errc::NotConnected;
   const Credentials creds = credentials();
 
@@ -497,7 +575,7 @@ Result<std::uint8_t> Connection::sendChannelRequest(MessageType type, std::int64
   params.channelId = channelId;
   params.uuid = uuid;
   params.payload = payload;
-  params.gameTokenId = creds.gameTokenId;
+  params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
   params.sequence = nextSequence();
 
   std::uint8_t buf[wire::kMaxDatagramSize];
@@ -507,6 +585,8 @@ Result<std::uint8_t> Connection::sendChannelRequest(MessageType type, std::int64
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
   noteGameplaySend(type, SpatialSend{});
+  if (fleet_ && fleet_->sent)
+    fleet_->sent(params.sequence, params.gameTokenId != creds.gameTokenId ? params.gameTokenId : 0);
   return params.sequence;
 }
 
@@ -515,6 +595,14 @@ Result<std::uint8_t> Connection::sendRangedChannelMessage(std::int64_t channelId
                                                           Bytes payload,
                                                           const wire::ChunkCoord& origin,
                                                           std::uint32_t maxDistance) {
+  return sendRangedChannelMessageAs(nullptr, channelId, uuid, payload, origin, maxDistance);
+}
+
+Result<std::uint8_t> Connection::sendRangedChannelMessageAs(Sender as, std::int64_t channelId,
+                                                            const core::ActorUuid& uuid,
+                                                            Bytes payload,
+                                                            const wire::ChunkCoord& origin,
+                                                            std::uint32_t maxDistance) {
   if (!socket_.isOpen()) return Errc::NotConnected;
   if (maxDistance > wire::channel_ranged::kMaxDistance) return Errc::InvalidArgument;
   const Credentials creds = credentials();
@@ -526,7 +614,7 @@ Result<std::uint8_t> Connection::sendRangedChannelMessage(std::int64_t channelId
   params.origin = origin;
   params.maxDistance = maxDistance;
   params.payload = payload;
-  params.gameTokenId = creds.gameTokenId;
+  params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
   params.sequence = nextSequence();
 
   std::uint8_t buf[wire::kMaxDatagramSize];
@@ -536,6 +624,8 @@ Result<std::uint8_t> Connection::sendRangedChannelMessage(std::int64_t channelId
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
   noteGameplaySend(MessageType::ChannelMessageRangedRequest, SpatialSend{});
+  if (fleet_ && fleet_->sent)
+    fleet_->sent(params.sequence, params.gameTokenId != creds.gameTokenId ? params.gameTokenId : 0);
   return params.sequence;
 }
 
@@ -547,6 +637,7 @@ Result<std::uint8_t> Connection::sendCapabilities() {
       nonce != 0 ? wire::ClientCapability::kAll
                  : (wire::ClientCapability::kAll & ~wire::ClientCapability::kBoundControl);
   if (ownMediaEcho_.load(std::memory_order_acquire)) flags |= wire::ClientCapability::kOwnMediaEcho;
+  if (fleet_) flags |= fleet_->capabilities.load(std::memory_order_acquire);
   le::writeU32(payload, flags);
   std::memcpy(payload + 4, &nonce, wire::kControlNonceSize);
   SpatialSend p;
@@ -562,7 +653,8 @@ void Connection::setOwnMediaEcho(bool on) {
   if (config_.advertiseCapabilities && state() == ConnState::Connected) (void)sendCapabilities();
 }
 
-Result<std::uint8_t> Connection::sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video) {
+Result<std::uint8_t> Connection::sendSpeakerLists(const SpeakerList& voice, const SpeakerList& video,
+                                                  Sender as) {
   // [voiceMode][voiceCount][videoMode][videoCount][names x 32B]
   std::vector<std::uint8_t> payload(4 + (voice.names.size() + video.names.size()) *
                                             sizeof(core::ActorUuid));
@@ -582,7 +674,7 @@ Result<std::uint8_t> Connection::sendSpeakerLists(const SpeakerList& voice, cons
   p.distance = 0;
   p.decay = wire::DecayRate::None;
   p.payload = Bytes(payload.data(), payload.size());
-  return sendLongSpatial(MessageType::ClientMediaSpeakers, p);
+  return sendLongSpatial(MessageType::ClientMediaSpeakers, p, as);
 }
 
 Status Connection::setSpeakers(SpeakerList voice, SpeakerList video) {
@@ -626,12 +718,17 @@ void Connection::resendSpeakerLists() {
 
 Result<std::uint8_t> Connection::sendHeartbeat(const wire::ChunkCoord& chunk,
                                                const core::ActorUuid& uuid) {
+  return sendHeartbeatAs(nullptr, chunk, uuid);
+}
+
+Result<std::uint8_t> Connection::sendHeartbeatAs(Sender as, const wire::ChunkCoord& chunk,
+                                                 const core::ActorUuid& uuid) {
   SpatialSend p;
   p.chunk = chunk;
   p.uuid = uuid;
   p.distance = 0;
   p.decay = wire::DecayRate::None;
-  return sendLongSpatial(MessageType::ClientActorHeartbeat, p);
+  return sendLongSpatial(MessageType::ClientActorHeartbeat, p, as);
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +741,7 @@ void Connection::handleDatagram(Bytes datagram) {
     ++stats_.datagramsReceived;
     stats_.bytesReceived += datagram.size();
   }
-  lastRecvMs_ = clock_.monotonicMillis();
+  lastRecvMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
 
   // The bound forms (Buddy v0.45.0) carry this assignment's nonce inside their signature, so
   // a verified one cannot be a frame captured earlier: it is final, without the idle guard.
@@ -672,6 +769,7 @@ void Connection::handleDatagram(Bytes datagram) {
     }
     if (n == 0) verdict = Errc::Rejected;  // we never asked for bound frames
     if (verdict == Errc::Ok) {
+      lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
       if (ack) {
         // Bound to the nonce it verified: after a reassignment it matches nothing.
         boundNonce_.store(n, std::memory_order_release);
@@ -681,6 +779,11 @@ void Connection::handleDatagram(Bytes datagram) {
         reconnectRequested_.store(true, std::memory_order_release);
       } else if (reason == static_cast<std::uint8_t>(wire::ReleaseReason::Idle)) {
         idleReleased_.store(true, std::memory_order_release);
+      } else if (fleet_) {
+        // The server ended this fleet session (its token was deauthorized or expired, or
+        // the server lets it go): a refresh is due now. A player's connection keeps to the
+        // watchdog or the next reassignment for these reasons, as before.
+        fleetSessionReleased(reason);
       }
     } else {
       std::lock_guard lock(statsMutex_);
@@ -747,6 +850,11 @@ void Connection::handleDatagram(Bytes datagram) {
       } else {
         idleReleased_.store(true, std::memory_order_release);
       }
+    } else if (fleet_) {
+      // As the bound form above: any other reason ends a fleet session, and a refresh is
+      // due now. (Once the server acknowledged the bound forms this legacy form is dropped
+      // before it gets here: it signs fixed bytes, so one captured earlier would verify.)
+      fleetSessionReleased(reason.value());
     }
     return;
   }
@@ -771,6 +879,7 @@ void Connection::handleDatagram(Bytes datagram) {
       ++stats_.hmacFailures;
       return;
     }
+    lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
   }
   bool queued = false;
   Status bundleStatus = wire::forEachMessage(datagram, [&](Bytes message) {
@@ -793,11 +902,59 @@ void Connection::handleDatagram(Bytes datagram) {
         return;
       }
       e.kind = Event::Kind::Channel;
-    } else if (type == static_cast<std::uint8_t>(MessageType::ClientCapabilities) ||
-               type == static_cast<std::uint8_t>(MessageType::ClientMediaSpeakers)) {
+    } else if (wire::isClientOnlyControlType(type)) {
       // Client-originated. Sharing the long-spatial layout must not enqueue a
       // server echo as a spatial notification; a client never expects one back.
       return;
+    } else if (fleet_ && (type == static_cast<std::uint8_t>(MessageType::FleetCarryResult) ||
+                          type == static_cast<std::uint8_t>(MessageType::FleetReleased) ||
+                          type == static_cast<std::uint8_t>(MessageType::FleetDelivery))) {
+      // A fleet session's three frames. Inside a signed bundle the bundle's HMAC, checked
+      // above, vouches for them. Anywhere else (alone, or in a plain bundle) each is
+      // followed by its own HMAC, which is checked and taken off here; what is queued is
+      // the frame without it, so the largest datagram (1,242 bytes) queues as 1,210.
+      Errc verdict = Errc::Ok;
+      if (!signedBundle) {
+        const auto frame = wire::verifyFleetFrame(crypto_, message, token, creds.mac.get());
+        if (frame.ok()) {
+          message = frame.value();
+          lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+        } else {
+          verdict = frame.error();
+        }
+      }
+      if (verdict != Errc::Ok) {
+        // dropped below
+      } else if (type == static_cast<std::uint8_t>(MessageType::FleetCarryResult)) {
+        verdict = wire::parseFleetCarryResult(message).error();
+      } else if (type == static_cast<std::uint8_t>(MessageType::FleetReleased)) {
+        verdict = wire::parseFleetReleased(message).error();
+      } else {
+        // The notification inside is what a player's own session would have been sent, in
+        // its unsigned form: nothing here is taken on its own word.
+        const auto delivery = wire::parseFleetDelivery(message);
+        if (!delivery.ok()) {
+          verdict = delivery.error();
+        } else if (delivery->channel()) {
+          verdict = wire::parseFleetDeliveredChannel(delivery->notification).error();
+        } else {
+          const auto inner = wire::parseFleetDeliveredSpatial(delivery->notification);
+          if (!inner.ok()) {
+            verdict = inner.error();
+          } else if (inner->appId != config_.appId) {
+            // Signed, and another app's: not this session's, whoever it lists.
+            countNotOwn(/*wrongApp=*/true, inner.value());
+            return;
+          }
+        }
+      }
+      if (verdict != Errc::Ok) {
+        std::lock_guard lock(statsMutex_);
+        if (verdict == Errc::HmacMismatch) ++stats_.hmacFailures;
+        else ++stats_.malformed;
+        return;
+      }
+      e.kind = Event::Kind::Fleet;
     } else if (wire::isLongSpatialLayout(type)) {
       auto parsed = wire::parseLongSpatial(message);
       if (!parsed.ok()) {
@@ -810,6 +967,21 @@ void Connection::handleDatagram(Bytes datagram) {
         std::lock_guard lock(statsMutex_);
         ++stats_.hmacFailures;
         return;
+      }
+      if (parsed->containsAuth && config_.verifyNotifications)
+        lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+      if (fleet_) {
+        // A fleet session gives its game server nothing the realtime server did not sign,
+        // and nothing of another app, however it was signed. A player's connection makes
+        // neither check, as it never has.
+        if (!signedBundle && !parsed->containsAuth) {
+          countNotOwn(/*wrongApp=*/false, parsed.value());
+          return;
+        }
+        if (parsed->appId != config_.appId) {
+          countNotOwn(/*wrongApp=*/true, parsed.value());
+          return;
+        }
       }
       {
         std::lock_guard lock(statsMutex_);
@@ -828,6 +1000,7 @@ void Connection::handleDatagram(Bytes datagram) {
     }
     std::memcpy(e.data, message.data(), message.size());
     e.len = static_cast<std::uint16_t>(message.size());
+    e.verified = signedBundle;
     {
       std::lock_guard lock(statsMutex_);
       ++stats_.messagesReceived;
@@ -849,7 +1022,8 @@ void Connection::handleDatagram(Bytes datagram) {
 
 std::size_t Connection::receiveBatch(int timeoutMs) {
   // Batched receive: one syscall per burst on Linux (recvmmsg), a drain loop
-  // elsewhere. 2048-byte slots comfortably hold any 1232-byte datagram.
+  // elsewhere. 2048-byte slots comfortably hold any 1232-byte datagram, and the 1,242
+  // bytes a fleet session can be sent (wire::fleet::kMaxReceiveDatagramSize).
   constexpr std::size_t kSlot = 2048;
   constexpr std::size_t kBatch = 16;
   std::uint8_t slab[kSlot * kBatch];
@@ -897,6 +1071,7 @@ void Connection::housekeeping() {
     }
     // The speaker lists live with the session on the server, as the capabilities do.
     resendSpeakerLists();
+    if (fleet_ && fleet_->advertised) fleet_->advertised();
   }
 
   // Proactive token refresh.
@@ -938,9 +1113,12 @@ void Connection::housekeeping() {
     }
   }
 
-  // Silent-drop watchdog (opt-in).
-  if (config_.watchdogSilenceMs > 0 && state() == ConnState::Connected && lastRecvMs_ > 0 &&
-      lastSendMs_ > lastRecvMs_ && nowMono - lastRecvMs_ > config_.watchdogSilenceMs) {
+  // Silent-drop watchdog (opt-in). A fleet session has its own rule (FleetSession::
+  // checkSilence, from the tick below): it counts only what verified, and it is on by default.
+  const std::int64_t lastRecv = lastRecvMs_.load(std::memory_order_relaxed);
+  if (!fleet_ && config_.watchdogSilenceMs > 0 && state() == ConnState::Connected && lastRecv > 0 &&
+      lastSendMs_.load(std::memory_order_relaxed) > lastRecv &&
+      nowMono - lastRecv > config_.watchdogSilenceMs) {
     logger_.log(core::LogLevel::Warn, "watchdog: sends flowing but nothing received; reassigning");
     reconnectRequested_.store(true, std::memory_order_release);
   }
@@ -964,6 +1142,8 @@ void Connection::housekeeping() {
       setState(ConnState::Failed);
     }
   }
+
+  if (fleet_ && fleet_->tick) fleet_->tick();
 }
 
 void Connection::netLoop() {
@@ -1100,10 +1280,19 @@ std::size_t Connection::poll(std::size_t maxEvents) {
         if (handlers.status) handlers.status(e.statusValue);
         break;
 
+      case Event::Kind::Fleet:
+        if (fleet_ && fleet_->message) fleet_->message(message);
+        break;
+
       case Event::Kind::Error: {
         auto err = wire::parseGenericError(message);
         if (err.ok()) {
-          if (err->code == wire::ErrorCode::TokenExpired) {
+          // A player's connection takes TOKEN_EXPIRED as its own token's, verified or not,
+          // as it always has. To a fleet session the frame answers one send for a carried
+          // player and is about that player's token (the fleet token's own expiry is a
+          // signed COMMAND_SESSION_RELEASED, reason 2): it changes nothing here, whatever
+          // its code, and FleetSession tells the application whose send it was.
+          if (err->code == wire::ErrorCode::TokenExpired && !fleet_) {
             // Refresh + reassign; the session provider re-mints server-side.
             reconnectRequested_.store(true, std::memory_order_release);
           }
@@ -1112,7 +1301,8 @@ std::size_t Connection::poll(std::size_t maxEvents) {
             pendingWait_.outcome.error = err->code;
             pendingWait_.done = true;
           }
-          if (handlers.genericError) handlers.genericError({err->sequence, err->code});
+          if (handlers.genericError)
+            handlers.genericError({err->sequence, err->code, e.verified});
         }
         break;
       }
@@ -1142,58 +1332,7 @@ std::size_t Connection::poll(std::size_t maxEvents) {
           pendingWait_.outcome.serverEpochMs = v->epochMillisOrTokenId;
           pendingWait_.done = true;
         }
-        if (handlers.any) handlers.any(n);
-        switch (v->type) {
-          case MessageType::ActorUpdateNotification:
-            if (handlers.actorUpdate) handlers.actorUpdate(n);
-            break;
-          case MessageType::VoxelUpdateNotification: {
-            if (handlers.voxelUpdate) {
-              auto voxel = wire::parseVoxelPayload(v->payload);
-              if (voxel.ok()) handlers.voxelUpdate(n, voxel.value());
-            }
-            break;
-          }
-          case MessageType::ClientAudioNotification:
-            if (handlers.audio) handlers.audio(n);
-            break;
-          case MessageType::ClientVideoNotification:
-            if (handlers.video) handlers.video(n);
-            break;
-          case MessageType::ActorLeftNotification:
-            if (handlers.actorLeft)
-              handlers.actorLeft(n, wire::actorLeftReason(v->payload.data(), v->payload.size()));
-            break;
-          case MessageType::ChunkChangedNotification:
-            if (handlers.chunkChanged)
-              handlers.chunkChanged(n, wire::chunkChangedUpdatedAtMs(v->payload));
-            break;
-          case MessageType::ClientTextNotification:
-            if (handlers.text) handlers.text(n);
-            break;
-          case MessageType::ClientEventNotification: {
-            if (handlers.clientEvent) {
-              auto ev = wire::parseEventPayload(v->payload);
-              if (ev.ok()) handlers.clientEvent(n, ev.value());
-            }
-            break;
-          }
-          case MessageType::ServerEventNotification: {
-            if (handlers.serverEvent) {
-              auto ev = wire::parseEventPayload(v->payload);
-              if (ev.ok()) handlers.serverEvent(n, ev.value());
-            }
-            break;
-          }
-          case MessageType::GenericSpatial1:
-            if (handlers.genericSpatial) handlers.genericSpatial(n);
-            break;
-          case MessageType::SingleActorMessage:
-            if (handlers.singleActorMessage) handlers.singleActorMessage(n);
-            break;
-          default:
-            break;
-        }
+        detail::dispatchSpatial(handlers, n);
         break;
       }
     }

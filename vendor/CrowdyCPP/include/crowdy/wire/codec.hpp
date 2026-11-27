@@ -43,6 +43,38 @@ struct Token64 {
   Bytes bytes() const { return Bytes(octets, kTokenOctets); }
 };
 
+/// Zero `n` bytes through a volatile pointer, so the compiler may not drop the writes as
+/// dead stores. Best effort: it reaches this copy, and no copy a caller or the crypto
+/// provider made.
+inline void scrub(std::uint8_t* bytes, std::size_t n) noexcept {
+  volatile std::uint8_t* p = bytes;
+  for (; n > 0; --n) *p++ = 0;
+}
+
+/// A Token64 that zeroes its octets when it is destroyed. For a key held only as long as
+/// something else lives: FleetSession keeps each carried player's token in one, so the
+/// token is cleared when the player's row goes and when the session closes.
+struct ScrubbedToken64 {
+  Token64 token;
+
+  ScrubbedToken64() = default;
+  explicit ScrubbedToken64(const Token64& t) : token(t) {}
+  ~ScrubbedToken64() { scrub(token.octets, kTokenOctets); }
+  ScrubbedToken64(const ScrubbedToken64&) = delete;
+  ScrubbedToken64& operator=(const ScrubbedToken64&) = delete;
+  ScrubbedToken64& operator=(const Token64& t) {
+    token = t;
+    return *this;
+  }
+  /// Fill from a 64-character token; false, leaving the octets as they are, for any other
+  /// length.
+  bool assign(std::string_view s) {
+    if (s.size() != kTokenOctets) return false;
+    std::memcpy(token.octets, s.data(), kTokenOctets);
+    return true;
+  }
+};
+
 /// Compute the spatial HMAC tag over `prefix`. `out` must hold 32 bytes.
 ///
 /// Pass `mac` (from ICrypto::makeHmacSha256 for this token) to sign with a
@@ -521,6 +553,180 @@ inline Result<std::uint8_t> verifySessionReleased(const core::ICrypto& crypto, B
   if (!crypto.constantTimeEquals(expected, datagram.data() + 2, kHmacTagSize))
     return Errc::HmacMismatch;
   return datagram[1];
+}
+
+// ---------------------------------------------------------------------------
+// Fleet session messages (protocol.hpp, namespace fleet)
+// ---------------------------------------------------------------------------
+
+/// The proof inside a FLEET_CARRY: HMAC-SHA256(key = the player's 64-octet token,
+/// message = "ck-fleet-carry" + fleet gameTokenId + player gameTokenId + epoch millis),
+/// each number 8 bytes little endian. It shows the game server holds that player's token.
+/// `out` must hold 32 bytes.
+inline bool fleetCarryProof(const core::ICrypto& crypto, const Token64& playerToken,
+                            std::int64_t fleetGameTokenId, std::int64_t playerGameTokenId,
+                            std::int64_t epochMillis, std::uint8_t* out) {
+  std::uint8_t message[fleet::kCarryProofMessageSize];
+  std::memcpy(message, fleet::kCarryProofLabel, fleet::kCarryProofLabelSize);
+  le::writeI64(message + fleet::kCarryProofLabelSize, fleetGameTokenId);
+  le::writeI64(message + fleet::kCarryProofLabelSize + 8, playerGameTokenId);
+  le::writeI64(message + fleet::kCarryProofLabelSize + 16, epochMillis);
+  return crypto.hmacSha256(playerToken.bytes(), Bytes(message, sizeof(message)), out);
+}
+
+/// Write a FLEET_CARRY app payload, [8B player gameTokenId][8B epoch millis][32B proof], into
+/// `out`; returns the 48 bytes written. Send it in the long-spatial layout as the
+/// capabilities are sent (chunk (0,0,0), distance 0, no actor UUID), with the fleet
+/// session's own gameTokenId in the tail.
+inline Result<std::size_t> encodeFleetCarryPayload(const core::ICrypto& crypto,
+                                                   const Token64& playerToken,
+                                                   std::int64_t fleetGameTokenId,
+                                                   std::int64_t playerGameTokenId,
+                                                   std::int64_t epochMillis, MutableBytes out) {
+  if (out.size() < fleet::kCarryPayloadSize) return Errc::BufferTooSmall;
+  const Status cryptoStatus = crypto.availability();
+  if (!cryptoStatus.ok()) return cryptoStatus.code;
+  std::uint8_t* b = out.data();
+  le::writeI64(b + fleet::kCarryPlayerOffset, playerGameTokenId);
+  le::writeI64(b + fleet::kCarryEpochOffset, epochMillis);
+  if (!fleetCarryProof(crypto, playerToken, fleetGameTokenId, playerGameTokenId, epochMillis,
+                       b + fleet::kCarryProofOffset))
+    return Errc::Malformed;
+  return fleet::kCarryPayloadSize;
+}
+
+/// Write a FLEET_RELEASE app payload, [8B player gameTokenId]; returns the 8 bytes written.
+inline Result<std::size_t> encodeFleetReleasePayload(std::int64_t playerGameTokenId,
+                                                     MutableBytes out) {
+  if (out.size() < fleet::kReleasePayloadSize) return Errc::BufferTooSmall;
+  le::writeI64(out.data(), playerGameTokenId);
+  return fleet::kReleasePayloadSize;
+}
+
+/// Verify a fleet session's server frame (51, 52 or 53) in the form that carries its own
+/// HMAC: alone in its datagram, or a member of a MESSAGE_BUNDLE (2). The last 32 bytes are
+/// HMAC-SHA256(key = the fleet token, message = every byte before them, from the type byte
+/// on, followed by the fleet token's 64 octets). Returns the frame without its HMAC, for the
+/// parsers below. Malformed for something too short to be a frame and its HMAC;
+/// HmacMismatch for a frame the fleet token did not sign, which must be dropped.
+///
+/// A member of a MESSAGE_BUNDLE_SIGNED (30) carries no HMAC of its own: verify the bundle
+/// (verifySignedBundle) and give its members to the parsers as they are.
+inline Result<Bytes> verifyFleetFrame(const core::ICrypto& crypto, Bytes message,
+                                      const Token64& fleetToken,
+                                      const core::IMac* mac = nullptr) {
+  if (message.size() <= kHmacTagSize) return Errc::Malformed;
+  const std::uint8_t type = message[0];
+  if (type != static_cast<std::uint8_t>(MessageType::FleetCarryResult) &&
+      type != static_cast<std::uint8_t>(MessageType::FleetReleased) &&
+      type != static_cast<std::uint8_t>(MessageType::FleetDelivery))
+    return Errc::Malformed;
+  const Status cryptoStatus = crypto.availability();
+  if (!cryptoStatus.ok()) return cryptoStatus.code;
+  const std::size_t frameLen = message.size() - kHmacTagSize;
+  std::uint8_t expected[kHmacTagSize];
+  if (!spatialHmac(crypto, message.first(frameLen), fleetToken, expected, mac))
+    return Errc::Malformed;
+  if (!crypto.constantTimeEquals(expected, message.data() + frameLen, kHmacTagSize))
+    return Errc::HmacMismatch;
+  return message.first(frameLen);
+}
+
+struct FleetCarryResultView {
+  std::int64_t playerGameTokenId;
+  /// 0 unless `status` is 0.
+  std::int64_t userId;
+  /// 0 carried; 1 no such live token (also a token of another app); 2 another
+  /// organization's player; 3 the proof or its time failed (also a replay); 4 the session
+  /// carries as many as it may (also no place for the carry).
+  std::uint8_t status;
+};
+
+/// Parse a FLEET_CARRY_RESULT (51) without its HMAC: [type][8B player gameTokenId][8B user
+/// id][1B status], 18 bytes exactly.
+inline Result<FleetCarryResultView> parseFleetCarryResult(Bytes frame) {
+  if (frame.size() != fleet::kCarryResultSize ||
+      frame[0] != static_cast<std::uint8_t>(MessageType::FleetCarryResult))
+    return Errc::Malformed;
+  const std::uint8_t* b = frame.data();
+  return FleetCarryResultView{le::readI64(b + 1), le::readI64(b + 9), b[17]};
+}
+
+struct FleetReleasedView {
+  std::int64_t playerGameTokenId;
+  /// 1 another session carries the player; 2 the player's sign-in ended; 5 no gameplay
+  /// input from the player for the app's idle timeout.
+  std::uint8_t reason;
+};
+
+/// Parse a FLEET_RELEASED (52) without its HMAC: [type][8B player gameTokenId][1B reason],
+/// 10 bytes exactly.
+inline Result<FleetReleasedView> parseFleetReleased(Bytes frame) {
+  if (frame.size() != fleet::kReleasedSize ||
+      frame[0] != static_cast<std::uint8_t>(MessageType::FleetReleased))
+    return Errc::Malformed;
+  const std::uint8_t* b = frame.data();
+  return FleetReleasedView{le::readI64(b + 1), b[9]};
+}
+
+/// A parsed FLEET_DELIVERY (53). `notification` points into the original buffer.
+struct FleetDeliveryView {
+  /// How many carried players may receive the notification: 1 to 32.
+  std::size_t count;
+  /// `count` game token ids, 8 bytes little endian each; read them with recipient().
+  const std::uint8_t* recipients;
+  /// What a player's own session would have been sent, unsigned: a long-spatial
+  /// notification with containsAuth 0 and its 9-byte tail (parseFleetDeliveredSpatial), or a
+  /// channel notification 18 or 36, byte for byte (parseFleetDeliveredChannel). Its length
+  /// is the frame's minus 2 + 8 x count.
+  Bytes notification;
+
+  std::int64_t recipient(std::size_t i) const { return le::readI64(recipients + i * 8); }
+  bool channel() const {
+    return notification[0] == static_cast<std::uint8_t>(MessageType::ChannelMessageNotification) ||
+           notification[0] == static_cast<std::uint8_t>(MessageType::ChannelAudioNotification);
+  }
+};
+
+/// Parse a FLEET_DELIVERY (53) without its HMAC: [type][1B count][count x 8B player
+/// gameTokenId][notification]. Malformed for a count of 0 or over
+/// fleet::kMaxDeliveryRecipients, a frame shorter than its count says, and a frame with no
+/// notification after the list.
+inline Result<FleetDeliveryView> parseFleetDelivery(Bytes frame) {
+  if (frame.size() < fleet::kDeliveryHeaderSize ||
+      frame[0] != static_cast<std::uint8_t>(MessageType::FleetDelivery))
+    return Errc::Malformed;
+  const std::size_t count = frame[1];
+  if (count == 0 || count > fleet::kMaxDeliveryRecipients) return Errc::Malformed;
+  const std::size_t listEnd = fleet::kDeliveryHeaderSize + count * 8;
+  if (frame.size() <= listEnd) return Errc::Malformed;
+  return FleetDeliveryView{count, frame.data() + fleet::kDeliveryHeaderSize,
+                           frame.subspan(listEnd)};
+}
+
+/// The long-spatial notification inside a FLEET_DELIVERY, read by the parser an ordinary
+/// session's notifications go through. Inside a delivery it is always the unsigned form
+/// (containsAuth 0, no HMAC of its own, the 9-byte tail): the delivery's own HMAC, or its
+/// signed bundle's, is what vouches for it. Malformed for anything else, a signed
+/// notification and a client-only request included, so this accepts nothing an ordinary
+/// session's path would have had to verify.
+inline Result<LongSpatialView> parseFleetDeliveredSpatial(Bytes notification) {
+  if (notification.size() < kMinLongSpatialNoHmac) return Errc::Malformed;
+  if (!isLongSpatialLayout(notification[0]) || isClientOnlyControlType(notification[0]))
+    return Errc::Malformed;
+  if (notification[offsets::kContainsAuth] != 0) return Errc::Malformed;
+  return parseLongSpatial(notification);
+}
+
+/// The channel notification (18 or 36) inside a FLEET_DELIVERY: byte for byte what any
+/// session receives, and nothing after it.
+inline Result<ChannelNotificationView> parseFleetDeliveredChannel(Bytes notification) {
+  auto parsed = parseChannelNotification(notification);
+  if (!parsed.ok()) return parsed;
+  if (notification.size() !=
+      channel::kHeaderSize + parsed->payload.size() + channel::kNotificationTailSize)
+    return Errc::Malformed;
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------

@@ -305,4 +305,41 @@ struct ServerAssignment {
   }
 };
 
+/// A fleet session as the Application API answers it (`openFleetSession` and
+/// `refreshFleetSession`, Application API v2.89.0): one realtime session an organization's
+/// game server opens for itself, in which it carries the players who are on it. For an
+/// organization's own servers; the token never goes to a player's device.
+struct FleetSessionResponse {
+  /// 64 characters: the key the realtime session and its carries are signed with. It is not
+  /// a bearer for the Application API, which takes the organization's org token.
+  std::string token;
+  /// The token's id (decimal string): what the session's own realtime messages carry, and
+  /// what refresh and close name the session by.
+  std::string gameTokenId;
+  std::string appId;
+  /// ISO-8601: 24 hours after the session was opened or last refreshed. It ends then unless
+  /// it is refreshed first.
+  std::string expiresAt;
+  /// How many players the session may carry at once (256 unless an operator set another for
+  /// the organization, 1 to 1,024). A carry past it is refused.
+  int maxPlayers = 0;
+  /// The realtime server to connect the session to. The token is authorized there only.
+  ServerAssignment server;
+
+  /// The ids as the native UDP tail carries them; nullopt when one is not a decimal int64.
+  std::optional<std::int64_t> gameTokenIdInt64() const { return graphql::parseBigInt(gameTokenId); }
+  std::optional<std::int64_t> appIdInt64() const { return graphql::parseBigInt(appId); }
+
+  static FleetSessionResponse fromJson(const graphql::Json& j) {
+    FleetSessionResponse r;
+    r.token = j["token"].asString();
+    r.gameTokenId = j["gameTokenId"].asBigIntString();
+    r.appId = j["appId"].asBigIntString();
+    r.expiresAt = j["expiresAt"].asString();
+    r.maxPlayers = static_cast<int>(j["maxPlayers"].asInt64());
+    if (j["server"].isObject()) r.server = ServerAssignment::fromJson(j["server"]);
+    return r;
+  }
+};
+
 }  // namespace crowdy::domains

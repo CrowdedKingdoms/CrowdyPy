@@ -70,6 +70,11 @@ PLATFORM_ONLY = {
     "childSafetyReports",
     "eraseAccount",
     "recordParentalConsentWithdrawal",
+    # Application API v2.87 and v2.88: an operator records the decision on an organization's
+    # project profile and sets an organization's compute ceiling. orgComputeCeiling is an
+    # organization's own read and is not on this list.
+    "setOrgProjectProfileReview",
+    "setOrgComputeCeiling",
 }  # fmt: skip
 PLATFORM_DESCRIPTION = re.compile(
     r"\b(operator|super[- ]?admins?)( only\b|:)|\brestricted to super[- ]?admins?\b|\brequires a super[- ]?admin\b",

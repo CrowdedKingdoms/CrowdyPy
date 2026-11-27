@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from crowdypy.domains.app_access import AppAccessAPI
     from crowdypy.domains.apps import AppsAPI
     from crowdypy.domains.billing import BillingAPI
+    from crowdypy.domains.fleet_sessions import FleetSessionsAPI
     from crowdypy.domains.game_apps import GameAppsAPI
     from crowdypy.domains.managed_players import ManagedPlayersAPI
     from crowdypy.domains.moderation import ModerationAPI
@@ -32,6 +33,9 @@ class AdminAPI:
     organizations: OrganizationsAPI
     #: Org-managed players: the organization's own players and signing keys.
     managed_players: ManagedPlayersAPI
+    #: Fleet sessions for the organization's own game servers (open, refresh, close), with
+    #: the organization's org token as the client's bearer, on a server the organization runs.
+    fleet_sessions: FleetSessionsAPI
     #: The app registry, routing and player-code admission policy.
     apps: AppsAPI
     #: App access tiers and per-user access grants.
@@ -56,6 +60,7 @@ class AdminAPI:
         *,
         organizations: OrganizationsAPI,
         managed_players: ManagedPlayersAPI,
+        fleet_sessions: FleetSessionsAPI,
         apps: AppsAPI,
         app_access: AppAccessAPI,
         billing: BillingAPI,
@@ -68,6 +73,7 @@ class AdminAPI:
     ) -> None:
         self.organizations = organizations
         self.managed_players = managed_players
+        self.fleet_sessions = fleet_sessions
         self.apps = apps
         self.app_access = app_access
         self.billing = billing

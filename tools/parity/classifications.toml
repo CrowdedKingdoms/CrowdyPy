@@ -14,6 +14,7 @@
 # CrowdyJS class -> the CrowdyPy class that carries its methods.
 CrowdyClient = "AsyncCrowdyClient"
 GraphQLClient = "AsyncGraphQLClient"
+FleetSession = "AsyncFleetSession"
 
 [roots]
 # GraphQL root fields no CrowdyPy code sends.
@@ -80,6 +81,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "mutation.setHostedGameListing" = { kind = "browser-exclusion", reason = "Crowdy Games hosting, retired 2026-10-29; it published browser game bundles only, no Python wrapper is planned, and developers host their own games" }
 "mutation.setLegalHold" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOperator" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.setOrgComputeCeiling" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
+"mutation.setOrgProjectProfileReview" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOrgBillingExempt" = { kind = "browser-exclusion", reason = "operator-only billing control; not a game-client surface" }
 "mutation.setOrgManagedPlayerSettings" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
 "mutation.setOrgStatus" = { kind = "browser-exclusion", reason = "super-admin or operator only; the SDK wraps nothing for platform roles (tooling calls it directly)" }
@@ -106,6 +109,8 @@ GraphQLClient = "AsyncGraphQLClient"
 "query.crmSyncStatus" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.freeTierLevels" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.orgAppLimit" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
+"query.orgComputeCeiling" = { kind = "browser-exclusion", reason = "an organization's compute ceiling as Studio shows it; CrowdyJS does not wrap it" }
+"query.portalReturnAllowed" = { kind = "browser-exclusion", reason = "asked by Studio's hosted sign-in page when a player cancels; CrowdyJS does not wrap it" }
 "query.orgFreeTier" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.orgProjectProfile" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.playerTrialPool" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
@@ -165,6 +170,13 @@ GraphQLClient = "AsyncGraphQLClient"
 # --- native-equivalent
 "CrowdyClient.close" = { kind = "native-equivalent", reason = "AsyncCrowdyClient.aclose(), the asyncio spelling; the blocking CrowdyClient has close()" }
 "KitError.from" = { kind = "native-equivalent", reason = "KitError.from_error(error): `from` is a Python keyword" }
+"FleetNotCarriedError.code" = { kind = "native-equivalent", reason = "error.code, the attribute every CrowdyReplicationError carries: 'NotCarried', CrowdyCPP's name for the refusal (Errc::NotCarried)" }
+"FleetSession.forgetActor" = { kind = "native-equivalent", reason = "CrowdyCPP's session keeps no table of a player's actors and sends no heartbeat by itself, so there is nothing to forget: the game server calls send_heartbeat(player, chunk, uuid) every 2 seconds for an idle actor and stops when the actor leaves" }
+"FleetSession.settled" = { kind = "native-equivalent", reason = "CrowdyCPP verifies every datagram in its network thread before it queues it, and poll() returns once the handlers of everything queued have run; there is no pending verification to wait for" }
+"FleetSession.status" = { kind = "native-equivalent", reason = "session.state, CrowdyCPP's ConnState as a player's connection reports it (the `status` handler receives it); a release by the realtime server is the session_released handler and move_ordered" }
+"FleetSession.tableLimit" = { kind = "native-equivalent", reason = "CrowdyCPP's session has no table limit of its own: the realtime server answers a carry past max_players with status 4 (FleetCarryOutcome.SESSION_FULL), and a carry that is refused or times out leaves the table" }
+"FleetSession.tick" = { kind = "native-equivalent", reason = "CrowdyCPP's network thread does the session's timed work (capabilities, carry sends and retries); with manual_pump=True call pump(), and poll() reports the carries nothing answered" }
+"FleetSession.toJSON" = { kind = "native-equivalent", reason = "repr(session): the app, the game token id, the state, the server and the carried count, never a token" }
 
 # --- browser-exclusion
 "PortalAPI.embeddedHostInfo" = { kind = "browser-exclusion", reason = "answers whether the page runs inside the Crowdy Games shell iframe, retired 2026-10-29; a Python client never did" }
@@ -192,15 +204,24 @@ GraphQLClient = "AsyncGraphQLClient"
 "VERSION" = { kind = "native-equivalent", reason = "crowdypy.__version__, the Python convention" }
 "WireMessageType" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.MessageType" }
 "bundleSizeOf" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: len(crowdypy.wire.bundle(...)); the layout is CrowdyCPP's" }
+"carriedPlayerContext" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: the encoders take the token and the game_token_id directly, so a carried player's message is encode_long_spatial(fleet_token, ..., game_token_id=<the player's>); crowdypy.fleet's session names the player in each send" }
+"createFleetSignContext" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: encode_fleet_carry, encode_fleet_release and verify_fleet_frame take the fleet token and the fleet game_token_id directly" }
 "createSignContext" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial / spatial_hmac take the token directly" }
 "packMessageBundle" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle" }
+"parseFleetDatagram" = { kind = "native-equivalent", reason = "crowdypy.fleet's session reads and verifies a whole datagram in CrowdyCPP's network thread and hands Python batches (FleetBatch); by hand it is crowdypy.wire.verify_signed_bundle or verify_fleet_frame, split_datagram and the three parse_fleet_* functions" }
+"parseNotification" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: parse_long_spatial, parse_channel_notification and parse_generic_error read one notification, and parse_datagram each member of a datagram" }
 "parseRelayFrame" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.parse_datagram (a relay frame is one datagram)" }
 "payloadBytesOf" = { kind = "native-equivalent", reason = "connection.stats(): CrowdyCPP's counters (datagrams, messages and bytes, by message type)" }
+"serializeActorHeartbeat" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with MessageType.CLIENT_ACTOR_HEARTBEAT" }
 "serializeActorUpdate" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeAudioPacket" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeChannelAudio" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_audio" }
 "serializeChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_channel_message with the message type" }
+"serializeClientCapabilities" = { kind = "native-equivalent", reason = "CrowdyCPP's connection and fleet session send their own capabilities (a fleet session always does: they bind it to its address); by hand it is crowdypy.wire.encode_long_spatial with MessageType.CLIENT_CAPABILITIES and the ClientCapability flags as the payload" }
 "serializeClientEvent" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
+"serializeClientMediaSpeakers" = { kind = "native-equivalent", reason = "connection.set_speakers and the fleet session's set_speakers send it through CrowdyCPP; by hand it is crowdypy.wire.encode_long_spatial with MessageType.CLIENT_MEDIA_SPEAKERS" }
+"serializeFleetCarry" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_fleet_carry" }
+"serializeFleetRelease" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_fleet_release" }
 "serializeGenericSpatial" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
 "serializeRangedChannelMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_ranged_channel_message" }
 "serializeSingleActorMessage" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with the message type" }
