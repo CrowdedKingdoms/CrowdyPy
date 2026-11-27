@@ -289,6 +289,27 @@ def test_a_batch_exposes_zero_copy_columns(server: FakeServer) -> None:
         assert batch.chunks.base is not None or batch.chunks.flags.owndata is False
 
 
+def test_an_error_says_whether_a_signed_bundle_vouched_for_it(server: FakeServer) -> None:
+    # CrowdyCPP 0.94.0: GenericError::verified. An error frame carries no HMAC of its own.
+    options = {**QUIET, "advertise_capabilities": True}
+    with ReplicationConnection(Provider(server), token(), app_id=7, **options) as connection:
+        server.recv()  # the capabilities: the server learns where the client is
+        server.send(bytes([MessageType.GENERIC_ERROR, 5, wire.ErrorCode.INVALID_REQUEST]))
+        body = bytes([MessageType.MESSAGE_BUNDLE_SIGNED, 3, 0]) + bytes(
+            [MessageType.GENERIC_ERROR, 6, wire.ErrorCode.INVALID_REQUEST]
+        )
+        server.send(body + wire.spatial_hmac(TOKEN, body))
+        errors = [e for e in wait_for_rows(connection, 4) if e.type == MessageType.GENERIC_ERROR]
+        assert [(e.sequence, e.error_code, e.verified) for e in errors] == [
+            (5, wire.ErrorCode.INVALID_REQUEST, False),
+            (6, wire.ErrorCode.INVALID_REQUEST, True),
+        ]
+        stats = connection.stats()
+        # A fleet session's two checks; a player's connection makes neither.
+        assert (stats["wrong_app"], stats["unsigned_notifications"]) == (0, 0)
+    assert _native.replication.ERRC["NotCarried"] == 15
+
+
 def session_released(reason: int, key: str = TOKEN) -> bytes:
     prefix = bytes([MessageType.COMMAND_SESSION_RELEASED, reason])
     return prefix + hmac.new(key.encode("latin-1"), prefix, hashlib.sha256).digest()

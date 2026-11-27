@@ -12,6 +12,7 @@
 #include "crowdy/domains/domain_base.hpp"
 #include "crowdy/graphql/dispatcher.hpp"
 #include "crowdy/generated/enums.hpp"
+#include "crowdy/generated/operations.hpp"
 #include "crowdy/graphql/json.hpp"
 #include "crowdy/graphql/websocket.hpp"
 
@@ -67,13 +68,18 @@ bool execStatusRetryable(ExecStatus status) noexcept;
 namespace exec_wire {
 
 struct ClientFrame {
-  enum class Kind { Call, Subscribe, Unsubscribe, Ping };
+  /// CallAs (0x05, ck-exec 0.25.0): a call an organization's server makes for one of its
+  /// players. `rid:u32 player:u64 type:str8 key:str16 method:str8 payload:rest`; a gateway
+  /// takes it only on a server connection.
+  enum class Kind { Call, Subscribe, Unsubscribe, Ping, CallAs };
   Kind kind = Kind::Call;
   std::uint32_t rid = 0;  // the ping nonce for Ping
   std::string nodeType;
   std::string key;
   std::string method;  // the topic for Subscribe / Unsubscribe
   std::string payload;
+  /// CallAs only: the player the server acts for (the player's user id).
+  std::uint64_t player = 0;
 };
 
 struct ServerFrame {
@@ -193,6 +199,34 @@ class ExecConnection {
       std::shared_ptr<graphql::Dispatcher> dispatcher, ExecEndpoint endpoint,
       ExecConnectOptions options = {});
 
+  /// A server connection (ck-exec 0.25.0): one hub connection an organization's game server
+  /// opens for itself, from the gateway, connect token and host the Application API's
+  /// `execConnectAsServer` answered. Its plain calls are the server's own
+  /// (`Caller::Org { player: None }` in a hub), and `callAs` makes a call for one of the
+  /// organization's players. Like `open` it dials the URL it is given and never reconnects:
+  /// `ExecConnectOptions::reconnect` is ignored here, because the one connect token it holds
+  /// lasts about a minute and opens one socket. When the socket closes, calls in flight
+  /// fail `Unavailable`. A call made after that dials the same URL once more with the same
+  /// connect token, as on `open`, and a gateway refuses a token that is spent. A server that
+  /// should reconnect uses `connectAsServer` (or `ExecAPI::connectAsServer`), which asks for
+  /// a fresh connect token each time.
+  ///
+  /// FOR AN ORGANIZATION'S OWN SERVERS. The connect token comes from the org token, which
+  /// never reaches a player's device.
+  static std::shared_ptr<ExecConnection> openAsServer(
+      std::shared_ptr<graphql::IWebSocketTransport> transport,
+      std::shared_ptr<graphql::Dispatcher> dispatcher, ExecEndpoint endpoint,
+      ExecConnectOptions options = {});
+  /// A server connection that reconnects: `dial` answers a fresh `execConnectAsServer`
+  /// result each time it is asked. Returns at once; calls made meanwhile wait for the
+  /// connection. Pin it with `pinGateway` as for any connection you build over an ExecDial.
+  static std::shared_ptr<ExecConnection> connectAsServer(
+      std::shared_ptr<graphql::IWebSocketTransport> transport,
+      std::shared_ptr<graphql::Dispatcher> dispatcher, ExecDial dial,
+      ExecConnectOptions options = {});
+  /// True for a connection made by `openAsServer` or `connectAsServer`.
+  bool isServer() const;
+
   /// Start connecting. `done` fires once: Ok when open, the failure otherwise
   /// (Rejected when the gateway refused the connect token, `lastFailure()` says why).
   /// Calls made before then wait for the connection.
@@ -205,6 +239,18 @@ class ExecConnection {
   /// Call with `args` as MessagePack; decode the reply with ExecReply::value().
   void call(std::string nodeType, std::string key, std::string method,
             const graphql::JVal& args, ExecReplyCallback done, long timeoutMs = 0);
+  /// Call a node's endpoint for one of the organization's players, on a server connection
+  /// (client frame 0x05). The hub sees `Caller::Org { player: Some(player) }`: the platform
+  /// checks the connection is the app's organization's, and the player is the
+  /// organization's word. `player` is the player's user id; player 0 is the server's own
+  /// call, as `callRaw` makes it. Replies, timeouts and the one retry after a lost connection
+  /// or a `Moved` are those of `callRaw`. On any other connection nothing is sent and `done`
+  /// fires `Denied`.
+  void callAsRaw(std::uint64_t player, std::string nodeType, std::string key, std::string method,
+                 std::string payload, ExecReplyCallback done, long timeoutMs = 0);
+  /// `callAsRaw` with `args` as MessagePack.
+  void callAs(std::uint64_t player, std::string nodeType, std::string key, std::string method,
+              const graphql::JVal& args, ExecReplyCallback done, long timeoutMs = 0);
   /// Receive what a node publishes on `topic`. Returns a handle for
   /// unsubscribe(); `done` fires with the gateway's answer to the first one.
   std::uint64_t subscribe(std::string nodeType, std::string key, std::string topic,
@@ -594,6 +640,42 @@ class ExecAPI : public DomainBase {
   void connectAsDeveloperAsync(std::string appId, ExecConnectOptions options,
                                std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const;
 
+  // ---- an organization's game server ----
+  //
+  // `execConnectAsServer` (Application API v2.89.0, ck-exec 0.25.0) takes the organization's
+  // ORG TOKEN (`cko_...`, scope `fleet:session`) as this client's bearer, from the server and
+  // never from a browser or a player's device. The checks of `openFleetSession` apply (fleet
+  // sessions switched on for the organization, the app its own, the addendum accepted), and
+  // the refusals are those `admin().fleetSessions()` lists: ORG_TOKEN_REQUIRED, FORBIDDEN,
+  // ORG_LEGAL_ACCEPTANCE_REQUIRED, PLATFORM_BUSY with `retryAfterMs`. Revoking the org token
+  // closes the hub connections it opened.
+
+  /// The document `serverEndpoint` and `connectAsServer` send: generated from
+  /// operations/exec/Exec.graphql since 0.94.1, under the names 0.94.0 gave it here.
+  static constexpr std::string_view kExecConnectAsServerDocument =
+      gen::exec::kExecConnectAsServerIsolatedDocument;
+  static constexpr std::string_view kExecConnectAsServerOperationName =
+      gen::exec::kExecConnectAsServerOperationName;
+
+  /// A host and a server connect token for `appId` (`execConnectAsServer`), blocking: what
+  /// `ExecConnection::openAsServer` takes. The token lasts a minute and opens one socket;
+  /// ask again to connect again. `nodeType` and `key` put the connection on the host running
+  /// that instance, placing it if needed.
+  Result<ExecEndpoint> serverEndpoint(std::string appId, std::string nodeType = {}, std::string key = {}) const;
+  void serverEndpointAsync(std::string appId, std::string nodeType, std::string key,
+                           std::function<void(Result<ExecEndpoint>)> done) const;
+  /// The same, with the whole outcome: a refusal's code and `retryAfterMs` are in
+  /// `outcome.errors`, and `endpoint` is filled when `outcome.ok()`.
+  void serverEndpointAsync(std::string appId, std::string nodeType, std::string key,
+                           std::function<void(graphql::GraphQLOutcome outcome, ExecEndpoint endpoint)> done) const;
+  /// Connect the organization's game server to the app's hubs as itself: one connection for
+  /// each game server. Its plain calls are the server's own and `callAs` makes a call for
+  /// one of the organization's players. The same connection as `connect`: pinned to the
+  /// Application API's estate, and reconnecting with a fresh server connect token.
+  std::shared_ptr<ExecConnection> connectAsServer(std::string appId, ExecConnectOptions options = {}) const;
+  void connectAsServerAsync(std::string appId, ExecConnectOptions options,
+                            std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const;
+
   /// Guest log lines (`execLogs`), newest first, kept for 24 hours: an array of
   /// `{ id, nodeType, key, level, host, at, text, flow }`. `flow` is the call the line was
   /// written in (32 lowercase hex digits, shared by everything it caused), null outside a
@@ -650,7 +732,9 @@ class ExecAPI : public DomainBase {
   void restartTypeAsync(std::string appId, std::string nodeType, graphql::GraphQLCallback done) const;
 
  private:
-  ExecDial dialer(std::string appId, std::string nodeType, std::string key, bool developer = false) const;
+  /// Who a dialer asks for a connect token as.
+  enum class DialAs { Player, Developer, Server };
+  ExecDial dialer(std::string appId, std::string nodeType, std::string key, DialAs as = DialAs::Player) const;
   /// A connection over `dial` that dials only gateways the Game API this client talks to may name.
   std::shared_ptr<ExecConnection> pinned(ExecDial dial, ExecConnectOptions options) const;
   static graphql::JVal deployVariables(std::string appId, std::string root, const std::vector<ExecNodeType>& types,

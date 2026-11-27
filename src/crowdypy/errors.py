@@ -11,6 +11,7 @@ Branch on the stable ``extensions["code"]`` (``UNAUTHENTICATED``, ``SCOPE_MISSIN
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -28,14 +29,18 @@ __all__ = [
     "APP_UNAVAILABLE_CODE",
     "ASSERTION_REJECTED_CODE",
     "EMAIL_CONFIRMATION_REQUIRED_CODE",
+    "FLEET_SESSION_LIMIT_CODE",
     "GROUP_LIMIT_REACHED_CODE",
     "GROUP_MEMBER_BANNED_CODE",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE",
     "MINECRAFT_VERIFICATION_FAILED_CODE",
     "MINECRAFT_VERIFICATION_UNAVAILABLE_CODE",
+    "NOT_FOUND_CODE",
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE",
+    "ORG_TOKEN_REQUIRED_CODE",
     "PARENTAL_CONSENT_UNAVAILABLE_CODE",
+    "PLATFORM_BUSY_CODE",
     "SAFETY_LOG_REQUIRED_CODE",
     "SAFETY_MODERATOR_REQUIRED_CODE",
     "SOCIAL_LIMIT_REACHED_CODE",
@@ -58,6 +63,7 @@ __all__ = [
     "CrowdyMissingLegalDocument",
     "CrowdyNetworkError",
     "CrowdyParentalConsentUnavailable",
+    "CrowdyPlatformBusy",
     "CrowdyPlayerFault",
     "CrowdyProtocolError",
     "CrowdyRealtimeError",
@@ -74,6 +80,8 @@ __all__ = [
     "app_limit_reached_of",
     "app_paused_of",
     "assertion_rejected_of",
+    "fleet_session_limit_of",
+    "fleet_session_not_found_of",
     "group_limit_reached_of",
     "group_member_banned_of",
     "is_app_paused",
@@ -82,8 +90,11 @@ __all__ = [
     "minecraft_verification_failed_of",
     "minecraft_verification_unavailable_of",
     "org_legal_acceptance_required_of",
+    "org_token_required_of",
     "parental_consent_unavailable_of",
+    "platform_busy_of",
     "player_fault_of",
+    "retry_after_ms_of",
     "safety_log_required_of",
     "safety_moderator_required_of",
     "social_limit_reached_of",
@@ -125,6 +136,21 @@ ASSERTION_REJECTED_CODE = "ASSERTION_REJECTED"
 #: (HTTP 403), on an org-managed player's sign-in and refresh and on provisioning; see
 #: :func:`org_legal_acceptance_required_of`.
 ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE = "ORG_LEGAL_ACCEPTANCE_REQUIRED"
+#: The call takes an organization's org token, from the organization's own server (HTTP 403):
+#: the bearer is a session token, an app token or a fleet token; see
+#: :func:`org_token_required_of`. An org token sent from a browser (a request with an
+#: ``Origin`` header) is refused ``ORG_TOKEN_NOT_ALLOWED``.
+ORG_TOKEN_REQUIRED_CODE = "ORG_TOKEN_REQUIRED"
+#: The organization holds as many fleet sessions as it may (HTTP 403), on ``openFleetSession``;
+#: see :func:`fleet_session_limit_of`.
+FLEET_SESSION_LIMIT_CODE = "FLEET_SESSION_LIMIT"
+#: Nothing by that name that the caller may see (HTTP 404). On ``refreshFleetSession`` the
+#: session expired, was closed, or was opened with another org token; see
+#: :func:`fleet_session_not_found_of`.
+NOT_FOUND_CODE = "NOT_FOUND"
+#: The platform could not start the call in time (HTTP 503, retryable), with the wait in
+#: ``extensions.retryAfterMs``; see :func:`platform_busy_of`.
+PLATFORM_BUSY_CODE = "PLATFORM_BUSY"
 #: The player has not accepted the current required documents (HTTP 403): the platform's
 #: player documents or the app's own, listed in ``extensions.missingDocuments``; see
 #: :func:`legal_acceptance_required_of`.
@@ -436,6 +462,17 @@ class CrowdyParentalConsentUnavailable:
     reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CrowdyPlatformBusy:
+    """A ``PLATFORM_BUSY`` refusal: the platform could not start the call in time, and nothing
+    about the caller caused it."""
+
+    #: How long to wait before calling again, in milliseconds (``extensions.retryAfterMs``);
+    #: 0 when the server named no wait. Callers refused together are each told a different
+    #: wait, so wait the one you were given.
+    retry_after_ms: float = 0.0
+
+
 def _extensions_with_code(value: object, code: str) -> Mapping[str, Any] | None:
     """The extensions of the first error entry carrying ``code``, from a raised
     :class:`CrowdyGraphQLError` or one raw GraphQL error entry."""
@@ -552,6 +589,53 @@ def org_legal_acceptance_required_of(value: object) -> bool:
     fixed by retrying. Distinct from the player's own ``LEGAL_ACCEPTANCE_REQUIRED``, which a
     managed player never gets."""
     return _extensions_with_code(value, ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE) is not None
+
+
+def org_token_required_of(value: object) -> bool:
+    """Whether a call was refused with ``ORG_TOKEN_REQUIRED`` (HTTP 403): it takes the
+    organization's org token (``cko_...``) and was sent something else. The fleet session calls
+    and ``execConnectAsServer`` take an org token and nothing else, from a server the
+    organization runs; an org token sent from a browser (a request with an ``Origin`` header)
+    is refused ``ORG_TOKEN_NOT_ALLOWED``. Not fixed by retrying."""
+    return _extensions_with_code(value, ORG_TOKEN_REQUIRED_CODE) is not None
+
+
+def fleet_session_limit_of(value: object) -> bool:
+    """Whether ``fleet_sessions.open`` was refused with ``FLEET_SESSION_LIMIT`` (HTTP 403): the
+    organization holds as many fleet sessions as it may (512 unless an operator set another
+    number). Close the sessions of game servers that have stopped, or wait for them to end at
+    their ``expires_at``. Not fixed by retrying before one has closed."""
+    return _extensions_with_code(value, FLEET_SESSION_LIMIT_CODE) is not None
+
+
+def fleet_session_not_found_of(value: object) -> bool:
+    """Whether an error is the ``NOT_FOUND`` refusal (HTTP 404) ``fleet_sessions.refresh``
+    answers for a session that expired, was closed, or was opened with another org token. Open
+    a new session. Not fixed by retrying."""
+    return _extensions_with_code(value, NOT_FOUND_CODE) is not None
+
+
+def retry_after_ms_of(error: object) -> float:
+    """The wait an error's ``extensions.retryAfterMs`` asks for, in milliseconds, or 0 when it
+    names none. The one reader of that field: :func:`platform_busy_of` and the SDK's own
+    retries use it."""
+    if isinstance(error, Mapping):  # one raw GraphQL error entry
+        extensions = error.get("extensions")
+    else:
+        extensions = getattr(error, "extensions", None)
+    value = extensions.get("retryAfterMs") if isinstance(extensions, Mapping) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return float(value) if math.isfinite(value) and value > 0 else 0.0
+
+
+def platform_busy_of(value: object) -> CrowdyPlatformBusy | None:
+    """A ``PLATFORM_BUSY`` refusal (HTTP 503), or ``None``: the platform could not start the
+    call in time. ``retry_after_ms`` is how long to wait before calling again."""
+    extensions = _extensions_with_code(value, PLATFORM_BUSY_CODE)
+    if extensions is None:
+        return None
+    return CrowdyPlatformBusy(retry_after_ms_of({"extensions": extensions}))
 
 
 def legal_acceptance_required_of(value: object) -> CrowdyLegalAcceptanceRequired | None:

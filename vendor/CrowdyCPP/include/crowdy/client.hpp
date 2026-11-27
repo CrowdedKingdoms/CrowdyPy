@@ -37,6 +37,7 @@ namespace crowdy {
 
 namespace domains {
 class AdminAPI;
+class FleetSessionsAPI;
 class ModerationAPI;
 }  // namespace domains
 namespace studio {
@@ -317,6 +318,12 @@ class CrowdyClient {
   /// Studio-admin surface (orgs, apps, billing, usage, ...). Drive
   /// with an org/admin token from a trusted context.
   domains::AdminAPI& admin() { return *admin_; }
+  /// Fleet sessions for the organization's own game servers: open, refresh and close, with
+  /// the organization's org token as this client's bearer (setToken), on a server the
+  /// organization runs. The same instance as admin().fleetSessions()
+  /// (crowdy/domains/fleet_sessions.hpp). Refresh and close work only with the org token
+  /// that opened the session.
+  domains::FleetSessionsAPI& fleetSessions();
 
   // ----- Low-level escape hatches ------------------------------------------------
   /// Raw GraphQL against the API endpoint.
