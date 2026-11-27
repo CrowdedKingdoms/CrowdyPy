@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/application-api.graphql).
-// schema.gql sha256: f2438c934113f43da2e4f2bddaba4a2c716b59e428cb4cead95374cc907f04c1
-// operations sha256: 2b4233c7ee65ea2ab6b163cb036808d8b516bb2a2e33c3f4df2b337c4ff13549
+// schema.gql sha256: e5208bcab442f867d017408ab63a1467289ac05e6df6ff28a1cee9a0e72ed087
+// operations sha256: c1ac9408e125fccfd99e6cae63238e2cfabae915de5168311b755bd1321340dc
 
 #pragma once
 
@@ -4989,6 +4989,15 @@ mutation ExecConnectAsDeveloper($appId: BigInt!, $nodeType: String, $key: String
   }
 }
 
+mutation ExecConnectAsServer($appId: BigInt!, $nodeType: String, $key: String) {
+  execConnectAsServer(appId: $appId, nodeType: $nodeType, key: $key) {
+    gatewayUrl
+    token
+    host
+    expiresAt
+  }
+}
+
 query ExecLogs(
   $appId: BigInt!
   $nodeType: String
@@ -5480,6 +5489,15 @@ inline constexpr std::string_view kExecConnectAsDeveloperIsolatedDocument = R"gq
   }
 })gql";
 inline constexpr std::string_view kExecConnectAsDeveloperOperationName = "ExecConnectAsDeveloper";
+inline constexpr std::string_view kExecConnectAsServerIsolatedDocument = R"gql(mutation ExecConnectAsServer($appId: BigInt!, $nodeType: String, $key: String) {
+  execConnectAsServer(appId: $appId, nodeType: $nodeType, key: $key) {
+    gatewayUrl
+    token
+    host
+    expiresAt
+  }
+})gql";
+inline constexpr std::string_view kExecConnectAsServerOperationName = "ExecConnectAsServer";
 inline constexpr std::string_view kExecLogsIsolatedDocument = R"gql(query ExecLogs($appId: BigInt!, $nodeType: String, $key: String, $maxLevel: Int, $before: String, $limit: Int, $flow: String) {
   execLogs(
     appId: $appId
@@ -6145,6 +6163,7 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "ExecConnect") return kExecConnectIsolatedDocument;
   if (operationName == "ExecDeploy") return kExecDeployIsolatedDocument;
   if (operationName == "ExecConnectAsDeveloper") return kExecConnectAsDeveloperIsolatedDocument;
+  if (operationName == "ExecConnectAsServer") return kExecConnectAsServerIsolatedDocument;
   if (operationName == "ExecLogs") return kExecLogsIsolatedDocument;
   if (operationName == "ExecInstances") return kExecInstancesIsolatedDocument;
   if (operationName == "ExecVersions") return kExecVersionsIsolatedDocument;
@@ -6186,6 +6205,98 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
 }
 
 }  // namespace exec
+
+namespace fleetSessions {
+
+/// fleetSessions/FleetSessions.graphql
+inline constexpr std::string_view kFleetSessionsDocument = R"gql(mutation OpenFleetSession($input: OpenFleetSessionInput!) {
+  openFleetSession(input: $input) {
+    token
+    gameTokenId
+    appId
+    expiresAt
+    maxPlayers
+    server {
+      serverId
+      ip4
+      ip6
+      clientPort
+      status
+      clients
+    }
+  }
+}
+
+mutation RefreshFleetSession($input: RefreshFleetSessionInput!) {
+  refreshFleetSession(input: $input) {
+    token
+    gameTokenId
+    appId
+    expiresAt
+    maxPlayers
+    server {
+      serverId
+      ip4
+      ip6
+      clientPort
+      status
+      clients
+    }
+  }
+}
+
+mutation CloseFleetSession($input: CloseFleetSessionInput!) {
+  closeFleetSession(input: $input)
+})gql";
+inline constexpr std::string_view kOpenFleetSessionIsolatedDocument = R"gql(mutation OpenFleetSession($input: OpenFleetSessionInput!) {
+  openFleetSession(input: $input) {
+    token
+    gameTokenId
+    appId
+    expiresAt
+    maxPlayers
+    server {
+      serverId
+      ip4
+      ip6
+      clientPort
+      status
+      clients
+    }
+  }
+})gql";
+inline constexpr std::string_view kOpenFleetSessionOperationName = "OpenFleetSession";
+inline constexpr std::string_view kRefreshFleetSessionIsolatedDocument = R"gql(mutation RefreshFleetSession($input: RefreshFleetSessionInput!) {
+  refreshFleetSession(input: $input) {
+    token
+    gameTokenId
+    appId
+    expiresAt
+    maxPlayers
+    server {
+      serverId
+      ip4
+      ip6
+      clientPort
+      status
+      clients
+    }
+  }
+})gql";
+inline constexpr std::string_view kRefreshFleetSessionOperationName = "RefreshFleetSession";
+inline constexpr std::string_view kCloseFleetSessionIsolatedDocument = R"gql(mutation CloseFleetSession($input: CloseFleetSessionInput!) {
+  closeFleetSession(input: $input)
+})gql";
+inline constexpr std::string_view kCloseFleetSessionOperationName = "CloseFleetSession";
+
+inline constexpr std::string_view documentFor(std::string_view operationName) {
+  if (operationName == "OpenFleetSession") return kOpenFleetSessionIsolatedDocument;
+  if (operationName == "RefreshFleetSession") return kRefreshFleetSessionIsolatedDocument;
+  if (operationName == "CloseFleetSession") return kCloseFleetSessionIsolatedDocument;
+  return {};
+}
+
+}  // namespace fleetSessions
 
 namespace gameApps {
 

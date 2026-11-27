@@ -8,13 +8,20 @@ format and HMAC pages of the Replication API docs.
 
 Buffers may be any object exporting the buffer protocol (``bytes``, ``bytearray``,
 ``memoryview``, numpy arrays); nothing is copied on the way in.
+
+The fleet session's messages (49 to 53, realtime servers v0.50.3) are here too:
+:func:`fleet_carry_proof`, :func:`encode_fleet_carry`, :func:`encode_fleet_release`,
+:func:`verify_fleet_frame` and the three ``parse_fleet_*`` functions. A fleet token signs for
+every player its session carries: it stays on a server the organization runs, beside the
+organization's org token, and never goes to a player's device. ``crowdypy.fleet`` is the
+session that sends and receives these.
 """
 
 from __future__ import annotations
 
 import operator
 from collections.abc import Iterator, Sequence
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 from typing import Any, NamedTuple
 
 from crowdypy import _native
@@ -24,6 +31,15 @@ _wire: Any = _native.wire
 
 __all__ = [
     "CHANNEL_RANGED_MAX_DISTANCE",
+    "CONTROL_NONCE_BYTES",
+    "FLEET_CARRY_CLOCK_TOLERANCE_MS",
+    "FLEET_CARRY_PAYLOAD_BYTES",
+    "FLEET_CARRY_PROOF_LABEL",
+    "FLEET_CARRY_RESULT_BYTES",
+    "FLEET_MAX_DATAGRAM_BYTES",
+    "FLEET_MAX_DELIVERY_PLAYERS",
+    "FLEET_RELEASED_BYTES",
+    "FLEET_TOKEN_CHARS",
     "HMAC_TAG_SIZE",
     "LONG_SPATIAL_HEADER_SIZE",
     "MAX_BUNDLE_MEMBERS",
@@ -31,34 +47,50 @@ __all__ = [
     "MAX_DATAGRAM_SIZE",
     "MAX_DISTANCE",
     "MAX_LONG_SPATIAL_PAYLOAD",
+    "MAX_MEDIA_SPEAKERS",
     "TOKEN_OCTETS",
     "UUID_SIZE",
     "VOXEL_STATE_MAX_BYTES",
     "ChannelAudioNotification",
     "ChannelNotification",
+    "ClientCapability",
     "DecayRate",
     "ErrorCode",
+    "FleetCarryResultFrame",
+    "FleetCarryStatus",
+    "FleetDeliveryFrame",
+    "FleetReleaseReason",
+    "FleetReleasedFrame",
     "GenericError",
     "LongSpatialMessage",
     "MessageType",
     "ReleaseReason",
+    "SessionReleaseReason",
+    "SpeakerListMode",
     "VoxelPayload",
     "assert_voxel_edit",
     "bundle",
     "encode_channel_audio",
     "encode_channel_message",
     "encode_event_payload",
+    "encode_fleet_carry",
+    "encode_fleet_release",
     "encode_long_spatial",
     "encode_ranged_channel_message",
     "encode_voxel_payload",
+    "fleet_carry_proof",
     "parse_channel_notification",
     "parse_datagram",
+    "parse_fleet_carry_result",
+    "parse_fleet_delivery",
+    "parse_fleet_released",
     "parse_generic_error",
     "parse_long_spatial",
     "parse_voxel_payload",
     "spatial_hmac",
     "split_datagram",
     "verify_command_reconnect",
+    "verify_fleet_frame",
     "verify_long_spatial",
     "verify_signed_bundle",
 ]
@@ -76,6 +108,28 @@ MAX_DISTANCE: int = _wire.MAX_DISTANCE
 CHANNEL_RANGED_MAX_DISTANCE: int = _wire.CHANNEL_RANGED_MAX_DISTANCE
 #: Most bytes a voxel edit's state may carry; the server refuses longer with INVALID_REQUEST.
 VOXEL_STATE_MAX_BYTES: int = _wire.VOXEL_STATE_MAX_BYTES
+#: The nonce a capabilities message carries after its flags with ``BOUND_CONTROL``, in bytes.
+CONTROL_NONCE_BYTES: int = _wire.CONTROL_NONCE_SIZE
+#: The most speakers one list of a CLIENT_MEDIA_SPEAKERS may name.
+MAX_MEDIA_SPEAKERS: int = _wire.MAX_SPEAKERS
+#: The largest datagram a fleet session is sent: a FLEET_DELIVERY for one player, alone, with
+#: its own HMAC. Nothing else the realtime servers send a client is above
+#: :data:`MAX_DATAGRAM_SIZE`.
+FLEET_MAX_DATAGRAM_BYTES: int = _wire.FLEET_MAX_RECEIVE_DATAGRAM_SIZE
+#: The most players one FLEET_DELIVERY lists; the server splits a longer list over frames.
+FLEET_MAX_DELIVERY_PLAYERS: int = _wire.FLEET_MAX_DELIVERY_RECIPIENTS
+#: A token as its 64 octets: a fleet token and a player's app token alike.
+FLEET_TOKEN_CHARS: int = TOKEN_OCTETS
+#: The ASCII label a FLEET_CARRY proof starts with (14 bytes).
+FLEET_CARRY_PROOF_LABEL: str = _wire.FLEET_CARRY_PROOF_LABEL
+#: A FLEET_CARRY whose time is further than this from the server's is refused (status 3).
+FLEET_CARRY_CLOCK_TOLERANCE_MS: int = _wire.FLEET_CARRY_CLOCK_TOLERANCE_MS
+#: FLEET_CARRY's app payload: ``[8B player gameTokenId][8B epoch ms][32B proof]``.
+FLEET_CARRY_PAYLOAD_BYTES: int = _wire.FLEET_CARRY_PAYLOAD_SIZE
+#: FLEET_CARRY_RESULT without its HMAC: ``[1B 51][8B player gameTokenId][8B user id][1B status]``.
+FLEET_CARRY_RESULT_BYTES: int = _wire.FLEET_CARRY_RESULT_SIZE
+#: FLEET_RELEASED without its HMAC: ``[1B 52][8B player gameTokenId][1B reason]``.
+FLEET_RELEASED_BYTES: int = _wire.FLEET_RELEASED_SIZE
 
 
 class MessageType(IntEnum):
@@ -103,6 +157,20 @@ class MessageType(IntEnum):
     #: counted in ``stats()["bound_control_acks"]``; after it, a legacy 22 or 28 on the
     #: assignment is dropped and counted in ``stats()["legacy_control_dropped"]``.
     CONTROL_BOUND_ACK = 46
+    #: The speakers whose spatial voice and video a session receives; the capabilities' layout.
+    CLIENT_MEDIA_SPEAKERS = 47
+    #: Client to server, a fleet session only: start carrying a player. The capabilities'
+    #: layout under the session's own game token id; see :func:`encode_fleet_carry`.
+    FLEET_CARRY = 49
+    #: Client to server, a fleet session only: the player left the game.
+    FLEET_RELEASE = 50
+    #: Server to client, a fleet session only: the answer to a FLEET_CARRY.
+    FLEET_CARRY_RESULT = 51
+    #: Server to client, a fleet session only: a carry ended.
+    FLEET_RELEASED = 52
+    #: Server to client, a fleet session only: one notification and the only carried players
+    #: who may receive it.
+    FLEET_DELIVERY = 53
     MESSAGE_BUNDLE_SIGNED = 30
     CHANNEL_MESSAGE_RANGED_REQUEST = 32
     CHANNEL_AUDIO_REQUEST = 35
@@ -137,6 +205,59 @@ class ReleaseReason(IntEnum):
     REBALANCE = 4
     #: No gameplay input for the app's idle timeout (replication server v0.44.0). The
     #: connection moves to ``ConnState.INACTIVE`` and does not reconnect.
+    IDLE = 5
+
+
+#: CrowdyJS's name for :class:`ReleaseReason`.
+SessionReleaseReason = ReleaseReason
+
+
+class ClientCapability(IntFlag):
+    """The flags of a CLIENT_CAPABILITIES (29): a little-endian u32 as the app payload."""
+
+    #: This client reads MESSAGE_BUNDLE_SIGNED (one HMAC for a downlink bundle).
+    BUNDLE_SIGNED = _wire.CLIENT_CAPABILITY_BUNDLE_SIGNED
+    #: :data:`CONTROL_NONCE_BYTES` nonce bytes follow the flags, and the server sends this
+    #: session the bound control frames (44 and 45) in place of 22 and 28.
+    BOUND_CONTROL = _wire.CLIENT_CAPABILITY_BOUND_CONTROL
+    #: Send this session its own spatial voice and video.
+    OWN_MEDIA_ECHO = _wire.CLIENT_CAPABILITY_OWN_MEDIA_ECHO
+    #: A fleet session only: send it the state its own carried players sent, when another of
+    #: its carried players is in range. Off by default: a game server simulates its own players.
+    FLEET_OWN_STATE = _wire.CLIENT_CAPABILITY_FLEET_OWN_STATE
+
+
+class SpeakerListMode(IntEnum):
+    """How a CLIENT_MEDIA_SPEAKERS (47) changes one kind's list."""
+
+    KEEP = 0
+    ONLY = 1
+    EVERYONE = 2
+
+
+class FleetCarryStatus(IntEnum):
+    """FLEET_CARRY_RESULT's status byte. Treat a value not listed as a refusal."""
+
+    #: The session carries the player; the result names their user id.
+    CARRIED = 0
+    #: No live token by that game token id (also: a token of another app).
+    NO_LIVE_TOKEN = 1
+    #: The token is another organization's player's.
+    OTHER_ORGANIZATION = 2
+    #: The proof or its time failed (also: a carry sent again after it ended, a replay).
+    PROOF_FAILED = 3
+    #: The session carries as many players as it may (also: the server has no place for it).
+    SESSION_FULL = 4
+
+
+class FleetReleaseReason(IntEnum):
+    """FLEET_RELEASED's reason byte. Treat a value not listed as the carry having ended."""
+
+    #: Another session carries the player now: they moved to another of your servers.
+    CARRIED_ELSEWHERE = 1
+    #: The player's sign-in ended (revoked, or expired and not carried again with a live token).
+    SIGN_IN_ENDED = 2
+    #: No gameplay input from the player for the app's idle timeout.
     IDLE = 5
 
 
@@ -211,6 +332,35 @@ class VoxelPayload(NamedTuple):
     z: int
     voxel_type: int
     state: bytes
+
+
+class FleetCarryResultFrame(NamedTuple):
+    """A FLEET_CARRY_RESULT (51)."""
+
+    player_game_token_id: int
+    #: The player's user id when ``status`` is 0 (carried); 0 otherwise.
+    user_id: int
+    #: :class:`FleetCarryStatus`; a value it does not list is a refusal.
+    status: int
+
+
+class FleetReleasedFrame(NamedTuple):
+    """A FLEET_RELEASED (52)."""
+
+    player_game_token_id: int
+    #: :class:`FleetReleaseReason`; a value it does not list still means the carry ended.
+    reason: int
+
+
+class FleetDeliveryFrame(NamedTuple):
+    """A FLEET_DELIVERY (53): one notification and the only carried players who may receive it."""
+
+    #: 1 to :data:`FLEET_MAX_DELIVERY_PLAYERS` game token ids.
+    players: tuple[int, ...]
+    #: What a player's own session would have been sent, in its unsigned form: a long-spatial
+    #: notification (:func:`parse_long_spatial`) or a channel notification, 18 or 36
+    #: (:func:`parse_channel_notification`).
+    notification: bytes
 
 
 def _call(fn: Any, *args: Any) -> Any:
@@ -352,6 +502,107 @@ def encode_ranged_channel_message(
     return result
 
 
+def fleet_carry_proof(
+    player_token: Any, fleet_game_token_id: int, player_game_token_id: int, epoch_millis: int
+) -> bytes:
+    """The proof inside a FLEET_CARRY: it shows the game server holds the player's token.
+
+    ``HMAC-SHA256(key = the player's 64-octet token, "ck-fleet-carry" || 8B fleet gameTokenId
+    || 8B player gameTokenId || 8B epoch millis)``, 32 bytes. The player's token keys the
+    proof and is not sent."""
+    result: bytes = _call(
+        _wire.fleet_carry_proof,
+        player_token,
+        int(fleet_game_token_id),
+        int(player_game_token_id),
+        int(epoch_millis),
+    )
+    return result
+
+
+def encode_fleet_carry(
+    fleet_token: Any,
+    app_id: int,
+    *,
+    fleet_game_token_id: int,
+    player_token: Any,
+    player_game_token_id: int,
+    epoch_millis: int,
+    sequence: int = 0,
+) -> bytes:
+    """A FLEET_CARRY (49): start carrying a player. The capabilities' long-spatial layout
+    (chunk (0,0,0), distance 0, no actor uuid) under the session's own game token id, signed
+    with the fleet token; the app payload is ``[8B player gameTokenId][8B epoch
+    millis][32B proof]`` (:func:`fleet_carry_proof`).
+
+    The server refuses a time more than 30 seconds from its own, and one older than the last
+    carry of that player it accepted from this session: a carry sent again needs a new time
+    and a new proof."""
+    result: bytes = _call(
+        _wire.encode_fleet_carry,
+        fleet_token,
+        int(app_id),
+        int(fleet_game_token_id),
+        player_token,
+        int(player_game_token_id),
+        int(epoch_millis),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
+def encode_fleet_release(
+    fleet_token: Any,
+    app_id: int,
+    *,
+    fleet_game_token_id: int,
+    player_game_token_id: int,
+    sequence: int = 0,
+) -> bytes:
+    """A FLEET_RELEASE (50): the player left the game. FLEET_CARRY's layout; the app payload
+    is ``[8B player gameTokenId]``. It has no answer."""
+    result: bytes = _call(
+        _wire.encode_fleet_release,
+        fleet_token,
+        int(app_id),
+        int(fleet_game_token_id),
+        int(player_game_token_id),
+        int(sequence) & 0xFF,
+    )
+    return result
+
+
+def verify_fleet_frame(fleet_token: Any, message: Any) -> bytes:
+    """Verify a fleet session's server frame (51, 52 or 53) in the form that carries its own
+    HMAC: alone in its datagram, or a member of a MESSAGE_BUNDLE (2). Its last 32 bytes are
+    ``HMAC-SHA256(key = the fleet token, every byte before them || the fleet token)``.
+    Returns the frame without its HMAC, for the ``parse_fleet_*`` functions.
+
+    Raises :class:`crowdypy.errors.CrowdyProtocolError` (``HmacMismatch``) for a frame the
+    fleet token did not sign, which must be dropped. A member of a MESSAGE_BUNDLE_SIGNED (30)
+    carries no HMAC of its own: verify the bundle (:func:`verify_signed_bundle`) and give its
+    members to the parsers as they are."""
+    result: bytes = _call(_wire.verify_fleet_frame, fleet_token, message)
+    return result
+
+
+def parse_fleet_carry_result(frame: Any) -> FleetCarryResultFrame:
+    """A FLEET_CARRY_RESULT (51) without its HMAC: 18 bytes exactly. Does not verify."""
+    return FleetCarryResultFrame(*_call(_wire.parse_fleet_carry_result, frame))
+
+
+def parse_fleet_released(frame: Any) -> FleetReleasedFrame:
+    """A FLEET_RELEASED (52) without its HMAC: 10 bytes exactly. Does not verify."""
+    return FleetReleasedFrame(*_call(_wire.parse_fleet_released, frame))
+
+
+def parse_fleet_delivery(frame: Any) -> FleetDeliveryFrame:
+    """A FLEET_DELIVERY (53) without its HMAC: ``[1B 53][1B count][count x 8B player
+    gameTokenId][notification]``. Does not verify."""
+    players, notification = _call(_wire.parse_fleet_delivery, frame)
+    return FleetDeliveryFrame(tuple(players), notification)
+
+
 def parse_channel_notification(datagram: Any) -> ChannelNotification:
     """A CHANNEL_MESSAGE_NOTIFICATION (18), or a CHANNEL_AUDIO_NOTIFICATION (36), which has the
     same layout: read ``datagram[0]`` for which. :func:`parse_datagram` tells them apart."""
@@ -430,6 +681,9 @@ def parse_datagram(
         elif kind & 0x80 or kind in (
             MessageType.CLIENT_ACTOR_HEARTBEAT,
             MessageType.CLIENT_CAPABILITIES,
+            MessageType.CLIENT_MEDIA_SPEAKERS,
+            MessageType.FLEET_CARRY,
+            MessageType.FLEET_RELEASE,
         ):
             yield parse_long_spatial(member)
         else:

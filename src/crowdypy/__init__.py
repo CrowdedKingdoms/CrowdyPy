@@ -69,6 +69,10 @@ _LAZY: dict[str, str] = {
     "MINECRAFT_VERIFICATION_FAILED_CODE": "crowdypy.errors",
     "MINECRAFT_VERIFICATION_UNAVAILABLE_CODE": "crowdypy.errors",
     "ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE": "crowdypy.errors",
+    "ORG_TOKEN_REQUIRED_CODE": "crowdypy.errors",
+    "FLEET_SESSION_LIMIT_CODE": "crowdypy.errors",
+    "NOT_FOUND_CODE": "crowdypy.errors",
+    "PLATFORM_BUSY_CODE": "crowdypy.errors",
     "PARENTAL_CONSENT_UNAVAILABLE_CODE": "crowdypy.errors",
     "SAFETY_LOG_REQUIRED_CODE": "crowdypy.errors",
     "SAFETY_MODERATOR_REQUIRED_CODE": "crowdypy.errors",
@@ -91,6 +95,7 @@ _LAZY: dict[str, str] = {
     "CrowdyMissingLegalDocument": "crowdypy.errors",
     "CrowdyNetworkError": "crowdypy.errors",
     "CrowdyParentalConsentUnavailable": "crowdypy.errors",
+    "CrowdyPlatformBusy": "crowdypy.errors",
     "CrowdyPlayerFault": "crowdypy.errors",
     "CrowdyProtocolError": "crowdypy.errors",
     "CrowdyRealtimeError": "crowdypy.errors",
@@ -114,6 +119,10 @@ _LAZY: dict[str, str] = {
     "minecraft_verification_failed_of": "crowdypy.errors",
     "minecraft_verification_unavailable_of": "crowdypy.errors",
     "org_legal_acceptance_required_of": "crowdypy.errors",
+    "org_token_required_of": "crowdypy.errors",
+    "fleet_session_limit_of": "crowdypy.errors",
+    "fleet_session_not_found_of": "crowdypy.errors",
+    "platform_busy_of": "crowdypy.errors",
     "parental_consent_unavailable_of": "crowdypy.errors",
     "safety_log_required_of": "crowdypy.errors",
     "safety_moderator_required_of": "crowdypy.errors",
@@ -186,6 +195,9 @@ _LAZY: dict[str, str] = {
     "HostAPI": "crowdypy.domains.host",
     "MarketplaceAPI": "crowdypy.domains.marketplace",
     "ManagedPlayersAPI": "crowdypy.domains.managed_players",
+    "FleetSessionsAPI": "crowdypy.domains.fleet_sessions",
+    "FleetSessionAnswer": "crowdypy.domains.fleet_sessions",
+    "FleetServer": "crowdypy.domains.fleet_sessions",
     "ModerationAPI": "crowdypy.domains.moderation",
     "OrganizationsAPI": "crowdypy.domains.organizations",
     "PaymentsAPI": "crowdypy.domains.payments",
@@ -212,12 +224,24 @@ _LAZY: dict[str, str] = {
     "Notification": "crowdypy.replication",
     "ConnState": "crowdypy.replication",
     "TokenMaterial": "crowdypy.replication",
+    # fleet sessions: an organization's game server carrying its players (server side only)
+    "AsyncFleetSession": "crowdypy.fleet",
+    "FleetSession": "crowdypy.fleet",
+    "FleetBatch": "crowdypy.fleet",
+    "FleetCarryOutcome": "crowdypy.fleet",
+    "FleetCarryResult": "crowdypy.fleet",
+    "FleetNotCarriedError": "crowdypy.fleet",
+    "FleetPlayer": "crowdypy.fleet",
+    "FleetPlayerToken": "crowdypy.fleet",
+    "FleetReleased": "crowdypy.fleet",
+    "FleetSendRefused": "crowdypy.fleet",
 }
 _SUBMODULES = {
     "codecs",
     "enums",
     "errors",
     "exec_gateway",
+    "fleet",
     "inputs",
     "kit",
     "media",
@@ -355,6 +379,15 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.exec import (
         ExecAPI as ExecAPI,
+    )
+    from crowdypy.domains.fleet_sessions import (
+        FleetServer as FleetServer,
+    )
+    from crowdypy.domains.fleet_sessions import (
+        FleetSessionAnswer as FleetSessionAnswer,
+    )
+    from crowdypy.domains.fleet_sessions import (
+        FleetSessionsAPI as FleetSessionsAPI,
     )
     from crowdypy.domains.game_apps import (
         GameAppsAPI as GameAppsAPI,
@@ -501,6 +534,9 @@ if TYPE_CHECKING:
         EMAIL_CONFIRMATION_REQUIRED_CODE as EMAIL_CONFIRMATION_REQUIRED_CODE,
     )
     from crowdypy.errors import (
+        FLEET_SESSION_LIMIT_CODE as FLEET_SESSION_LIMIT_CODE,
+    )
+    from crowdypy.errors import (
         GROUP_LIMIT_REACHED_CODE as GROUP_LIMIT_REACHED_CODE,
     )
     from crowdypy.errors import (
@@ -519,10 +555,19 @@ if TYPE_CHECKING:
         MINECRAFT_VERIFICATION_UNAVAILABLE_CODE as MINECRAFT_VERIFICATION_UNAVAILABLE_CODE,
     )
     from crowdypy.errors import (
+        NOT_FOUND_CODE as NOT_FOUND_CODE,
+    )
+    from crowdypy.errors import (
         ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE as ORG_LEGAL_ACCEPTANCE_REQUIRED_CODE,
     )
     from crowdypy.errors import (
+        ORG_TOKEN_REQUIRED_CODE as ORG_TOKEN_REQUIRED_CODE,
+    )
+    from crowdypy.errors import (
         PARENTAL_CONSENT_UNAVAILABLE_CODE as PARENTAL_CONSENT_UNAVAILABLE_CODE,
+    )
+    from crowdypy.errors import (
+        PLATFORM_BUSY_CODE as PLATFORM_BUSY_CODE,
     )
     from crowdypy.errors import (
         SAFETY_LOG_REQUIRED_CODE as SAFETY_LOG_REQUIRED_CODE,
@@ -588,6 +633,9 @@ if TYPE_CHECKING:
         CrowdyParentalConsentUnavailable as CrowdyParentalConsentUnavailable,
     )
     from crowdypy.errors import (
+        CrowdyPlatformBusy as CrowdyPlatformBusy,
+    )
+    from crowdypy.errors import (
         CrowdyPlayerFault as CrowdyPlayerFault,
     )
     from crowdypy.errors import (
@@ -636,6 +684,12 @@ if TYPE_CHECKING:
         assertion_rejected_of as assertion_rejected_of,
     )
     from crowdypy.errors import (
+        fleet_session_limit_of as fleet_session_limit_of,
+    )
+    from crowdypy.errors import (
+        fleet_session_not_found_of as fleet_session_not_found_of,
+    )
+    from crowdypy.errors import (
         group_limit_reached_of as group_limit_reached_of,
     )
     from crowdypy.errors import (
@@ -660,7 +714,13 @@ if TYPE_CHECKING:
         org_legal_acceptance_required_of as org_legal_acceptance_required_of,
     )
     from crowdypy.errors import (
+        org_token_required_of as org_token_required_of,
+    )
+    from crowdypy.errors import (
         parental_consent_unavailable_of as parental_consent_unavailable_of,
+    )
+    from crowdypy.errors import (
+        platform_busy_of as platform_busy_of,
     )
     from crowdypy.errors import (
         player_fault_of as player_fault_of,
@@ -688,6 +748,36 @@ if TYPE_CHECKING:
     )
     from crowdypy.exec_gateway import (
         ExecConnection as ExecConnection,
+    )
+    from crowdypy.fleet import (
+        AsyncFleetSession as AsyncFleetSession,
+    )
+    from crowdypy.fleet import (
+        FleetBatch as FleetBatch,
+    )
+    from crowdypy.fleet import (
+        FleetCarryOutcome as FleetCarryOutcome,
+    )
+    from crowdypy.fleet import (
+        FleetCarryResult as FleetCarryResult,
+    )
+    from crowdypy.fleet import (
+        FleetNotCarriedError as FleetNotCarriedError,
+    )
+    from crowdypy.fleet import (
+        FleetPlayer as FleetPlayer,
+    )
+    from crowdypy.fleet import (
+        FleetPlayerToken as FleetPlayerToken,
+    )
+    from crowdypy.fleet import (
+        FleetReleased as FleetReleased,
+    )
+    from crowdypy.fleet import (
+        FleetSendRefused as FleetSendRefused,
+    )
+    from crowdypy.fleet import (
+        FleetSession as FleetSession,
     )
     from crowdypy.graphql import (
         AsyncGraphQLClient as AsyncGraphQLClient,

@@ -6,6 +6,11 @@ One WebSocket to the gateway of the host ``client.exec.endpoint()`` names, binar
 shared frame fixture), msgpack payloads. A dropped connection is redialed with backoff and
 its subscriptions renewed; a ``Moved`` reply redials to the new host and retries the call.
 
+A connection is a player's, a developer's, or an organization's game server's
+(``client.exec.connect_as_server``, ck-exec 0.25.0). Only a server's may call for one of the
+organization's players (``call_as``); its connect token comes from the organization's org
+token, which stays on a server the organization runs and never goes to a player's device.
+
 :class:`AsyncExecConnection` runs in an asyncio loop; :class:`ExecConnection` is the blocking
 twin, with a reader thread (push handlers run on it).
 """
@@ -34,6 +39,7 @@ __all__ = [
     "EXEC_CLOSE_ACCESS_ENDED",
     "AsyncExecConnection",
     "ExecCall",
+    "ExecCallAs",
     "ExecConnection",
     "ExecPing",
     "ExecPong",
@@ -42,6 +48,7 @@ __all__ = [
     "ExecSubscribe",
     "decode_exec_frame",
     "encode_exec_frame",
+    "exec_player_id",
 ]
 
 #: The close code a host ends a session with when the player's access ended: a suspension, a
@@ -60,6 +67,21 @@ _MAX_BACKOFF = 5.0
 @dataclass(frozen=True, slots=True)
 class ExecCall:
     rid: int
+    node_type: str
+    key: str
+    method: str
+    payload: bytes = b""
+
+
+@dataclass(frozen=True, slots=True)
+class ExecCallAs:
+    """A call an organization's game server makes for one of its players (client frame
+    ``0x05``, ck-exec 0.25.0): ``rid:u32 player:u64 type:str8 key:str16 method:str8
+    payload:rest``. A gateway takes it only on a server connection. ``player`` is the player's
+    user id, a whole number from 0 to 2^64 - 1 (an ``int`` or a decimal string)."""
+
+    rid: int
+    player: int | str
     node_type: str
     key: str
     method: str
@@ -112,7 +134,23 @@ def _str(value: str, limit: int, what: str) -> bytes:
     return data
 
 
-def encode_exec_frame(frame: ExecCall | ExecSubscribe | ExecPing) -> bytes:
+_U64_MAX = 2**64 - 1
+
+
+def exec_player_id(player: int | str) -> int:
+    """A player's user id as the 64-bit number a call-as frame carries: an ``int`` or a decimal
+    string, from 0 to 2^64 - 1. :class:`ValueError` for anything else."""
+    value = -1
+    if isinstance(player, int) and not isinstance(player, bool):
+        value = player
+    elif isinstance(player, str) and player.isascii() and player.isdigit():
+        value = int(player)
+    if not 0 <= value <= _U64_MAX:
+        raise ValueError(f"player must be a whole number from 0 to 2^64 - 1: {player!r}")
+    return value
+
+
+def encode_exec_frame(frame: ExecCall | ExecCallAs | ExecSubscribe | ExecPing) -> bytes:
     if isinstance(frame, ExecPing):
         return b"\x04" + frame.nonce.to_bytes(4, "little")
     node = _str(frame.node_type, 0xFF, "node type")
@@ -123,6 +161,17 @@ def encode_exec_frame(frame: ExecCall | ExecSubscribe | ExecPing) -> bytes:
         return (
             b"\x01"
             + frame.rid.to_bytes(4, "little")
+            + head
+            + bytes([len(method)])
+            + method
+            + bytes(frame.payload)
+        )
+    if isinstance(frame, ExecCallAs):
+        method = _str(frame.method, 0xFF, "method")
+        return (
+            b"\x05"
+            + frame.rid.to_bytes(4, "little")
+            + exec_player_id(frame.player).to_bytes(8, "little")
             + head
             + bytes([len(method)])
             + method
@@ -217,6 +266,28 @@ def _status_error(status: int, payload: bytes) -> CrowdyExecError:
     return CrowdyExecError(exec_status(status), payload.decode("utf-8", errors="replace"))
 
 
+def _not_a_server() -> CrowdyExecError:
+    return CrowdyExecError(
+        "Denied",
+        "call_as is for an organization's game server: connect with exec.connect_as_server",
+    )
+
+
+def _numbered(
+    frame: ExecCall | ExecCallAs | ExecSubscribe | ExecPing, rid: int
+) -> ExecCall | ExecCallAs | ExecSubscribe | ExecPing:
+    """``frame`` with the request id the connection allocated."""
+    if isinstance(frame, ExecPing):
+        return ExecPing(rid)
+    if isinstance(frame, ExecCall):
+        return ExecCall(rid, frame.node_type, frame.key, frame.method, frame.payload)
+    if isinstance(frame, ExecCallAs):
+        return ExecCallAs(
+            rid, frame.player, frame.node_type, frame.key, frame.method, frame.payload
+        )
+    return ExecSubscribe(rid, frame.node_type, frame.key, frame.topic, frame.unsubscribe)
+
+
 @dataclass
 class _Shared:
     """What both connections track: subscriptions, listeners and request ids."""
@@ -253,7 +324,8 @@ class _Shared:
 
 class AsyncExecConnection:
     """A gateway connection in an asyncio loop. Get one from ``client.exec.connect(app_id)``
-    (a player) or ``connect_as_developer``, or :meth:`open` for a known gateway and token."""
+    (a player), ``connect_as_developer`` or ``connect_as_server`` (an organization's game
+    server), or :meth:`open` / :meth:`open_as_server` for a known gateway and token."""
 
     def __init__(
         self,
@@ -262,11 +334,13 @@ class AsyncExecConnection:
         call_timeout: float = _CALL_TIMEOUT,
         reconnect: bool = True,
         open_timeout: float = _OPEN_TIMEOUT,
+        server: bool = False,
     ) -> None:
         self._dial = dial
         self._call_timeout = call_timeout
         self._reconnect_enabled = reconnect
         self._open_timeout = open_timeout
+        self._server = server
         self._ws: AsyncSocket | None = None
         self._endpoint: ExecEndpoint | None = None
         self._ready: asyncio.Task[None] | None = None
@@ -287,6 +361,32 @@ class AsyncExecConnection:
         await connection.connect()
         return connection
 
+    @classmethod
+    async def open_as_server(
+        cls, gateway_url: str, token: str, **options: Any
+    ) -> AsyncExecConnection:
+        """Open a server connection (ck-exec 0.25.0) to a known gateway with a server connect
+        token you already hold, the one ``execConnectAsServer`` answered
+        (``client.exec.server_endpoint``). Like :meth:`open` it does not reconnect (a connect
+        token lasts about a minute and opens one socket) and it dials the URL it is given. A
+        game server uses ``client.exec.connect_as_server``, which reconnects.
+
+        For a server the organization runs. The connect token comes from the organization's
+        org token, which never goes to a player's device."""
+
+        async def dial() -> ExecEndpoint:
+            return ExecEndpoint(gateway_url=gateway_url, token=token, host="")
+
+        connection = cls(dial, **{**options, "reconnect": False, "server": True})
+        await connection.connect()
+        return connection
+
+    @property
+    def is_server(self) -> bool:
+        """True for an organization's game server's connection (``exec.connect_as_server``,
+        :meth:`open_as_server`): the only kind that may call :meth:`call_as`."""
+        return self._server
+
     @property
     def host(self) -> str:
         """The host the connection is on ("" before connecting, or for :meth:`open`)."""
@@ -303,7 +403,8 @@ class AsyncExecConnection:
         """Called once, with the host's reason, when the host closes the connection because the
         player's access ended (close code :data:`EXEC_CLOSE_ACCESS_ENDED`: suspended, revoked,
         signed out or blocked). The connection is closed for good then and does not reconnect;
-        tell the player, and connect again only once they hold access again."""
+        tell the player, and connect again only once they hold access again. On a server
+        connection it fires when the org token is revoked or fleet sessions are switched off."""
         self._shared.ended.append(listener)
         return lambda: (
             self._shared.ended.remove(listener) if listener in self._shared.ended else None
@@ -429,7 +530,9 @@ class AsyncExecConnection:
             await self._request(ExecSubscribe(0, node_type, key, topic))
 
     async def _request(
-        self, frame: ExecCall | ExecSubscribe | ExecPing, timeout: float | None = None
+        self,
+        frame: ExecCall | ExecCallAs | ExecSubscribe | ExecPing,
+        timeout: float | None = None,
     ) -> tuple[int, bytes, Any]:
         if self._closed:
             raise CrowdyExecError("Unavailable", "the connection is closed")
@@ -438,12 +541,7 @@ class AsyncExecConnection:
         if ws is None:
             raise CrowdyExecError("Unavailable", "not connected")
         rid = self._shared.rid()
-        if isinstance(frame, ExecPing):
-            frame = ExecPing(rid)
-        elif isinstance(frame, ExecCall):
-            frame = ExecCall(rid, frame.node_type, frame.key, frame.method, frame.payload)
-        else:
-            frame = ExecSubscribe(rid, frame.node_type, frame.key, frame.topic, frame.unsubscribe)
+        frame = _numbered(frame, rid)
         future: asyncio.Future[tuple[int, bytes, Any]] = asyncio.get_running_loop().create_future()
         self._pending[rid] = (ws, future)
         try:
@@ -472,7 +570,11 @@ class AsyncExecConnection:
         timeout: float | None = None,
     ) -> bytes:
         """Call ``method`` with raw payload bytes; returns the reply's bytes."""
-        frame = ExecCall(0, node_type, key, method, payload)
+        return await self._call_frame(ExecCall(0, node_type, key, method, payload), timeout)
+
+    async def _call_frame(self, frame: ExecCall | ExecCallAs, timeout: float | None) -> bytes:
+        """Send a call or call-as frame, with one retry after a lost connection or a ``Moved``
+        reply."""
         try:
             status, data, ws = await self._request(frame, timeout)
         except CrowdyExecError as exc:
@@ -498,6 +600,49 @@ class AsyncExecConnection:
         """Call ``method`` with msgpack-encoded ``args``; returns the decoded reply."""
         reply = await self.call_raw(
             node_type, key, method, msgspec.msgpack.encode(args), timeout=timeout
+        )
+        return msgspec.msgpack.decode(reply)
+
+    async def call_as_raw(
+        self,
+        player: int | str,
+        node_type: str,
+        key: str,
+        method: str,
+        payload: bytes = b"",
+        *,
+        timeout: float | None = None,
+    ) -> bytes:
+        """Call ``method`` for one of the organization's players, with raw payload bytes, on a
+        server connection (client frame ``0x05``). The hub sees ``Caller::Org { player }``.
+        Crowded Kingdoms checks that the connection is the app's organization's; the player a
+        call names is the organization's word, and a hub should treat it as that.
+
+        ``player`` is the player's user id (a carry result's ``user_id``), an ``int`` or a
+        decimal string; 0 makes the call the server's own, as :meth:`call_raw` does. Replies,
+        timeouts and the one retry after a lost connection or a ``Moved`` reply are those of
+        :meth:`call_raw`. On a connection that is not a server's it raises
+        :class:`CrowdyExecError` ``Denied`` and sends nothing: a gateway closes such a
+        connection when it is sent this frame."""
+        if not self._server:
+            raise _not_a_server()
+        frame = ExecCallAs(0, exec_player_id(player), node_type, key, method, payload)
+        return await self._call_frame(frame, timeout)
+
+    async def call_as(
+        self,
+        player: int | str,
+        node_type: str,
+        key: str,
+        method: str,
+        args: Any = None,
+        *,
+        timeout: float | None = None,
+    ) -> Any:
+        """:meth:`call_as_raw` with msgpack-encoded ``args`` and the reply decoded, as
+        :meth:`call` does."""
+        reply = await self.call_as_raw(
+            player, node_type, key, method, msgspec.msgpack.encode(args), timeout=timeout
         )
         return msgspec.msgpack.decode(reply)
 
@@ -574,11 +719,13 @@ class ExecConnection:
         call_timeout: float = _CALL_TIMEOUT,
         reconnect: bool = True,
         open_timeout: float = _OPEN_TIMEOUT,
+        server: bool = False,
     ) -> None:
         self._dial = dial
         self._call_timeout = call_timeout
         self._reconnect_enabled = reconnect
         self._open_timeout = open_timeout
+        self._server = server
         self._ws: SyncSocket | None = None
         self._endpoint: ExecEndpoint | None = None
         self._pending: dict[int, _Slot] = {}
@@ -595,6 +742,24 @@ class ExecConnection:
         )
         connection.connect()
         return connection
+
+    @classmethod
+    def open_as_server(cls, gateway_url: str, token: str, **options: Any) -> ExecConnection:
+        """Open a server connection to a known gateway with a server connect token you already
+        hold; see :meth:`AsyncExecConnection.open_as_server`. For a server the organization
+        runs."""
+        connection = cls(
+            lambda: ExecEndpoint(gateway_url=gateway_url, token=token, host=""),
+            **{**options, "reconnect": False, "server": True},
+        )
+        connection.connect()
+        return connection
+
+    @property
+    def is_server(self) -> bool:
+        """True for an organization's game server's connection: the only kind that may call
+        :meth:`call_as`."""
+        return self._server
 
     @property
     def host(self) -> str:
@@ -732,7 +897,9 @@ class ExecConnection:
             self._request(ExecSubscribe(0, node_type, key, topic))
 
     def _request(
-        self, frame: ExecCall | ExecSubscribe | ExecPing, timeout: float | None = None
+        self,
+        frame: ExecCall | ExecCallAs | ExecSubscribe | ExecPing,
+        timeout: float | None = None,
     ) -> tuple[int, bytes, Any]:
         if self._closed:
             raise CrowdyExecError("Unavailable", "the connection is closed")
@@ -744,12 +911,7 @@ class ExecConnection:
             rid = self._shared.rid()
             slot = _Slot(ws)
             self._pending[rid] = slot
-        if isinstance(frame, ExecPing):
-            frame = ExecPing(rid)
-        elif isinstance(frame, ExecCall):
-            frame = ExecCall(rid, frame.node_type, frame.key, frame.method, frame.payload)
-        else:
-            frame = ExecSubscribe(rid, frame.node_type, frame.key, frame.topic, frame.unsubscribe)
+        frame = _numbered(frame, rid)
         try:
             ws.send(encode_exec_frame(frame))
         except Exception as exc:
@@ -777,7 +939,9 @@ class ExecConnection:
         *,
         timeout: float | None = None,
     ) -> bytes:
-        frame = ExecCall(0, node_type, key, method, payload)
+        return self._call_frame(ExecCall(0, node_type, key, method, payload), timeout)
+
+    def _call_frame(self, frame: ExecCall | ExecCallAs, timeout: float | None) -> bytes:
         try:
             status, data, ws = self._request(frame, timeout)
         except CrowdyExecError as exc:
@@ -801,6 +965,40 @@ class ExecConnection:
         timeout: float | None = None,
     ) -> Any:
         reply = self.call_raw(node_type, key, method, msgspec.msgpack.encode(args), timeout=timeout)
+        return msgspec.msgpack.decode(reply)
+
+    def call_as_raw(
+        self,
+        player: int | str,
+        node_type: str,
+        key: str,
+        method: str,
+        payload: bytes = b"",
+        *,
+        timeout: float | None = None,
+    ) -> bytes:
+        """Call ``method`` for one of the organization's players, with raw payload bytes, on a
+        server connection; see :meth:`AsyncExecConnection.call_as_raw`. ``Denied``, with
+        nothing sent, on a connection that is not a server's."""
+        if not self._server:
+            raise _not_a_server()
+        frame = ExecCallAs(0, exec_player_id(player), node_type, key, method, payload)
+        return self._call_frame(frame, timeout)
+
+    def call_as(
+        self,
+        player: int | str,
+        node_type: str,
+        key: str,
+        method: str,
+        args: Any = None,
+        *,
+        timeout: float | None = None,
+    ) -> Any:
+        """:meth:`call_as_raw` with msgpack-encoded ``args`` and the reply decoded."""
+        reply = self.call_as_raw(
+            player, node_type, key, method, msgspec.msgpack.encode(args), timeout=timeout
+        )
         return msgspec.msgpack.decode(reply)
 
     def subscribe(
