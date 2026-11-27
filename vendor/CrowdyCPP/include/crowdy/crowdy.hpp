@@ -18,6 +18,7 @@
 #include "crowdy/player_host/player_host.hpp"
 #endif
 #include "crowdy/replication/connection.hpp"
+#include "crowdy/replication/fleet_session.hpp"
 #include "crowdy/session/codec.hpp"
 #include "crowdy/session/durable.hpp"
 #include "crowdy/session/world_session.hpp"

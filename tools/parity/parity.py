@@ -50,7 +50,8 @@ KINDS = {
 
 # The CrowdyJS sources whose public classes form the compared surface: the set
 # CrowdyCPP's tools/parity/parity.mjs reads, plus the client entry points and the grid
-# scope (crowdy-client.ts, client.ts, grid-scope.ts), which CrowdyCPP's gate does not compare.
+# scope (crowdy-client.ts, client.ts, grid-scope.ts), which CrowdyCPP's gate does not compare,
+# and the fleet session (src/fleet/session.ts, since 0.40.0).
 JS_CLASS_DIRS = ("src/domains/", "src/kit/", "src/kit/modules/", "src/stores/")
 JS_CLASS_FILES = (
     "src/crowdy-client.ts",
@@ -66,6 +67,8 @@ JS_CLASS_FILES = (
     "src/crowdy-studio/embed/dock.ts",
     "src/crowdy-studio/embed/hud-layer.ts",
     "src/crowdy-studio/embed/panel.ts",
+    # The fleet session (CrowdyJS's Node entry point, `/fleet`), against crowdypy.fleet.
+    "src/fleet/session.ts",
 )
 SKIP_PY = ("_sync/", "_generated/")
 TS_NOT_METHODS = {"constructor", "if", "for", "return", "switch", "while", "catch"}

@@ -31,6 +31,7 @@ from crowdypy._default_origin import CROWDY_DEFAULT_HTTP_ORIGIN
 from crowdypy._dropped_read import is_dropped_read, retry_after_ms_of
 from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import ExecModScope
+from crowdypy._server_only import assert_organization_server
 from crowdypy.domains._base import Domain, omit_none, sleep
 from crowdypy.errors import CrowdyError, CrowdyProtocolError
 from crowdypy.utils import bigint, decode_base64, encode_base64
@@ -712,8 +713,9 @@ def exec_gateway_refusal(game_api_url: str, gateway_url: str) -> str | None:
 
 
 class ExecAPI(Domain):
-    """ck-exec on the Game API: gateway endpoints for players and developers, building,
-    deploying and operating an app's nodes, and players' mods with their CLIENT halves.
+    """ck-exec on the Application API: gateway endpoints for players, developers and an
+    organization's game servers, building, deploying and operating an app's nodes, and
+    players' mods with their CLIENT halves.
     """
 
     async def developer_endpoint(
@@ -749,6 +751,59 @@ class ExecAPI(Domain):
             )
 
         connection = AsyncExecConnection(dial, **options)
+        await connection.connect()
+        return connection
+
+    async def server_endpoint(
+        self, app_id: str | int, *, node_type: str | None = None, key: str | None = None
+    ) -> ExecEndpoint:
+        """A host and a server connect token for ``app_id`` (``execConnectAsServer``,
+        Application API v2.89.0), valid for about a minute and for opening one socket: what
+        ``AsyncExecConnection.open_as_server`` takes. With ``node_type`` (and ``key``) the
+        connection lands on the host that runs that instance, placing it if needed.
+
+        Takes the organization's org token (``cko_...``, scope ``fleet:session``) as this
+        client's bearer, on a server the organization runs; an org token never goes to a
+        player's device or into a browser page. The checks of ``fleet_sessions.open`` apply,
+        and so do its refusals (``ORG_TOKEN_REQUIRED``, ``FORBIDDEN``,
+        ``ORG_LEGAL_ACCEPTANCE_REQUIRED``, ``PLATFORM_BUSY`` with ``retryAfterMs``).
+        """
+        assert_organization_server("exec.server_endpoint")
+        payload = await self._request(
+            ops.EXEC_CONNECT_AS_SERVER,
+            omit_none({"appId": bigint(app_id), "nodeType": node_type, "key": key}),
+        )
+        return msgspec.convert(payload, ExecEndpoint)
+
+    async def connect_as_server(
+        self,
+        app_id: str | int,
+        *,
+        node_type: str | None = None,
+        key: str | None = None,
+        **options: Any,
+    ) -> AsyncExecConnection:
+        """Connect the organization's game server to the app's hubs as itself (ck-exec
+        0.25.0): one connection for each game server. Its plain calls are the server's own
+        (``Caller::Org { player: None }`` in a hub) and ``call_as`` makes a call for one of the
+        organization's players. It may call and subscribe to any node type of the app, has its
+        own budget of 2,000 calls a second, and a hub it places counts toward no player's
+        limit. The same connection as :meth:`connect`: it dials only a gateway
+        :func:`exec_gateway_refusal` passes, and reconnects with a fresh server connect token.
+
+        Takes the organization's org token as this client's bearer, on a server the
+        organization runs (see :meth:`server_endpoint`). The host closes the connection for
+        good when the org token is revoked or fleet sessions are switched off
+        (``on_access_ended``).
+        """
+        from crowdypy.exec_gateway import AsyncExecConnection
+
+        assert_organization_server("exec.connect_as_server")
+
+        async def dial() -> ExecEndpoint:
+            return self._checked(await self.server_endpoint(app_id, node_type=node_type, key=key))
+
+        connection = AsyncExecConnection(dial, **{**options, "server": True})
         await connection.connect()
         return connection
 

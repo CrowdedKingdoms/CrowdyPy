@@ -38,7 +38,8 @@ void ensureWinsock() {
 
 Status UdpSocket::open(const std::string& host, int port, int recvBufferBytes,
                        int sendBufferBytes) {
-  close();
+  std::unique_lock lock(gate_);
+  closeLocked();
 #ifdef _WIN32
   ensureWinsock();
 #endif
@@ -101,7 +102,8 @@ Status UdpSocket::open(const std::string& host, int port, int recvBufferBytes,
   }
 #endif
 
-  fd_ = static_cast<long long>(fd);
+  lastSendFault_.store(0, std::memory_order_relaxed);
+  fd_.store(static_cast<long long>(fd), std::memory_order_release);
 
 #ifndef _WIN32
   // Self-pipe for wake(). Both ends non-blocking: the writer must never stall
@@ -128,25 +130,32 @@ Status UdpSocket::open(const std::string& host, int port, int recvBufferBytes,
 }
 
 void UdpSocket::close() {
+  std::unique_lock lock(gate_);
+  closeLocked();
+}
+
+void UdpSocket::closeLocked() {
 #ifndef _WIN32
   for (int& end : wakeFds_) {
     if (end >= 0) ::close(end);
     end = -1;
   }
 #endif
-  if (fd_ < 0) return;
+  // Closed to senders first: isOpen() is false before the descriptor goes.
+  const long long fd = fd_.exchange(-1, std::memory_order_acq_rel);
+  if (fd < 0) return;
 #ifdef _WIN32
-  ::closesocket(static_cast<SOCKET>(fd_));
+  ::closesocket(static_cast<SOCKET>(fd));
 #else
-  ::close(static_cast<int>(fd_));
+  ::close(static_cast<int>(fd));
 #endif
-  fd_ = -1;
 }
 
 bool UdpSocket::canWake() const {
 #ifdef _WIN32
   return false;
 #else
+  std::shared_lock lock(gate_);
   return wakeFds_[1] >= 0;
 #endif
 }
@@ -155,6 +164,7 @@ bool UdpSocket::wake() {
 #ifdef _WIN32
   return false;
 #else
+  std::shared_lock lock(gate_);
   if (wakeFds_[1] < 0) return false;
   const std::uint8_t one = 1;
   // EAGAIN means the pipe already holds an undelivered wake, which is the
@@ -174,7 +184,10 @@ void UdpSocket::drainWake() {
 #endif
 
 Status UdpSocket::send(Bytes datagram) {
-  if (fd_ < 0) return Errc::NotConnected;
+  // Shared with every other sender; open() and close() wait for the sends in flight.
+  std::shared_lock lock(gate_);
+  const long long fd = fd_.load(std::memory_order_acquire);
+  if (fd < 0) return Errc::NotConnected;
   // A datagram socket takes the whole datagram or none of it, so a short write
   // that is not an error cannot happen; only n < 0 carries a meaningful error
   // code, and consulting one after a non-negative return would read a stale
@@ -182,17 +195,27 @@ Status UdpSocket::send(Bytes datagram) {
 #ifdef _WIN32
   // The socket is non-blocking (see open), so a full send buffer reports
   // WSAEWOULDBLOCK here rather than waiting for room.
-  const int n = ::send(static_cast<SOCKET>(fd_), reinterpret_cast<const char*>(datagram.data()),
+  const int n = ::send(static_cast<SOCKET>(fd), reinterpret_cast<const char*>(datagram.data()),
                        static_cast<int>(datagram.size()), 0);
-  if (n < 0) return detail::sendErrcFromNativeError(WSAGetLastError());
+  if (n < 0) {
+    const int native = WSAGetLastError();
+    const Errc code = detail::sendErrcFromNativeError(native);
+    if (code == Errc::SocketError) lastSendFault_.store(native, std::memory_order_relaxed);
+    return code;
+  }
   if (n != static_cast<int>(datagram.size())) return Errc::SocketError;
 #else
   // MSG_DONTWAIT for the same reason recv uses it: the caller may be a game
   // loop, which must not stall behind a full buffer. Without it a saturated
   // socket blocks here instead of reporting WouldBlock.
   const ssize_t n =
-      ::send(static_cast<int>(fd_), datagram.data(), datagram.size(), MSG_DONTWAIT);
-  if (n < 0) return detail::sendErrcFromNativeError(errno);
+      ::send(static_cast<int>(fd), datagram.data(), datagram.size(), MSG_DONTWAIT);
+  if (n < 0) {
+    const int native = errno;
+    const Errc code = detail::sendErrcFromNativeError(native);
+    if (code == Errc::SocketError) lastSendFault_.store(native, std::memory_order_relaxed);
+    return code;
+  }
   if (n != static_cast<ssize_t>(datagram.size())) return Errc::SocketError;
 #endif
   return Errc::Ok;
@@ -201,12 +224,13 @@ Status UdpSocket::send(Bytes datagram) {
 Result<std::size_t> UdpSocket::recvBatch(std::uint8_t* slab, std::size_t slotSize,
                                          std::size_t count, std::size_t* lengths,
                                          int timeoutMs) {
-  if (fd_ < 0) return Errc::NotConnected;
+  const long long fd = fd_.load(std::memory_order_acquire);
+  if (fd < 0) return Errc::NotConnected;
 #ifdef __linux__
   constexpr std::size_t kMaxBatch = 32;
   if (count > kMaxBatch) count = kMaxBatch;
 
-  pollfd pfds[2] = {{static_cast<int>(fd_), POLLIN, 0}, {wakeFds_[0], POLLIN, 0}};
+  pollfd pfds[2] = {{static_cast<int>(fd), POLLIN, 0}, {wakeFds_[0], POLLIN, 0}};
   const nfds_t nfds = wakeFds_[0] >= 0 ? 2 : 1;
   const int r = ::poll(pfds, nfds, timeoutMs);
   if (r == 0) return std::size_t{0};
@@ -224,7 +248,7 @@ Result<std::size_t> UdpSocket::recvBatch(std::uint8_t* slab, std::size_t slotSiz
     messages[i].msg_hdr.msg_iov = &vectors[i];
     messages[i].msg_hdr.msg_iovlen = 1;
   }
-  const int n = ::recvmmsg(static_cast<int>(fd_), messages, static_cast<unsigned>(count),
+  const int n = ::recvmmsg(static_cast<int>(fd), messages, static_cast<unsigned>(count),
                            MSG_DONTWAIT, nullptr);
   if (n < 0) {
     return (errno == EAGAIN || errno == EWOULDBLOCK) ? Result<std::size_t>(std::size_t{0})
@@ -248,19 +272,20 @@ Result<std::size_t> UdpSocket::recvBatch(std::uint8_t* slab, std::size_t slotSiz
 }
 
 Result<std::size_t> UdpSocket::recv(MutableBytes buffer, int timeoutMs) {
-  if (fd_ < 0) return Errc::NotConnected;
+  const long long fd = fd_.load(std::memory_order_acquire);
+  if (fd < 0) return Errc::NotConnected;
 
 #ifdef _WIN32
   if (timeoutMs > 0) {
     fd_set readSet;
     FD_ZERO(&readSet);
-    FD_SET(static_cast<SOCKET>(fd_), &readSet);
+    FD_SET(static_cast<SOCKET>(fd), &readSet);
     timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
     const int r = ::select(0, &readSet, nullptr, nullptr, &tv);
     if (r == 0) return std::size_t{0};
     if (r < 0) return Errc::SocketError;
   }
-  const int n = ::recv(static_cast<SOCKET>(fd_), reinterpret_cast<char*>(buffer.data()),
+  const int n = ::recv(static_cast<SOCKET>(fd), reinterpret_cast<char*>(buffer.data()),
                        static_cast<int>(buffer.size()), 0);
   if (n < 0) {
     return WSAGetLastError() == WSAEWOULDBLOCK ? Result<std::size_t>(std::size_t{0})
@@ -268,7 +293,7 @@ Result<std::size_t> UdpSocket::recv(MutableBytes buffer, int timeoutMs) {
   }
   return static_cast<std::size_t>(n);
 #else
-  pollfd pfds[2] = {{static_cast<int>(fd_), POLLIN, 0}, {wakeFds_[0], POLLIN, 0}};
+  pollfd pfds[2] = {{static_cast<int>(fd), POLLIN, 0}, {wakeFds_[0], POLLIN, 0}};
   const nfds_t nfds = wakeFds_[0] >= 0 ? 2 : 1;
   const int r = ::poll(pfds, nfds, timeoutMs);
   if (r == 0) return std::size_t{0};
@@ -276,7 +301,7 @@ Result<std::size_t> UdpSocket::recv(MutableBytes buffer, int timeoutMs) {
   if (nfds == 2 && (pfds[1].revents & POLLIN)) drainWake();
   if ((pfds[0].revents & POLLIN) == 0) return std::size_t{0};
   const ssize_t n =
-      ::recv(static_cast<int>(fd_), buffer.data(), buffer.size(), MSG_DONTWAIT);
+      ::recv(static_cast<int>(fd), buffer.data(), buffer.size(), MSG_DONTWAIT);
   if (n < 0) {
     return (errno == EAGAIN || errno == EWOULDBLOCK) ? Result<std::size_t>(std::size_t{0})
                                                      : Result<std::size_t>(Errc::SocketError);

@@ -102,7 +102,7 @@ class PyAssembler {
 void register_replication(nb::module_& m) {
   m.attr("STATUS_ROW") = kStatusRow;
   nb::dict errc;
-  for (int code = 0; code <= static_cast<int>(Errc::WouldBlock); ++code)
+  for (int code = 0; code <= static_cast<int>(Errc::NotCarried); ++code)
     errc[errcName(static_cast<Errc>(code))] = code;
   m.attr("ERRC") = errc;
 
