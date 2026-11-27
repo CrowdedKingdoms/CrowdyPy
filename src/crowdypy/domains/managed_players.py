@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import builtins
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, NotRequired, TypedDict
 
 import msgspec
@@ -50,11 +50,15 @@ from crowdypy.domains._base import Domain, omit_none
 from crowdypy.utils import bigint
 
 __all__ = [
+    "MANAGED_PLAYERS_DELETE_MAX",
     "PRIVATE_JWK_MEMBERS",
     "ManagedPlayerAssertionClaims",
     "ManagedPlayersAPI",
     "private_jwk_member",
 ]
+
+#: The most players one :meth:`ManagedPlayersAPI.remove_many` call names.
+MANAGED_PLAYERS_DELETE_MAX = 100
 
 #: The JWK members only a private key has (RFC 7518); the API refuses a key with any.
 PRIVATE_JWK_MEMBERS = ("d", "p", "q", "dp", "dq", "qi", "oth", "k")
@@ -183,9 +187,45 @@ class ManagedPlayersAPI(Domain):
             )
         )
 
+    async def remove_many(self, org_id: str | int, external_ids: Sequence[str]) -> dict[str, Any]:
+        """Delete up to 100 players in one call (0.41.0, Application API v2.90.0). Each is
+        deleted as :meth:`delete` deletes one, with the same authorization. The answer counts
+        each outcome (``deleted``, ``notFound``, ``held``) and names every external id sent,
+        once, in the order it first appeared, with its ``outcome`` (``players``): ``DELETED``,
+        ``NOT_FOUND`` (the organization has no such player; nothing changed) or
+        ``LEGAL_HOLD`` (a legal hold covers the player or the organization, or an open or
+        escalated safety report about the player set one; the player is kept as it was).
+
+        **A held player does not fail the call:** the others are still deleted, so read
+        ``held`` and the outcomes. An id sent twice is deleted once.
+
+        Raises :class:`ValueError` before any request for no ids or more than
+        :data:`MANAGED_PLAYERS_DELETE_MAX`, and for ids given as one string; the message says
+        how many, and names none.
+        """
+        if isinstance(external_ids, (str, bytes)) or not isinstance(external_ids, Sequence):
+            raise ValueError(
+                "managed_players.remove_many takes a list of 1 to "
+                f"{MANAGED_PLAYERS_DELETE_MAX} external ids"
+            )
+        count = len(external_ids)
+        if not 1 <= count <= MANAGED_PLAYERS_DELETE_MAX:
+            raise ValueError(
+                f"managed_players.remove_many takes 1 to {MANAGED_PLAYERS_DELETE_MAX} "
+                f"external ids, and was given {count}"
+            )
+        result: dict[str, Any] = await self._request(
+            ops.DELETE_MANAGED_PLAYERS,
+            {"input": {"orgId": bigint(org_id), "externalIds": list(external_ids)}},
+        )
+        return result
+
     async def settings(self, org_id: str | int) -> dict[str, Any]:
         """Whether an operator turned managed players on for the organization, and its limits:
-        the player cap, sign-ins per minute and the session lengths. Also where it stands on
+        the player cap, sign-ins per minute and the session lengths. Its fleet limits too
+        (0.41.0, Application API v2.89.0): ``fleetSessionsEnabled`` (whether its game servers
+        may open fleet sessions), ``maxFleetSessions`` (sessions held at once, over all its
+        apps) and ``maxFleetPlayers`` (players one session may carry). Also where it stands on
         the Org-Managed Players Addendum: ``termsVersion``, ``termsUrl``, ``termsAccepted``,
         the latest acceptance, and ``viewerMayAcceptTerms`` (whether the signed-in user is an
         admin of the organization who may accept it, in Studio). Read-only here."""

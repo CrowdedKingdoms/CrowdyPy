@@ -26,7 +26,7 @@ from typing import Any, Literal, Protocol
 
 import msgspec
 
-from crowdypy._dropped_read import is_dropped_read, retry_after_ms_of
+from crowdypy._dropped_read import dropped_read_wait_ms, is_dropped_read
 from crowdypy.domains.crowdy_studio import (
     CrowdyStudioOfflineError,
     CrowdyStudioPairingPreference,
@@ -1846,7 +1846,7 @@ class CrowdyStudioController:
                     raise
                 missed = error
                 self._check_operation(operation)
-                await self._sleep(max(self._compile_poll_ms, retry_after_ms_of(error)))
+                await self._sleep(dropped_read_wait_ms(error, self._compile_poll_ms))
                 self._check_operation(operation)
                 continue
             self._check_operation(operation)
@@ -2301,7 +2301,7 @@ class CrowdyStudioController:
             if not is_dropped_read(error):
                 raise
             self._check_operation(operation)
-            await self._sleep(max(self._compile_poll_ms, retry_after_ms_of(error)))
+            await self._sleep(dropped_read_wait_ms(error, self._compile_poll_ms))
             self._check_operation(operation)
             return await read()
 

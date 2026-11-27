@@ -12,9 +12,10 @@ Branch on the stable ``extensions["code"]`` (``UNAUTHENTICATED``, ``SCOPE_MISSIN
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 __all__ = [
     "ACCESS_NOT_GRANTED_CODE",
@@ -34,6 +35,7 @@ __all__ = [
     "GROUP_MEMBER_BANNED_CODE",
     "LEGAL_ACCEPTANCE_REQUIRED_CODE",
     "MANAGED_PLAYER_NOT_ALLOWED_CODE",
+    "MAX_RETRY_AFTER_WAIT_MS",
     "MINECRAFT_VERIFICATION_FAILED_CODE",
     "MINECRAFT_VERIFICATION_UNAVAILABLE_CODE",
     "NOT_FOUND_CODE",
@@ -46,6 +48,7 @@ __all__ = [
     "SOCIAL_LIMIT_REACHED_CODE",
     "TERRITORY_NOT_SUPPORTED_CODE",
     "WRONG_DATACENTER_CODE",
+    "ApiFailure",
     "CrowdyAccessRefusal",
     "CrowdyAccountBlocked",
     "CrowdyActorExists",
@@ -77,6 +80,7 @@ __all__ = [
     "actor_exists_of",
     "age_required_of",
     "age_requirement_not_met_of",
+    "api_failure_of",
     "app_limit_reached_of",
     "app_paused_of",
     "assertion_rejected_of",
@@ -95,6 +99,7 @@ __all__ = [
     "platform_busy_of",
     "player_fault_of",
     "retry_after_ms_of",
+    "retry_wait_ms",
     "safety_log_required_of",
     "safety_moderator_required_of",
     "social_limit_reached_of",
@@ -615,10 +620,27 @@ def fleet_session_not_found_of(value: object) -> bool:
     return _extensions_with_code(value, NOT_FOUND_CODE) is not None
 
 
+#: The longest the SDK waits on a server's ``retryAfterMs``, in milliseconds. The platform's
+#: own hints run from 200 ms to 10 s; this is three times the longest of them.
+MAX_RETRY_AFTER_WAIT_MS: Final = 30_000
+
+
+def retry_wait_ms(hint_ms: float | None) -> float:
+    """How long to wait on a server's ``retryAfterMs`` hint, in milliseconds: 0 for a hint of 0
+    or below (or one that is not a number), the hint up to :data:`MAX_RETRY_AFTER_WAIT_MS`,
+    and :data:`MAX_RETRY_AFTER_WAIT_MS` for anything longer. Every wait the SDK makes on a
+    server's hint goes through it. :func:`retry_after_ms_of` and :func:`platform_busy_of`
+    return what the server sent: pass that through here before you wait on it."""
+    if isinstance(hint_ms, bool) or not isinstance(hint_ms, (int, float)) or not hint_ms > 0:
+        return 0
+    return MAX_RETRY_AFTER_WAIT_MS if hint_ms > MAX_RETRY_AFTER_WAIT_MS else hint_ms
+
+
 def retry_after_ms_of(error: object) -> float:
     """The wait an error's ``extensions.retryAfterMs`` asks for, in milliseconds, or 0 when it
     names none. The one reader of that field: :func:`platform_busy_of` and the SDK's own
-    retries use it."""
+    retries use it. It returns what the server sent, however long: wait
+    :func:`retry_wait_ms` of it."""
     if isinstance(error, Mapping):  # one raw GraphQL error entry
         extensions = error.get("extensions")
     else:
@@ -636,6 +658,87 @@ def platform_busy_of(value: object) -> CrowdyPlatformBusy | None:
     if extensions is None:
         return None
     return CrowdyPlatformBusy(retry_after_ms_of({"extensions": extensions}))
+
+
+_SERVER_TEXT_MAX_CHARS: Final = 500
+_API_FAILURE_CODE_MAX_CHARS: Final = 64
+_BLANKS: Final = re.compile(r"[\x00-\x20\x7f]+")
+
+
+def _server_text(text: object, max_chars: int = _SERVER_TEXT_MAX_CHARS) -> str:
+    """Text a server sent, made fit to log or to keep: every run of whitespace and control
+    characters is one space, the ends are trimmed, and it is cut at ``max_chars`` bytes of
+    UTF-8, never inside a character. CrowdyCPP's ``serverText``."""
+    if not isinstance(text, str):
+        return ""
+    out = _BLANKS.sub(" ", text).strip(" ")
+    raw = out.encode("utf-8", errors="replace")
+    if len(raw) > max_chars:
+        out = raw[:max_chars].decode("utf-8", errors="ignore").rstrip(" ")
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class ApiFailure:
+    """Why the Application API did not do what a connection asked of it (0.41.0, CrowdyCPP's
+    ``ApiFailure``): a realtime server assignment
+    (``connection.last_assignment_failure()``, and ``failure`` on the error a failed
+    ``client.udp.connect()`` raises) or a hub connection's connect call
+    (``ExecConnection.last_connect_failure()``).
+
+    ``PLATFORM_BUSY`` with a ``retry_after_ms`` means "wait that long and ask again"; any
+    other code is a refusal that the same call meets again until its cause is dealt with."""
+
+    #: What failed, as CrowdyCPP names it (``Rejected``, ``Timeout``, ...); ``Ok`` when the
+    #: last attempt succeeded, or none was made.
+    error: str = "Ok"
+    #: The Application API's refusal code (``extensions.code``), such as ``PLATFORM_BUSY``;
+    #: empty when the failure carried none. At most 64 characters.
+    code: str = ""
+    #: How long the Application API asked the caller to wait before asking again, in
+    #: milliseconds; 0 when it named no wait. Never below 0 or above
+    #: :data:`MAX_RETRY_AFTER_WAIT_MS` (30 s), whatever the answer said.
+    retry_after_ms: int = 0
+    #: The Application API's message, or the transport's: a server's text on one line, at
+    #: most 500 bytes. Show it; do not act on it.
+    message: str = ""
+
+    def failed(self) -> bool:
+        return self.error != "Ok"
+
+    def platform_busy(self) -> bool:
+        """The platform was shedding load: wait ``retry_after_ms``, then ask again."""
+        return self.code == PLATFORM_BUSY_CODE
+
+
+def api_failure_of(error: object, kind: str = "Rejected") -> ApiFailure:
+    """What a failed call says of why, as an :class:`ApiFailure`: the first GraphQL error's
+    code and message and the first ``retryAfterMs`` any of its errors names, or the error's
+    own message when the API gave no answer of its own. What the API sent is bounded: the
+    wait to :data:`MAX_RETRY_AFTER_WAIT_MS`, the code and the message in length and to one
+    line. ``kind`` is the ``error`` to report (a timeout reports ``Timeout``)."""
+    if isinstance(error, (TimeoutError, CrowdyTimeoutError)):
+        kind = "Timeout"
+    code: object = None
+    wait: float = 0
+    message: object = getattr(error, "message", None)
+    if isinstance(error, CrowdyGraphQLError) and error.graphql_errors:
+        code = error.code
+        message = error.graphql_errors[0].get("message")
+        for entry in error.graphql_errors:
+            wait = retry_wait_ms(retry_after_ms_of(entry))
+            if wait > 0:
+                break
+    elif isinstance(error, CrowdyHttpError):
+        message = f"HTTP {error.status}"
+    if not isinstance(message, str):
+        message = str(error) if isinstance(error, BaseException) else ""
+    return ApiFailure(
+        kind,
+        _server_text(code, _API_FAILURE_CODE_MAX_CHARS),
+        int(wait),
+        _server_text(message),
+    )
 
 
 def legal_acceptance_required_of(value: object) -> CrowdyLegalAcceptanceRequired | None:
@@ -834,9 +937,14 @@ class CrowdyReplicationError(CrowdyError):
     retry shortly), ...
     """
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str | None = None, failure: ApiFailure | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        #: Why the server assignment failed, when a ``connect()`` failed there (0.41.0): the
+        #: Application API's refusal code and its ``retry_after_ms``. ``None`` otherwise.
+        self.failure = failure
 
 
 class GridScopeError(CrowdyError):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import random
+import re
 import threading
 import time
 from collections.abc import Awaitable, Callable
@@ -29,7 +30,14 @@ from urllib.parse import quote
 
 import msgspec
 
-from crowdypy.domains.exec import CrowdyExecError, ExecEndpoint, ExecStatus, exec_status
+from crowdypy.domains.exec import (
+    CrowdyExecError,
+    ExecEndpoint,
+    ExecStatus,
+    _gateway_name,
+    exec_status,
+)
+from crowdypy.errors import ApiFailure, api_failure_of
 
 if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection as AsyncSocket
@@ -262,6 +270,31 @@ def _refused(error: BaseException) -> CrowdyExecError | None:
     )
 
 
+_TOKEN_IN_QUERY = re.compile(r"([?&]token=)[^\s'\"&#]*", re.IGNORECASE)
+
+
+def _no_socket(endpoint: ExecEndpoint) -> CrowdyExecError:
+    # The URL a socket library refuses ends in the connect token, and its error names the
+    # whole URL: say which gateway, and leave that error out.
+    return CrowdyExecError(
+        "Unavailable", f"no socket could be opened to {_gateway_name(endpoint.gateway_url)}"
+    )
+
+
+def _connect_failed(endpoint: ExecEndpoint, error: BaseException) -> CrowdyExecError:
+    """A failed connect, named by its gateway's scheme, host and port, with what the socket
+    said: the connect token and anything from ``?token=`` on taken out, cut at 200
+    characters."""
+    text = str(error)
+    if endpoint.token:
+        text = text.replace(endpoint.token, "<token>")
+        text = text.replace(quote(endpoint.token, safe=""), "<token>")
+    text = " ".join(_TOKEN_IN_QUERY.sub(r"\1<token>", text).split())[:200]
+    return CrowdyExecError(
+        "Unavailable", f"connecting to {_gateway_name(endpoint.gateway_url)} failed: {text}"
+    )
+
+
 def _status_error(status: int, payload: bytes) -> CrowdyExecError:
     return CrowdyExecError(exec_status(status), payload.decode("utf-8", errors="replace"))
 
@@ -349,6 +382,7 @@ class AsyncExecConnection:
         self._closed = False
         self._backoff = 0.25
         self._tasks: set[asyncio.Task[Any]] = set()
+        self._connect_failure = ApiFailure()
 
     @classmethod
     async def open(cls, gateway_url: str, token: str, **options: Any) -> AsyncExecConnection:
@@ -392,6 +426,16 @@ class AsyncExecConnection:
         """The host the connection is on ("" before connecting, or for :meth:`open`)."""
         return self._endpoint.host if self._endpoint is not None else ""
 
+    def last_connect_failure(self) -> ApiFailure:
+        """Why the last connect call found no host (0.41.0): the Application API's refusal
+        code, its ``retry_after_ms`` and its message. ``failed()`` is false when the last
+        dial found a host, or none was made. ``platform_busy()`` means "wait
+        ``retry_after_ms`` and call again"; any other code is a refusal. The first
+        ``connect`` raises the API's error itself (:func:`crowdypy.errors.api_failure_of`
+        reads the same from it); this is for the reconnects that follow, which have no
+        caller to raise to."""
+        return self._connect_failure
+
     def on_reconnect(self, listener: Callable[[str], Any]) -> Callable[[], None]:
         """Called with the new host after every reconnect or move."""
         self._shared.listeners.append(listener)
@@ -421,19 +465,24 @@ class AsyncExecConnection:
 
     async def _dial_once(self) -> None:
         from websockets.asyncio.client import connect
-        from websockets.exceptions import ConnectionClosed, InvalidHandshake
+        from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidURI
 
-        endpoint = await self._dial()
+        try:
+            endpoint = await self._dial()
+        except Exception as exc:
+            self._connect_failure = api_failure_of(exc)
+            raise
+        self._connect_failure = ApiFailure()
         try:
             ws = await connect(_url(endpoint), open_timeout=self._open_timeout, max_size=None)
         except ConnectionClosed as exc:
             raise CrowdyExecError(
                 _closed_status(exc), f"the gateway closed the connection ({exc})"
             ) from exc
+        except InvalidURI:
+            raise _no_socket(endpoint) from None
         except (InvalidHandshake, OSError, TimeoutError) as exc:
-            raise _refused(exc) or CrowdyExecError(
-                "Unavailable", f"connecting to {endpoint.gateway_url} failed: {exc}"
-            ) from exc
+            raise _refused(exc) or _connect_failed(endpoint, exc) from exc
         self._ws = ws
         self._endpoint = endpoint
         self._backoff = 0.25
@@ -733,6 +782,7 @@ class ExecConnection:
         self._lock = threading.RLock()
         self._closed = False
         self._backoff = 0.25
+        self._connect_failure = ApiFailure()
 
     @classmethod
     def open(cls, gateway_url: str, token: str, **options: Any) -> ExecConnection:
@@ -765,6 +815,11 @@ class ExecConnection:
     def host(self) -> str:
         return self._endpoint.host if self._endpoint is not None else ""
 
+    def last_connect_failure(self) -> ApiFailure:
+        """Why the last connect call found no host; see
+        :meth:`AsyncExecConnection.last_connect_failure`."""
+        return self._connect_failure
+
     def on_reconnect(self, listener: Callable[[str], Any]) -> Callable[[], None]:
         self._shared.listeners.append(listener)
         return lambda: (
@@ -784,10 +839,15 @@ class ExecConnection:
         with self._lock:
             if self._ws is not None:
                 return
-            from websockets.exceptions import ConnectionClosed, InvalidHandshake
+            from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidURI
             from websockets.sync.client import connect
 
-            endpoint = self._dial()
+            try:
+                endpoint = self._dial()
+            except Exception as exc:
+                self._connect_failure = api_failure_of(exc)
+                raise
+            self._connect_failure = ApiFailure()
             try:
                 ws = connect(_url(endpoint), open_timeout=self._open_timeout, max_size=None)
                 # The connection outlives any with-block; entering it says so (websockets 17.1+).
@@ -796,10 +856,10 @@ class ExecConnection:
                 raise CrowdyExecError(
                     _closed_status(exc), f"the gateway closed the connection ({exc})"
                 ) from exc
+            except InvalidURI:
+                raise _no_socket(endpoint) from None
             except (InvalidHandshake, OSError, TimeoutError) as exc:
-                raise _refused(exc) or CrowdyExecError(
-                    "Unavailable", f"connecting to {endpoint.gateway_url} failed: {exc}"
-                ) from exc
+                raise _refused(exc) or _connect_failed(endpoint, exc) from exc
             self._ws = ws
             self._endpoint = endpoint
             self._backoff = 0.25

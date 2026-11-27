@@ -18,7 +18,11 @@ from conftest import MockApi
 from crowdypy import AsyncCrowdyClient
 from crowdypy.auth_state import AuthState
 from crowdypy.domains import portal as portal_module
-from crowdypy.domains.managed_players import ManagedPlayersAPI, private_jwk_member
+from crowdypy.domains.managed_players import (
+    MANAGED_PLAYERS_DELETE_MAX,
+    ManagedPlayersAPI,
+    private_jwk_member,
+)
 from crowdypy.domains.organizations import OrganizationsAPI
 from crowdypy.domains.portal import AppTokenResponse, PortalAPI
 from crowdypy.errors import (
@@ -206,3 +210,103 @@ def test_no_operation_mints_with_an_org_token() -> None:
     # The installed module: a wheel test run has no src/ tree.
     portal = Path(portal_module.__file__).read_text()
     assert re.search(r"mintManagedPlayerToken\s*\(", portal) is None
+
+
+# ---- CrowdyJS 18.41.0, Application API v2.90.0 ----
+
+
+async def test_remove_many_deletes_up_to_100_players_and_names_each_outcome(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    answer = {
+        "deleted": 1,
+        "notFound": 1,
+        "held": 1,
+        "players": [
+            {"externalId": "acct-1", "outcome": "DELETED"},
+            {"externalId": "acct-2", "outcome": "NOT_FOUND"},
+            {"externalId": "acct-3", "outcome": "LEGAL_HOLD"},
+        ],
+    }
+    api.reply_with_root(answer)
+    players = ManagedPlayersAPI(graphql)
+    # A held player does not fail the call: the answer says which.
+    removed = await players.remove_many(3, ("acct-1", "acct-2", "acct-3", "acct-1"))
+    assert removed == answer
+    assert api.last.operation_name == "DeleteManagedPlayers"
+    assert "deleteManagedPlayers(input: $input)" in api.last.query
+    for field in ("deleted", "notFound", "held", "externalId", "outcome"):
+        assert field in api.last.query
+    assert api.last.variables == {
+        "input": {"orgId": "3", "externalIds": ["acct-1", "acct-2", "acct-3", "acct-1"]}
+    }
+
+    await players.remove_many("3", [f"acct-{n}" for n in range(MANAGED_PLAYERS_DELETE_MAX)])
+    assert len(api.last.variables["input"]["externalIds"]) == 100
+    assert not hasattr(players, "delete_many")  # one name; this SDK aliases none
+
+
+@pytest.mark.parametrize(
+    ("external_ids", "said"),
+    [
+        ([], "was given 0"),
+        ([f"secret-{n}" for n in range(101)], "was given 101"),
+        ("secret-1", "takes a list of 1 to 100 external ids"),
+        (None, "takes a list of 1 to 100 external ids"),
+    ],
+)
+async def test_remove_many_refuses_no_ids_and_more_than_100_before_any_request(
+    api: MockApi, graphql: AsyncGraphQLClient, external_ids: Any, said: str
+) -> None:
+    assert MANAGED_PLAYERS_DELETE_MAX == 100
+    with pytest.raises(ValueError, match=said) as refused:
+        await ManagedPlayersAPI(graphql).remove_many(3, external_ids)
+    assert "secret" not in str(refused.value)  # it says how many, and names none
+    assert api.sent == []
+
+
+async def test_settings_report_the_fleet_limits(api: MockApi, graphql: AsyncGraphQLClient) -> None:
+    limits = {"fleetSessionsEnabled": True, "maxFleetSessions": 512, "maxFleetPlayers": 256}
+    api.reply_with_root({"orgId": "3", "enabled": True, **limits})
+    settings = await ManagedPlayersAPI(graphql).settings(3)
+    assert {name: settings[name] for name in limits} == limits
+    for name in limits:
+        assert name in api.last.query
+
+
+async def test_every_app_token_answer_names_its_user(
+    api: MockApi, graphql: AsyncGraphQLClient, session: AuthState
+) -> None:
+    api.reply_with_root({**MINTED, "userId": "9007199254740993"})
+    portal = PortalAPI(graphql, session)
+    tokens = [
+        await portal.mint_app_token(7),
+        await portal.exchange_code("code", "verifier"),
+        await portal.refresh(),
+        await portal.refresh({"ip4": "203.0.113.5", "clientPort": 4000}),
+        await portal.exchange_managed_player_assertion(7, "h.p.s"),
+        await portal.sign_in_with_minecraft(
+            app_id=7,
+            username="Steve",
+            server_id="a" * 40,
+            birth_date="2000-02",
+            country="US",
+            accepted_documents=[],
+        ),
+    ]
+    # A decimal string: a user id does not fit a double.
+    assert [token.user_id for token in tokens] == ["9007199254740993"] * 6
+    assert [sent.operation_name for sent in api.sent] == [
+        "MintAppToken",
+        "ExchangePortalCode",
+        "RefreshAppToken",
+        "RefreshAppTokenOnServer",
+        "ExchangeManagedPlayerAssertion",
+        "SignInWithMinecraft",
+    ]
+    assert all(" gameTokenId userId appId " in sent.query for sent in api.sent)
+    # What the organization's server hands the device carries it too, and an answer from
+    # before v2.90.0 reads as unknown.
+    assert portal.adopt_app_token({**MINTED, "userId": "12"}).user_id == "12"
+    assert portal.adopt_app_token(MINTED).user_id is None
+    assert "token=<redacted>" in repr(tokens[0])
