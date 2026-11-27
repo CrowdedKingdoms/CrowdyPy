@@ -206,10 +206,12 @@ byte for byte 0.94.0's.
   network thread verifies them (its read loop ends only on a short batch). Section 2
   stops its blaster before it closes for that reason. Neither can be fixed here: `vendor/` is
   never edited.
-- **The live suite has not run.** `tests/e2e/test_e2e_fleet_sessions.py` reads `CROWDY_FLEET_API_URL`,
-  `CROWDY_FLEET_APP_ID` and `CROWDY_FLEET_ORG_TOKEN` (a module-level `E2E_REQUIRES` replaces the
-  `CROWDY_E2E_*` four in `conftest.py`). Run it on dev before 0.40.0 moves to test, and record
-  the run in `docs/e2e-coverage.md`.
+- **The live suite ran on dev on 2026-11-27** (three passes, `docs/e2e-coverage.md`).
+  `tests/e2e/test_e2e_fleet_sessions.py` reads `CROWDY_FLEET_API_URL`, `CROWDY_FLEET_APP_ID` and
+  `CROWDY_FLEET_ORG_TOKEN` (a module-level `E2E_REQUIRES` replaces the `CROWDY_E2E_*` four in
+  `conftest.py`). Its hub step has not run live: it needs `CROWDY_FLEET_HUB_APP_ID`, an app of
+  the same organization with a hub. A `CROWDY_FLEET_HUB_*` variable left in the shell from
+  another run fails the step with the Application API's refusal, so unset them first.
 
 ## Releasing
 

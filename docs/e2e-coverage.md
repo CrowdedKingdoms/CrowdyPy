@@ -52,18 +52,15 @@ suites.
 | `test_e2e_open_grid_exec_gateway.py` | as a throwaway org admin (`CROWDY_E2E_THROWAWAY_OWNER=1`): open a nested grid, read it back, a player holds its keys, a player-code key is refused `BAD_REQUEST`, close it; the tier's ck-exec gateway passes `exec_gateway_refusal`, a connection pings, and a tampered connect token is `Denied` with the gateway's HTTP 401 reason | `e2e_open_grid_exec_gateway` |
 | `test_e2e_studio.py` | the headless Studio controller creates a project from the mod starter, edits it with autosave, and archives it (optional: needs `CROWDY_E2E_STUDIO_GRID_ID`) | `e2e_crowdy_studio` |
 | `test_e2e_input_log.py` | read-only, as the owner: the app's sessions list with `missingRecords` on every node (the Game API release after v2.40.2 accepts the selection), one session's inputs page when there is one, and a cancelled read stops with the client still usable | `e2e_input_log` |
-| `test_e2e_fleet_sessions.py` | Not run yet (the next section says why). As an organization's two game servers, with its org token: each opens a fleet session (`fleet_sessions.open`) and connects; four managed players sign in (the test's own `mintManagedPlayerToken` request, which the SDK does not wrap); X carries two and Y two; an actor update from X's player reaches Y once, plain, and does not come back to X; a spatial text arrives inside a delivery that lists its players; a crossing (Y carries X's player, X hears `released` with reason 1, X's next send raises `FleetNotCarriedError`, and no Application API call is made); a refresh keeps the token, the server and the carries; a carried player's refreshed token is carried with `replaces` and no release; optionally `exec.connect_as_server` with `call` and `call_as`; every player is released, both sessions are closed (`close` answers true, then false, and a refresh `NOT_FOUND`); and each session's `wrong_app`, `unsigned_notifications` and `hmac_failures` are 0. It leaves four managed players, `crowdypy-fleet-e2e-0` to `-3`, which every run reuses | `e2e_fleet_session` |
+| `test_e2e_fleet_sessions.py` | As an organization's two game servers, with its org token: each opens a fleet session (`fleet_sessions.open`) and connects; four managed players sign in (the test's own `mintManagedPlayerToken` request, which the SDK does not wrap); X carries two and Y two; an actor update from X's player reaches Y once, plain, and does not come back to X; a spatial text arrives inside a delivery that lists its players; a crossing (Y carries X's player, X hears `released` with reason 1, X's next send raises `FleetNotCarriedError`, and no Application API call is made); a refresh keeps the token, the server and the carries; a carried player's refreshed token is carried with `replaces` and no release; optionally `exec.connect_as_server` with `call` and `call_as`; every player is released, both sessions are closed (`close` answers true, then false, and a refresh `NOT_FOUND`); and each session's `wrong_app`, `unsigned_notifications` and `hmac_failures` are 0. It leaves four managed players, `crowdypy-fleet-e2e-0` to `-3`, which every run reuses | `e2e_fleet_session` |
 
-### The fleet session suite has not run
+### The fleet session suite's first run
 
-`test_e2e_fleet_sessions.py` was written on 2026-11-26 for 0.40.0 and has not run against
-any deployment: there was no org token with `fleet:session` to run it with, and dev and test
-were being switched off. Until a run is recorded in the table below, what holds the fleet
-session is the unit suite against a fake realtime server (`tests/unit/test_fleet_session.py`),
-the codec's golden bytes (`tests/unit/test_fleet_wire.py`, CrowdyCPP's vectors), the mocked
-Application API (`tests/unit/domains/test_fleet_sessions.py`) and CrowdyCPP's own live suite
-for the native core (`e2e_fleet_session`). Run it on dev before 0.40.0 moves to test, and
-record the run here.
+`test_e2e_fleet_sessions.py` was written on 2026-11-26 for 0.40.0 and first ran on dev on
+2026-11-27, three times, each passing (the last row of the table below). The optional hub
+step (`exec.connect_as_server`, `call` and `call_as`) has not run against a deployment:
+those runs had no app with a hub in the organization. The mocked Application API and the
+gateway's unit suite hold it until a run with `CROWDY_FLEET_HUB_APP_ID` is recorded here.
 
 ## Live runs
 
@@ -90,6 +87,7 @@ record the run here.
 | 2026-11-13 | dev tier (ck-api v2.69.0, replication servers v0.46.0), app `96701660793088`, and test tier (the same releases), app `101970621262848`, the `harness` provisioning token with `CROWDY_E2E_EMAIL=crowdy-e2e-py@test.invalid` | 0.32.0 (`dev` at `83a7fc9`, vendoring CrowdyCPP 0.84.0) | dev: `test_e2e_world`, `test_e2e_replication` and the new `test_e2e_chunk_store` (a chunk written with `updateChunk` loads and hydrates with the server's times, an edit settles with its echo, a catch-up over every tracked chunk and a hydrate keep it, an evicted chunk is forgotten) passed; test: `test_e2e_chunk_store` and `test_e2e_world` passed |
 | 2026-11-13 | dev tier (ck-api v2.70.0, replication servers v0.46.0), app `96701660793088`, and test tier (the same releases), app `101970621262848`, the `harness` provisioning token | 0.33.0 (branch `feat/vendor-0.85.0`, vendoring CrowdyCPP `dev/v0.85.0`: the voxels-write floor and the read limits) | dev and test: `test_e2e_chunk_store` and `test_e2e_replication`, 4 passed on each |
 | 2026-11-13 | test tier (ck-api v2.70.0), app `101970621262848`, the `harness` provisioning token | `crowdypy 0.33.0rc1` from PyPI (the `test/v0.33.0` release, installed into a clean Python 3.12 with uv) | `test_e2e_chunk_store`, `test_e2e_replication` and `test_e2e_identity`: 8 passed |
+| 2026-11-27 | dev tier (Application API v2.89.1, replication server v0.50.3), an app of an organization with fleet sessions switched on, an org token with `players:mint` and `fleet:session` | 0.40.0 (branch `feat/fleet-sessions` at `fcb923c`, vendoring CrowdyCPP `dev/v0.94.1`) | `test_e2e_fleet_sessions.py`: 1 passed, three runs in a row (7.6 s, 8.6 s, 8.5 s); the hub step not run (no `CROWDY_FLEET_HUB_APP_ID`) |
 
 ## Not covered here
 
