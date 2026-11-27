@@ -1042,6 +1042,58 @@ def test_a_refresh_is_refused_unless_it_is_this_sessions(server: FakeServer) -> 
     assert not fleet.refresh_due()
 
 
+def test_a_token_given_as_an_id_is_refused_and_not_shown(server: FakeServer) -> None:
+    """A player's token passed where its id belongs is refused with a message that describes
+    what was given and never contains it: messages are logged."""
+    seen = Seen()
+    fleet = open_connected(server, seen)
+    try:
+        carry_as(fleet, server)
+        chunk = (1, 2, 3)
+        for given, described in (
+            (PLAYER_TOKEN, "a string of 64 characters"),
+            (FLEET_TOKEN, "a string of 64 characters"),
+            (2**63, "an integer outside the 64-bit range"),
+            (True, "a bool"),
+            (1.5, "a float"),
+        ):
+            for call in (
+                lambda value: fleet.send_actor_update(value, chunk, ACTOR, b"s"),
+                lambda value: fleet.release(value),
+                lambda value: fleet.carries(value),
+            ):
+                with pytest.raises(CrowdyReplicationError) as refused:
+                    call(given)
+                assert refused.value.code == "InvalidArgument"
+                assert described in str(refused.value)
+                assert str(given) not in str(refused.value) or isinstance(given, bool)
+                assert "token-0123456789" not in str(refused.value)
+                assert "token-0123456789" not in repr(refused.value)
+    finally:
+        fleet.close()
+
+
+def test_the_session_is_closed_before_its_native_close_runs(server: FakeServer) -> None:
+    """``close`` marks the session closed first, so nothing asked while the native session
+    shuts down is started."""
+    fleet = open_connected(server)
+    native = fleet._native
+    seen_closed: list[bool] = []
+
+    class Watching:
+        def close(self) -> None:
+            seen_closed.append(fleet._closed)
+            native.close()
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(native, name)
+
+    fleet._native = Watching()
+    fleet.close()
+    assert seen_closed == [True]
+    assert not fleet.refresh_due()
+
+
 def test_a_refresh_is_due_at_half_of_the_sessions_lifetime(server: FakeServer) -> None:
     soon = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + 2)) + ".000Z"
     fleet = FleetSession(server.answer(expiresAt=soon), **QUIET)

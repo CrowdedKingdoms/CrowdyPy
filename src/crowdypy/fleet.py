@@ -318,8 +318,16 @@ def _id(value: int | str, what: str) -> int:
 
 
 def _bad_id(value: object, what: str) -> CrowdyReplicationError:
+    # What was given is described and never shown: a token handed over where its id belongs
+    # would otherwise be in the message, and messages are logged.
+    if isinstance(value, str):
+        given = f"a string of {len(value)} characters"
+    elif isinstance(value, int) and not isinstance(value, bool):
+        given = "an integer outside the 64-bit range"
+    else:
+        given = f"a {type(value).__name__}"
     return CrowdyReplicationError(
-        f"{what} must be a whole 64-bit number: {value!r}", code="InvalidArgument"
+        f"{what} must be a whole 64-bit number, and was {given}", code="InvalidArgument"
     )
 
 
@@ -1245,6 +1253,9 @@ class AsyncFleetSession(_FleetCore):
         """Close the socket and stop the network thread. The table is emptied and a carry
         still waiting ends ``closed``. This does not end the session on the platform: that is
         ``client.fleet_sessions.close``."""
+        # Closed from here on, before the native close runs on its thread: a carry asked for
+        # meanwhile ends ``closed`` at once.
+        self._closed = True
         await asyncio.to_thread(self._native.close)
         self._end()
         reader, self._reader = self._reader, None
@@ -1358,6 +1369,7 @@ class FleetSession(_FleetCore):
 
     def close(self) -> None:
         """Close the socket and stop the network thread; see :meth:`AsyncFleetSession.close`."""
+        self._closed = True  # before the native close: see AsyncFleetSession.close
         self._native.close()
         self._end()
         self._close_wake()
