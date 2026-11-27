@@ -98,21 +98,40 @@ void Connection::signalEvents() {
   config_.onEventsReady();
 }
 
+Status Connection::failAssignment(AssignmentFailure why) {
+  const Status failed = why.error;
+  std::lock_guard lock(assignmentMutex_);
+  // A session provider's account of what a server said: bounded before it is kept or logged.
+  assignmentFailure_ = bounded(std::move(why));
+  return failed;
+}
+
+AssignmentFailure Connection::lastAssignmentFailure() const {
+  std::lock_guard lock(assignmentMutex_);
+  return assignmentFailure_;
+}
+
 Status Connection::doAssign() {
-  auto assigned = provider_->assignServer();
-  if (!assigned.ok()) return assigned.error();
+  AssignmentFailure why;
+  auto assigned = provider_->assignServerOrSayWhy(why);
+  if (!assigned.ok()) {
+    why.error = assigned.error();
+    return failAssignment(std::move(why));
+  }
   const Assignment endpoint = assigned.value();
 
-  const std::string& host =
-      (config_.preferIpv6 && !endpoint.ip6.empty()) ? endpoint.ip6 : endpoint.ip4;
-  if (host.empty() || endpoint.clientPort <= 0) return Errc::Rejected;
+  const std::string& host = connectAddress(endpoint, config_.preferIpv6);
+  if (host.empty() || endpoint.clientPort <= 0) {
+    return failAssignment({Errc::Rejected, {}, 0, "the assignment names no server"});
+  }
 
   Status st = socket_.open(host, endpoint.clientPort, config_.socketRecvBufferBytes,
                            config_.socketSendBufferBytes);
-  if (!st.ok()) return st;
+  if (!st.ok()) return failAssignment({st.code, {}, 0, "the socket to the assigned server did not open"});
   {
     std::lock_guard lock(assignmentMutex_);
     assignment_ = endpoint;
+    assignmentFailure_ = AssignmentFailure{};
   }
 
   readyAtMs_ = clock_.monotonicMillis() + config_.sessionReadyWaitMs;
@@ -120,6 +139,7 @@ Status Connection::doAssign() {
   lastRecvMs_.store(0, std::memory_order_relaxed);
   lastSendMs_.store(0, std::memory_order_relaxed);
   lastCapsMs_ = 0;  // a new server knows nothing about us
+  presenceRestart();
   {
     // A new nonce per assignment, so a control frame bound to an earlier one is refused.
     std::uint64_t nonce = 0;
@@ -169,7 +189,13 @@ Status Connection::connect() {
 
 void Connection::disconnect() {
   running_.store(false, std::memory_order_release);
-  if (netThread_.joinable()) netThread_.join();
+  if (netThread_.joinable()) {
+    // The network thread ends its receive pass at the batch in hand (receiveBatch), so this
+    // wait does not depend on what is still arriving.
+    if (logger_.enabled(core::LogLevel::Debug))
+      logger_.log(core::LogLevel::Debug, "disconnect: stopping the network thread");
+    netThread_.join();
+  }
   // Whatever the last frame queued goes out before the socket does.
   (void)flushSends();
   socket_.close();
@@ -248,7 +274,7 @@ void Connection::countNotOwn(bool wrongApp, const wire::LongSpatialView& view) {
                   std::to_string(static_cast<int>(view.type)) + ", chunk (" +
                   std::to_string(view.chunk.x) + ", " + std::to_string(view.chunk.y) + ", " +
                   std::to_string(view.chunk.z) + "), " + std::to_string(count) +
-                  " so far. The realtime server should never send a fleet session this: "
+                  " so far. The realtime server should never send a session this: "
                   "report it to Crowded Kingdoms");
 }
 
@@ -385,7 +411,8 @@ Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const Spatial
   params.uuid = p.uuid;
   params.payload = p.payload;
   params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
-  params.sequence = nextSequence();
+  const std::uint32_t number = nextSendNumber();
+  params.sequence = static_cast<std::uint8_t>(number);
 
   std::uint8_t buf[wire::kMaxDatagramSize];
   auto n = wire::encodeLongSpatial(crypto_, params, creds.token, MutableBytes(buf, sizeof(buf)),
@@ -394,9 +421,154 @@ Result<std::uint8_t> Connection::sendLongSpatial(MessageType type, const Spatial
   Status st = transmit(buf, n.value());
   if (!st.ok()) return st.code;
   noteGameplaySend(type, p);
-  if (fleet_ && fleet_->sent)
-    fleet_->sent(params.sequence, params.gameTokenId != creds.gameTokenId ? params.gameTokenId : 0);
+  const std::int64_t player = params.gameTokenId != creds.gameTokenId ? params.gameTokenId : 0;
+  if (type == MessageType::ClientActorHeartbeat) {
+    noteKeepaliveSent(number, player, p);
+  } else if (type == MessageType::ActorUpdateRequest &&
+             notPresentCount_.load(std::memory_order_relaxed) != 0) [[unlikely]] {
+    noteActorUpdateSent(player, p);
+  }
+  if (fleet_ && fleet_->sent) fleet_->sent(params.sequence, player);
   return params.sequence;
+}
+
+// ---------------------------------------------------------------------------
+// Keepalives the server refuses (ActorNotPresent)
+//
+// From realtime servers v0.51.0 a keepalive is accepted only where the player's actor
+// update would be. Where the player has no access every keepalive is answered
+// [3][sequence][UNAUTHORIZED], every few seconds, for as long as it is sent, and it must go
+// on being sent at the same rate: access granted later admits the next one. So the
+// connection changes nothing on such a refusal. It makes one report for the actor and the
+// place, keeps it readable, and ends it when a keepalive there is accepted, the actor moves
+// or its keepalives stop. A player's session is sent the refusal unsigned, so the report is
+// all that an unsigned refusal can cause here.
+// ---------------------------------------------------------------------------
+
+void Connection::noteKeepaliveSent(std::uint32_t number, std::int64_t player, const SpatialSend& p) {
+  const std::int64_t now = clock_.monotonicMillis();
+  std::lock_guard lock(presenceMutex_);
+  KeepaliveSent& sent = keepalivesSent_[static_cast<std::uint8_t>(number)];
+  sent.set = true;
+  sent.number = number;
+  sent.sentAtMs = now;
+  sent.player = player;
+  sent.uuid = p.uuid;
+  sent.chunk = p.chunk;
+  const auto it = notPresent_.find(PresenceKey{player, p.uuid});
+  if (it == notPresent_.end()) return;
+  if (!(it->second.report.chunk == p.chunk)) {
+    endReportLocked(it, NotPresentEnd::Moved);
+    return;
+  }
+  it->second.lastKeepaliveMs = now;
+  if (it->second.unansweredSinceMs == 0) it->second.unansweredSinceMs = now;
+}
+
+void Connection::noteActorUpdateSent(std::int64_t player, const SpatialSend& p) {
+  std::lock_guard lock(presenceMutex_);
+  const auto it = notPresent_.find(PresenceKey{player, p.uuid});
+  if (it != notPresent_.end() && !(it->second.report.chunk == p.chunk))
+    endReportLocked(it, NotPresentEnd::Moved);
+}
+
+std::optional<Connection::KeepaliveSent> Connection::keepaliveAnswered(std::uint8_t sequence) const {
+  const std::int64_t now = clock_.monotonicMillis();
+  const std::uint32_t next = sendNumber_.load(std::memory_order_relaxed);
+  std::lock_guard lock(presenceMutex_);
+  const KeepaliveSent& sent = keepalivesSent_[sequence];
+  // The keepalive is still the last message under its number (the next one is 256 on), and
+  // it left within the time a refusal takes.
+  if (!sent.set || next - sent.number > 256 || now - sent.sentAtMs > kKeepaliveAnswerWaitMs)
+    return std::nullopt;
+  return sent;
+}
+
+std::optional<ActorNotPresent> Connection::keepaliveRefused(const KeepaliveSent& sent,
+                                                            std::uint8_t sequence, bool verified) {
+  std::lock_guard lock(presenceMutex_);
+  const PresenceKey key{sent.player, sent.uuid};
+  if (auto it = notPresent_.find(key); it != notPresent_.end()) {
+    if (it->second.report.chunk == sent.chunk) {
+      // Refused there again: the report stands. A keepalive sent after this one is still
+      // to be answered.
+      NotPresentReport& standing = it->second;
+      standing.unansweredSinceMs = standing.lastKeepaliveMs > sent.sentAtMs ? standing.lastKeepaliveMs : 0;
+      return std::nullopt;
+    }
+    // A late answer about a place the actor has left: the report for where it is stands.
+    return std::nullopt;
+  }
+  if (notPresent_.size() >= kMaxNotPresentReports) return std::nullopt;
+  NotPresentReport made;
+  made.report.uuid = sent.uuid;
+  made.report.chunk = sent.chunk;
+  made.report.sequence = sequence;
+  made.report.verified = verified;
+  made.report.playerGameTokenId = sent.player;
+  made.lastKeepaliveMs = sent.sentAtMs;
+  const ActorNotPresent report = made.report;
+  notPresent_.emplace(key, std::move(made));
+  notPresentCount_.store(notPresent_.size(), std::memory_order_relaxed);
+  {
+    std::lock_guard stats(statsMutex_);
+    ++stats_.notPresentReports;
+  }
+  return report;
+}
+
+void Connection::endReportLocked(std::map<PresenceKey, NotPresentReport>::iterator it,
+                                 NotPresentEnd why) {
+  notPresentEnded_.emplace_back(it->second.report, why);
+  notPresent_.erase(it);
+  notPresentCount_.store(notPresent_.size(), std::memory_order_relaxed);
+  notPresentEndedCount_.store(notPresentEnded_.size(), std::memory_order_relaxed);
+}
+
+void Connection::noteActorEchoed(const core::ActorUuid& uuid, const wire::ChunkCoord& chunk) {
+  std::lock_guard lock(presenceMutex_);
+  const auto it = notPresent_.find(PresenceKey{0, uuid});
+  if (it != notPresent_.end() && it->second.report.chunk == chunk)
+    endReportLocked(it, NotPresentEnd::Accepted);
+}
+
+void Connection::presencePass(const Handlers& handlers) {
+  const std::int64_t now = clock_.monotonicMillis();
+  std::vector<std::pair<ActorNotPresent, NotPresentEnd>> ended;
+  {
+    std::lock_guard lock(presenceMutex_);
+    for (auto it = notPresent_.begin(); it != notPresent_.end();) {
+      const NotPresentReport& standing = it->second;
+      const auto here = it++;
+      if (standing.unansweredSinceMs != 0 && now - standing.unansweredSinceMs >= kKeepaliveAnswerWaitMs) {
+        endReportLocked(here, NotPresentEnd::Accepted);
+      } else if (now - standing.lastKeepaliveMs >= kNotPresentIdleMs) {
+        endReportLocked(here, NotPresentEnd::Stopped);
+      }
+    }
+    ended.swap(notPresentEnded_);
+    notPresentEndedCount_.store(0, std::memory_order_relaxed);
+  }
+  if (!handlers.notPresentEnded) return;
+  for (const auto& [report, why] : ended) handlers.notPresentEnded(report, why);
+}
+
+void Connection::presenceRestart() {
+  if (notPresentCount_.load(std::memory_order_relaxed) == 0) return;
+  std::lock_guard lock(presenceMutex_);
+  // Keepalives sent to the server the connection left get no answer, and that is not
+  // acceptance: the first one on the new assignment is the one to wait on.
+  for (auto& [key, standing] : notPresent_) standing.unansweredSinceMs = 0;
+  for (KeepaliveSent& sent : keepalivesSent_) sent.set = false;
+}
+
+std::optional<ActorNotPresent> Connection::notPresentFor(std::int64_t player,
+                                                         const core::ActorUuid& uuid) const {
+  if (notPresentCount_.load(std::memory_order_relaxed) == 0) return std::nullopt;
+  std::lock_guard lock(presenceMutex_);
+  const auto it = notPresent_.find(PresenceKey{player, uuid});
+  if (it == notPresent_.end()) return std::nullopt;
+  return it->second.report;
 }
 
 void Connection::noteGameplaySend(MessageType type, const SpatialSend& p) {
@@ -576,7 +748,7 @@ Result<std::uint8_t> Connection::sendChannelRequest(MessageType type, std::int64
   params.uuid = uuid;
   params.payload = payload;
   params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
-  params.sequence = nextSequence();
+  params.sequence = static_cast<std::uint8_t>(nextSendNumber());
 
   std::uint8_t buf[wire::kMaxDatagramSize];
   auto n = wire::encodeChannelRequest(type, crypto_, params, creds.token,
@@ -615,7 +787,7 @@ Result<std::uint8_t> Connection::sendRangedChannelMessageAs(Sender as, std::int6
   params.maxDistance = maxDistance;
   params.payload = payload;
   params.gameTokenId = as != nullptr ? *as : creds.gameTokenId;
-  params.sequence = nextSequence();
+  params.sequence = static_cast<std::uint8_t>(nextSendNumber());
 
   std::uint8_t buf[wire::kMaxDatagramSize];
   auto n = wire::encodeRangedChannelMessage(crypto_, params, creds.token,
@@ -735,13 +907,67 @@ Result<std::uint8_t> Connection::sendHeartbeatAs(Sender as, const wire::ChunkCoo
 // Receive path
 // ---------------------------------------------------------------------------
 
+bool Connection::admitFleetFrame(Bytes& message, bool signedBundle, const Credentials& creds,
+                                 std::int64_t now) {
+  const std::uint8_t type = message[0];
+  const wire::Token64& token = creds.token;
+  // A fleet session's three frames. Inside a signed bundle the bundle's HMAC, checked
+  // above, vouches for them. Anywhere else (alone, or in a plain bundle) each is
+  // followed by its own HMAC, which is checked and taken off here; what is queued is
+  // the frame without it, so the largest datagram (1,242 bytes) queues as 1,210.
+  Errc verdict = Errc::Ok;
+  if (!signedBundle) {
+    const auto frame = wire::verifyFleetFrame(crypto_, message, token, creds.mac.get());
+    if (frame.ok()) {
+      message = frame.value();
+      lastVerifiedMs_.store(now, std::memory_order_relaxed);
+    } else {
+      verdict = frame.error();
+    }
+  }
+  if (verdict != Errc::Ok) {
+    // dropped below
+  } else if (type == static_cast<std::uint8_t>(MessageType::FleetCarryResult)) {
+    verdict = wire::parseFleetCarryResult(message).error();
+  } else if (type == static_cast<std::uint8_t>(MessageType::FleetReleased)) {
+    verdict = wire::parseFleetReleased(message).error();
+  } else {
+    // The notification inside is what a player's own session would have been sent, in
+    // its unsigned form: nothing here is taken on its own word.
+    const auto delivery = wire::parseFleetDelivery(message);
+    if (!delivery.ok()) {
+      verdict = delivery.error();
+    } else if (delivery->channel()) {
+      verdict = wire::parseFleetDeliveredChannel(delivery->notification).error();
+    } else {
+      const auto inner = wire::parseFleetDeliveredSpatial(delivery->notification);
+      if (!inner.ok()) {
+        verdict = inner.error();
+      } else if (inner->appId != config_.appId) {
+        // Signed, and another app's: not this session's, whoever it lists.
+        countNotOwn(/*wrongApp=*/true, inner.value());
+        return false;
+      }
+    }
+  }
+  if (verdict != Errc::Ok) {
+    std::lock_guard lock(statsMutex_);
+    if (verdict == Errc::HmacMismatch) ++stats_.hmacFailures;
+    else ++stats_.malformed;
+    return false;
+  }
+  return true;
+}
+
 void Connection::handleDatagram(Bytes datagram) {
   {
     std::lock_guard lock(statsMutex_);
     ++stats_.datagramsReceived;
     stats_.bytesReceived += datagram.size();
   }
-  lastRecvMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+  // The one clock read of a datagram: the time it arrived, and the time of what verifies in it.
+  const std::int64_t now = clock_.monotonicMillis();
+  lastRecvMs_.store(now, std::memory_order_relaxed);
 
   // The bound forms (Buddy v0.45.0) carry this assignment's nonce inside their signature, so
   // a verified one cannot be a frame captured earlier: it is final, without the idle guard.
@@ -769,7 +995,7 @@ void Connection::handleDatagram(Bytes datagram) {
     }
     if (n == 0) verdict = Errc::Rejected;  // we never asked for bound frames
     if (verdict == Errc::Ok) {
-      lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+      lastVerifiedMs_.store(now, std::memory_order_relaxed);
       if (ack) {
         // Bound to the nonce it verified: after a reassignment it matches nothing.
         boundNonce_.store(n, std::memory_order_release);
@@ -879,7 +1105,7 @@ void Connection::handleDatagram(Bytes datagram) {
       ++stats_.hmacFailures;
       return;
     }
-    lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
+    lastVerifiedMs_.store(now, std::memory_order_relaxed);
   }
   bool queued = false;
   Status bundleStatus = wire::forEachMessage(datagram, [&](Bytes message) {
@@ -909,51 +1135,9 @@ void Connection::handleDatagram(Bytes datagram) {
     } else if (fleet_ && (type == static_cast<std::uint8_t>(MessageType::FleetCarryResult) ||
                           type == static_cast<std::uint8_t>(MessageType::FleetReleased) ||
                           type == static_cast<std::uint8_t>(MessageType::FleetDelivery))) {
-      // A fleet session's three frames. Inside a signed bundle the bundle's HMAC, checked
-      // above, vouches for them. Anywhere else (alone, or in a plain bundle) each is
-      // followed by its own HMAC, which is checked and taken off here; what is queued is
-      // the frame without it, so the largest datagram (1,242 bytes) queues as 1,210.
-      Errc verdict = Errc::Ok;
-      if (!signedBundle) {
-        const auto frame = wire::verifyFleetFrame(crypto_, message, token, creds.mac.get());
-        if (frame.ok()) {
-          message = frame.value();
-          lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
-        } else {
-          verdict = frame.error();
-        }
-      }
-      if (verdict != Errc::Ok) {
-        // dropped below
-      } else if (type == static_cast<std::uint8_t>(MessageType::FleetCarryResult)) {
-        verdict = wire::parseFleetCarryResult(message).error();
-      } else if (type == static_cast<std::uint8_t>(MessageType::FleetReleased)) {
-        verdict = wire::parseFleetReleased(message).error();
-      } else {
-        // The notification inside is what a player's own session would have been sent, in
-        // its unsigned form: nothing here is taken on its own word.
-        const auto delivery = wire::parseFleetDelivery(message);
-        if (!delivery.ok()) {
-          verdict = delivery.error();
-        } else if (delivery->channel()) {
-          verdict = wire::parseFleetDeliveredChannel(delivery->notification).error();
-        } else {
-          const auto inner = wire::parseFleetDeliveredSpatial(delivery->notification);
-          if (!inner.ok()) {
-            verdict = inner.error();
-          } else if (inner->appId != config_.appId) {
-            // Signed, and another app's: not this session's, whoever it lists.
-            countNotOwn(/*wrongApp=*/true, inner.value());
-            return;
-          }
-        }
-      }
-      if (verdict != Errc::Ok) {
-        std::lock_guard lock(statsMutex_);
-        if (verdict == Errc::HmacMismatch) ++stats_.hmacFailures;
-        else ++stats_.malformed;
-        return;
-      }
+      // A fleet session's three frames, read out of line: a player's connection is never
+      // sent one, and its path through here stays as short as it was before them.
+      if (!admitFleetFrame(message, signedBundle, creds, now)) return;
       e.kind = Event::Kind::Fleet;
     } else if (wire::isLongSpatialLayout(type)) {
       auto parsed = wire::parseLongSpatial(message);
@@ -969,19 +1153,24 @@ void Connection::handleDatagram(Bytes datagram) {
         return;
       }
       if (parsed->containsAuth && config_.verifyNotifications)
-        lastVerifiedMs_.store(clock_.monotonicMillis(), std::memory_order_relaxed);
-      if (fleet_) {
-        // A fleet session gives its game server nothing the realtime server did not sign,
-        // and nothing of another app, however it was signed. A player's connection makes
-        // neither check, as it never has.
-        if (!signedBundle && !parsed->containsAuth) {
-          countNotOwn(/*wrongApp=*/false, parsed.value());
-          return;
-        }
-        if (parsed->appId != config_.appId) {
-          countNotOwn(/*wrongApp=*/true, parsed.value());
-          return;
-        }
+        lastVerifiedMs_.store(now, std::memory_order_relaxed);
+      // Nothing signed it: no HMAC of its own, and not a member of a signed bundle whose HMAC
+      // held. The realtime servers sign every long-spatial notification they send a session,
+      // so this one did not come from them. A fleet session never takes it. A player's
+      // connection takes it only when the application switched verification off
+      // (Config::verifyNotifications), as it then takes one whose HMAC it did not check.
+      if (!signedBundle && !parsed->containsAuth && (fleet_ || config_.verifyNotifications))
+          [[unlikely]] {
+        countNotOwn(/*wrongApp=*/false, parsed.value());
+        return;
+      }
+      // Another app's, however it was signed: a connection is in one app (Config::appId), so
+      // this is not its own. A player's connection that was given no app (0) has nothing to
+      // compare, and a notification that names no app (0) names no other app.
+      if (parsed->appId != config_.appId &&
+          (fleet_ || (parsed->appId != 0 && config_.appId != 0))) [[unlikely]] {
+        countNotOwn(/*wrongApp=*/true, parsed.value());
+        return;
       }
       {
         std::lock_guard lock(statsMutex_);
@@ -1025,13 +1214,22 @@ std::size_t Connection::receiveBatch(int timeoutMs) {
   // elsewhere. 2048-byte slots comfortably hold any 1232-byte datagram, and the 1,242
   // bytes a fleet session can be sent (wire::fleet::kMaxReceiveDatagramSize).
   constexpr std::size_t kSlot = 2048;
-  constexpr std::size_t kBatch = 16;
+  constexpr std::size_t kBatch = kReceiveBatchDatagrams;
   std::uint8_t slab[kSlot * kBatch];
   std::size_t lengths[kBatch];
 
+  // A pass ends when the socket is drained (a short batch), and also after
+  // kReceivePassDatagrams whatever is still queued: datagrams that arrive faster than they
+  // are verified must not keep this thread from the bundle window, from housekeeping (the
+  // token refresh, the capabilities) or, in manual-pump mode, from the application. What is
+  // left is read by the next pass, which the network thread starts at once. The network
+  // thread also ends its pass at the batch in hand once disconnect() asked it to stop, so
+  // disconnect() waits for 16 datagrams at most (0.95.0; a pass used to end only on a short
+  // batch, so neither returned while a full batch was always waiting).
+  const bool stoppable = !config_.manualPump;
   std::size_t processed = 0;
   int wait = timeoutMs;
-  for (;;) {
+  while (processed < kReceivePassDatagrams) {
     auto n = socket_.recvBatch(slab, kSlot, kBatch, lengths, wait);
     if (!n.ok() || n.value() == 0) break;
     for (std::size_t i = 0; i < n.value(); ++i) {
@@ -1039,6 +1237,7 @@ std::size_t Connection::receiveBatch(int timeoutMs) {
     }
     processed += n.value();
     if (n.value() < kBatch) break;  // drained
+    if (stoppable && !running_.load(std::memory_order_acquire)) break;
     wait = 0;
   }
   return processed;
@@ -1074,14 +1273,27 @@ void Connection::housekeeping() {
     if (fleet_ && fleet_->advertised) fleet_->advertised();
   }
 
-  // Proactive token refresh.
+  // Proactive token refresh, and the check an unverified TOKEN_EXPIRED asks for: the same
+  // call, whose answer is the Application API's and so can be trusted where the frame cannot.
+  // The check is paced, so frames sent to the flow cost one call every kTokenCheckIntervalMs
+  // at most, and an application that switched the refresh off (refreshLeadMs 0) manages its
+  // token itself: it has the frame from Handlers::genericError.
   std::int64_t expiresAt = 0;
   {
     std::lock_guard lock(tokenMutex_);
     expiresAt = token_.expiresAtEpochMs;
   }
-  if (config_.refreshLeadMs > 0 && expiresAt > 0 &&
-      clock_.epochMillis() >= expiresAt - config_.refreshLeadMs) {
+  const bool due = config_.refreshLeadMs > 0 && expiresAt > 0 &&
+                   clock_.epochMillis() >= expiresAt - config_.refreshLeadMs;
+  bool asked = false;
+  if (tokenCheckRequested_.exchange(false, std::memory_order_acq_rel) && !due &&
+      config_.refreshLeadMs > 0 && state() == ConnState::Connected &&
+      (!tokenChecked_ || nowMono - lastTokenCheckMs_ >= kTokenCheckIntervalMs)) {
+    asked = true;
+    tokenChecked_ = true;
+    lastTokenCheckMs_ = nowMono;
+  }
+  if (due || asked) {
     Assignment current;
     {
       std::lock_guard lock(assignmentMutex_);
@@ -1104,12 +1316,16 @@ void Connection::housekeeping() {
                     "app token refreshed; not authorized on the current server, reassigning");
         reconnectRequested_.store(true, std::memory_order_release);
       }
-    } else {
+    } else if (due) {
       // Push expiry forward a little so a failing refresh endpoint does not
       // busy-loop; the server will emit TOKEN_EXPIRED if it truly lapses.
       std::lock_guard lock(tokenMutex_);
       token_.expiresAtEpochMs += 30 * 1000;
       logger_.log(core::LogLevel::Warn, "app token refresh failed; will retry");
+    } else {
+      logger_.log(core::LogLevel::Warn,
+                  "an unverified TOKEN_EXPIRED arrived and no fresh app token could be had; "
+                  "nothing changes");
     }
   }
 
@@ -1138,7 +1354,13 @@ void Connection::housekeeping() {
     if (st.ok()) {
       setState(ConnState::Connecting);
     } else {
-      logger_.log(core::LogLevel::Error, "reassignment failed");
+      const AssignmentFailure why = lastAssignmentFailure();
+      logger_.log(core::LogLevel::Error,
+                  why.code.empty() ? std::string("reassignment failed")
+                                   : "reassignment failed: " + why.code +
+                                         (why.retryAfterMs > 0
+                                              ? " (retry after " + std::to_string(why.retryAfterMs) + " ms)"
+                                              : std::string()));
       setState(ConnState::Failed);
     }
   }
@@ -1265,6 +1487,9 @@ std::size_t Connection::poll(std::size_t maxEvents) {
   eventsSignalled_.store(false, std::memory_order_release);
   std::size_t dispatched = 0;
   bool drained = false;
+  // Read once for the drain, and again only after an error frame, which is what makes a
+  // report: a notification pays a test of this and no more.
+  bool reportsStand = notPresentCount_.load(std::memory_order_relaxed) != 0;
   while (dispatched < maxEvents) {
     auto event = ring_.tryPop();
     if (!event) {
@@ -1287,22 +1512,46 @@ std::size_t Connection::poll(std::size_t maxEvents) {
       case Event::Kind::Error: {
         auto err = wire::parseGenericError(message);
         if (err.ok()) {
-          // A player's connection takes TOKEN_EXPIRED as its own token's, verified or not,
-          // as it always has. To a fleet session the frame answers one send for a carried
-          // player and is about that player's token (the fleet token's own expiry is a
-          // signed COMMAND_SESSION_RELEASED, reason 2): it changes nothing here, whatever
-          // its code, and FleetSession tells the application whose send it was.
+          // To a fleet session the frame answers one send for a carried player and is about
+          // that player's token (the fleet token's own expiry is a signed
+          // COMMAND_SESSION_RELEASED, reason 2): it changes nothing here, whatever its code,
+          // and FleetSession tells the application whose send it was. A player's connection
+          // takes a verified TOKEN_EXPIRED as its own token's and reassigns. One that nothing
+          // verified is 3 bytes anyone on the flow could have sent: it moves the session
+          // nowhere, and housekeeping asks the session provider instead.
           if (err->code == wire::ErrorCode::TokenExpired && !fleet_) {
-            // Refresh + reassign; the session provider re-mints server-side.
-            reconnectRequested_.store(true, std::memory_order_release);
+            if (e.verified) {
+              reconnectRequested_.store(true, std::memory_order_release);
+            } else {
+              {
+                std::lock_guard lock(statsMutex_);
+                ++stats_.unverifiedTokenExpired;
+              }
+              tokenCheckRequested_.store(true, std::memory_order_release);
+            }
           }
           if (pendingWait_.active && !pendingWait_.done &&
               err->sequence == pendingWait_.sequence) {
             pendingWait_.outcome.error = err->code;
             pendingWait_.done = true;
           }
+          // A keepalive's refusal: every one reaches genericError, marked, and UNAUTHORIZED
+          // makes one report for the actor and the place. Nothing else here changes on it,
+          // whatever sent it. A fleet session decides for itself which refusal names a
+          // player (FleetSession::onGenericError), so it makes its own reports.
+          const std::optional<KeepaliveSent> keepalive = keepaliveAnswered(err->sequence);
+          const bool notPresent = keepalive && err->code == wire::ErrorCode::Unauthorized;
+          if (notPresent) {
+            std::lock_guard lock(statsMutex_);
+            ++stats_.keepalivesRefused;
+          }
           if (handlers.genericError)
-            handlers.genericError({err->sequence, err->code, e.verified});
+            handlers.genericError({err->sequence, err->code, e.verified, keepalive.has_value()});
+          if (notPresent && !fleet_) {
+            const auto report = keepaliveRefused(*keepalive, err->sequence, e.verified);
+            if (report && handlers.notPresent) handlers.notPresent(*report);
+          }
+          reportsStand = notPresentCount_.load(std::memory_order_relaxed) != 0;
         }
         break;
       }
@@ -1332,6 +1581,11 @@ std::size_t Connection::poll(std::size_t maxEvents) {
           pendingWait_.outcome.serverEpochMs = v->epochMillisOrTokenId;
           pendingWait_.done = true;
         }
+        // The actor's own update came back from a place where a report says it is not
+        // present: it is. (Signed, where the keepalive's refusal was not.)
+        if (reportsStand && v->type == MessageType::ActorUpdateNotification && !fleet_) [[unlikely]] {
+          noteActorEchoed(n.uuidArray(), v->chunk);
+        }
         detail::dispatchSpatial(handlers, n);
         break;
       }
@@ -1340,6 +1594,10 @@ std::size_t Connection::poll(std::size_t maxEvents) {
   // The maxEvents bound stopped the drain with events still queued: nothing new
   // will arrive to signal them, so signal now.
   if (!drained) signalEvents();
+  if (notPresentCount_.load(std::memory_order_relaxed) != 0 ||
+      notPresentEndedCount_.load(std::memory_order_relaxed) != 0) [[unlikely]] {
+    presencePass(handlers);
+  }
   return dispatched;
 }
 
@@ -1353,7 +1611,9 @@ ReplicationClient::ConnectResult ReplicationClient::connectWithStatus(
     std::lock_guard lock(connectionMutex_);
     activeConnection_ = conn;
   }
-  return {conn, conn->connect()};
+  ConnectResult result{conn, conn->connect(), {}};
+  if (!result.status.ok()) result.failure = conn->lastAssignmentFailure();
+  return result;
 }
 
 std::shared_ptr<Connection> ReplicationClient::connect(

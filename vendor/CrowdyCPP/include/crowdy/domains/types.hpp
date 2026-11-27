@@ -105,6 +105,11 @@ inline bool isAppPaused(const std::optional<AppRuntimeGate>& gate) {
 struct AppTokenResponse {
   std::string token;        ///< 64-char app-scoped token (also the UDP HMAC key)
   std::string gameTokenId;  ///< decimal String scalar; never silently narrowed
+  /// The user the token signs in (decimal string): the id users().me() returns as `userId`
+  /// (0.95.0, Application API v2.90.0). A game server that signs a player in reads the
+  /// player here and makes no `me` call. Every call that answers an app token selects it,
+  /// so those calls need Application API v2.90.0: an earlier API refuses the selection.
+  std::string userId;
   std::string appId;
   std::string expiresAt;    ///< ISO-8601; empty when non-expiring
   NullableString applicationApiUrl;    ///< null when no route has been assigned
@@ -135,11 +140,15 @@ struct AppTokenResponse {
   std::optional<std::int64_t> gameTokenIdInt64() const {
     return graphql::parseBigInt(gameTokenId);
   }
+  /// The user id as an int64 (what ExecConnection::callAs and FleetCarryResult::userId
+  /// carry); nullopt when it is not a decimal int64.
+  std::optional<std::int64_t> userIdInt64() const { return graphql::parseBigInt(userId); }
 
   static AppTokenResponse fromJson(const graphql::Json& j) {
     AppTokenResponse r;
     r.token = j["token"].asString();
     r.gameTokenId = j["gameTokenId"].asBigIntString();
+    r.userId = j["userId"].asBigIntString();
     r.appId = j["appId"].asString();
     r.expiresAt = j["expiresAt"].asString();
     // Selected as applicationApi*; an Application API older than v2.85.0 answers gameApi* only.
