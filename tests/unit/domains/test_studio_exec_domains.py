@@ -155,6 +155,7 @@ PORTED: dict[type, set[str]] = {
         "versions",
         "endpoint_stats",
         "status",
+        "org_compute_ceiling",
         "activate_version",
         "set_enabled",
         "restart_type",
@@ -1166,6 +1167,12 @@ async def test_github_status_without_a_project_and_repos_without_any(
         ("AppError", "rate limited by the game, retry in 9 ms", False, None, False),
         ("Moved", "elsewhere", False, None, True),
         ("Denied", "no", False, None, False),
+        # A gateway's word: never more than the SDK waits on a server's hint.
+        ("Busy", "rate limited; retry in 30000 ms", True, 30_000, True),
+        ("Busy", "rate limited; retry in 30001 ms", True, 30_000, True),
+        ("RateLimited", "retry in 86400000 ms", True, 30_000, True),
+        ("RateLimited", "retry in " + "9" * 5000 + " ms", True, 30_000, True),
+        ("RateLimited", "retry in 0 ms", True, 0, True),
     ],
 )
 def test_crowdy_exec_error_reads_rate_limits(
@@ -2121,3 +2128,77 @@ async def test_deploy_refuses_a_type_without_a_module_before_any_request(
     ):
         await ExecAPI(graphql).deploy("77", "world", types, build_id)
     assert api.sent == []
+
+
+# ---- CrowdyJS 18.41.0: the organization's compute ceiling ----
+
+
+async def test_org_compute_ceiling_reads_what_each_app_may_run(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    from crowdypy.domains.exec import OrgComputeCeiling
+
+    api.reply_with_root(
+        {
+            "orgId": "3",
+            "maxInstances": 4000,
+            "maxReservedMb": 256064,
+            "operatorSet": True,
+            "funded": True,
+            "defaultMaxInstances": 64,
+            "defaultMaxReservedMb": 4096,
+            "reason": "a load test",
+            "updatedAt": "2026-11-25T22:37:00.000Z",
+        }
+    )
+    ceiling = await ExecAPI(graphql).org_compute_ceiling(3)
+    assert (api.last.operation_name, api.last.variables) == ("OrgComputeCeiling", {"orgId": "3"})
+    assert ceiling == OrgComputeCeiling(
+        org_id="3",
+        max_instances=4000,
+        max_reserved_mb=256064,
+        operator_set=True,
+        funded=True,
+        default_max_instances=64,
+        default_max_reserved_mb=4096,
+        reason="a load test",
+        updated_at="2026-11-25T22:37:00.000Z",
+    )
+    # The platform's defaults: no operator, no reason.
+    api.reply_with_root(
+        {
+            "orgId": "3",
+            "maxInstances": 64,
+            "maxReservedMb": 4096,
+            "operatorSet": False,
+            "funded": False,
+            "defaultMaxInstances": 64,
+            "defaultMaxReservedMb": 4096,
+            "reason": None,
+            "updatedAt": None,
+        }
+    )
+    ceiling = await ExecAPI(graphql).org_compute_ceiling("3")
+    assert (ceiling.operator_set, ceiling.funded, ceiling.reason, ceiling.updated_at) == (
+        False,
+        False,
+        None,
+        None,
+    )
+
+
+def test_a_gateway_is_named_by_its_scheme_host_and_port() -> None:
+    from crowdypy.domains.exec import _gateway_name, exec_gateway_refusal
+
+    assert _gateway_name("wss://user:pw@gw.example.org:8443/v1/connect?token=secret") == (
+        "wss://gw.example.org:8443"
+    )
+    assert _gateway_name("ws://[::1]:9000/x") == "ws://[::1]:9000"
+    assert _gateway_name("wss://gw.example.org") == "wss://gw.example.org"
+    # What is not a URL is described, never shown: it may be the token.
+    for given in ("s" * 64, "wss://gw.example.org:port/", "", 7):
+        name = _gateway_name(given)
+        assert "does not parse" in name or "of type int" in name
+        assert "sss" not in name
+    why = exec_gateway_refusal("user:secret@ck.example.test", "wss://gw.example.org")
+    assert why == "the Application API URL is not absolute (27 characters)"

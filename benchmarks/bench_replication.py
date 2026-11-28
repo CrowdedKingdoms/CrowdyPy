@@ -327,9 +327,10 @@ def bench_receive(seconds: float = 5.0, per_bundle: int = 6) -> dict[str, float]
                     batches += 1
             elapsed = time.perf_counter() - start
             stats = conn.stats()
-            # Stop the blaster before the connection closes. CrowdyCPP's network thread reads
-            # until a batch comes back short, so a close under a flood it cannot outpace
-            # never returns.
+            # Stop the blaster before the connection closes, so the last counters are read
+            # with nothing arriving. (Until CrowdyCPP 0.95.0 a close under a flood the network
+            # thread could not outpace did not return; benchmarks/README.md, "Re-check,
+            # 0.41.0".)
             peer.close()
             time.sleep(0.2)
     finally:

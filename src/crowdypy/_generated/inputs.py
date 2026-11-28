@@ -4,7 +4,7 @@ Every GraphQL input object as a msgspec Struct. Attributes are snake_case and en
 under their GraphQL names; an attribute left at UNSET is omitted from the request,
 which is how the API tells 'not provided' from an explicit null.
 
-schema.gql sha256: 5d55598fc5fdc74445bec5072e071ed466fdab32d85e71193c0d6e091710d036
+schema.gql sha256: 39c28f4fac0a7a323a76cfe70cb83ce449b9e482dac81d15553e5aefd5e7df7c
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrmSyncMode, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, FreeTierLevel, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, ProjectLogicLocation, ProjectProfileStatus, ProjectStage, ProjectWorldShape, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
+from crowdypy._generated.enums import AllowancePeriod, AppDeploymentTarget, AppRuntimeStatus, AppStatus, AppVisibility, CheckoutPurpose, CheckoutStatus, CodeAdmissionMode, CodeAdmissionSubjectKind, CommScope, ContactRequestDirection, ContactState, CrmSyncMode, CrowdyStudioAgentApprovalStatus, CrowdyStudioAgentEventType, CrowdyStudioAgentLeaseStatus, CrowdyStudioAgentLeaseType, CrowdyStudioAgentMode, CrowdyStudioAgentPolicyKind, CrowdyStudioAgentRiskClass, CrowdyStudioAgentRunStatus, CrowdyStudioAgentSessionStatus, CrowdyStudioAgentToolCallStatus, CrowdyStudioAgentToolExecutor, CrowdyStudioAgentToolResultStatus, CrowdyStudioAgentToolRisk, CrowdyStudioCommonStatus, CrowdyStudioFileProvenance, CrowdyStudioGitHubBindInitial, CrowdyStudioGitHubLayoutKind, CrowdyStudioImportSource, CrowdyStudioPairingPreference, CrowdyStudioProjectSource, CrowdyStudioTarget, DatacenterServingStatus, ExecModScope, FreeTierLevel, GridClaimPolicy, GridOwnerKind, GridTenure, HostedGamePublishState, HostedGameStatus, LegalAcceptanceMethod, ManagedPlayerDeletion, ParentalConsentFeature, ParentalConsentRequestStatus, PaymentProvider, PlayerCodeAcquisitionMode, PlayerCodeAdmissionState, PlayerCodeLicenseMode, PlayerCodeListingStatus, PlayerCodeOwnerKind, PriceBandBasis, ProjectLogicLocation, ProjectProfileStatus, ProjectStage, ProjectWorldShape, RateScope, SafetyCaptureStatus, SafetyReportReason, SafetyReportStatus, ServerState, TierAccessMode, TierAccessRuleKind, TierAccessStatus, TierAccessStoredMode, UdpErrorCode
 
 
 class AcceptedDocumentInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'document_id': 'documentId'}):
@@ -513,6 +513,12 @@ class DeleteGridInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={
     grid_id: str
 
 
+class DeleteManagedPlayersInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'external_ids': 'externalIds'}):
+    'The players of one organization to delete in one call.'
+    org_id: str
+    external_ids: list[str]
+
+
 class ExchangeManagedPlayerAssertionInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId'}):
     app_id: str
     assertion: str
@@ -570,6 +576,13 @@ class FileSafetyReportInput(msgspec.Struct, kw_only=True, omit_defaults=True, re
     reason: SafetyReportReason
     details: str | None | UnsetType = UNSET
     occurred_at: str
+
+
+class FleetCurrentServerInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'client_port': 'clientPort'}):
+    'The realtime server a fleet session is connected to, named by the address the session connected to and its port. Give ip4 or ip6, the one the session connected to. Giving both, or neither, is refused BAD_REQUEST.'
+    ip4: str | None | UnsetType = UNSET
+    ip6: str | None | UnsetType = UNSET
+    client_port: int
 
 
 class GetChunkInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'app_id': 'appId', 'requested_lod_levels': 'requestedLodLevels', 'include_all_lods': 'includeAllLods'}):
@@ -802,7 +815,7 @@ class RefreshFleetSessionInput(msgspec.Struct, kw_only=True, omit_defaults=True,
     'The fleet session to keep, and where it is connected.'
     app_id: str
     game_token_id: str
-    current_server: CurrentServerInput | None | UnsetType = UNSET
+    current_server: FleetCurrentServerInput | None | UnsetType = UNSET
 
 
 class RegisterOrgSigningKeyInput(msgspec.Struct, kw_only=True, omit_defaults=True, rename={'org_id': 'orgId', 'public_jwk': 'publicJwk', 'app_ids': 'appIds'}):
@@ -1510,6 +1523,7 @@ __all__ = [
     'CurrentServerInput',
     'DefineAppFeatureInput',
     'DeleteGridInput',
+    'DeleteManagedPlayersInput',
     'ExchangeManagedPlayerAssertionInput',
     'ExchangePortalCodeInput',
     'ExecArtifactInput',
@@ -1519,6 +1533,7 @@ __all__ = [
     'ExecDeployInput',
     'ExecStudioSourceInput',
     'FileSafetyReportInput',
+    'FleetCurrentServerInput',
     'GetChunkInput',
     'GetChunkLodsInput',
     'GetChunksByDistanceInput',

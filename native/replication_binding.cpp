@@ -101,6 +101,34 @@ class PyAssembler {
 
 void register_replication(nb::module_& m) {
   m.attr("STATUS_ROW") = kStatusRow;
+  m.attr("NOT_PRESENT_ROW") = kNotPresentRow;
+  m.attr("NOT_PRESENT_ENDED_ROW") = kNotPresentEndedRow;
+  m.attr("NOT_PRESENT_END_ACCEPTED") = static_cast<int>(replication::NotPresentEnd::Accepted);
+  m.attr("NOT_PRESENT_END_MOVED") = static_cast<int>(replication::NotPresentEnd::Moved);
+  m.attr("NOT_PRESENT_END_STOPPED") = static_cast<int>(replication::NotPresentEnd::Stopped);
+  m.attr("KEEPALIVE_ANSWER_WAIT_MS") = replication::kKeepaliveAnswerWaitMs;
+  m.attr("NOT_PRESENT_IDLE_MS") = replication::kNotPresentIdleMs;
+  m.attr("RECEIVE_PASS_DATAGRAMS") = replication::kReceivePassDatagrams;
+  m.attr("TOKEN_CHECK_INTERVAL_MS") = replication::kTokenCheckIntervalMs;
+  m.attr("MAX_RETRY_AFTER_WAIT_MS") = kMaxRetryAfterWaitMs;
+  m.attr("SERVER_TEXT_MAX_CHARS") = kServerTextMaxChars;
+  m.attr("API_FAILURE_CODE_MAX_CHARS") = kApiFailureCodeMaxChars;
+  m.def(
+      "retry_wait_ms", [](std::int64_t hintMs) { return retryWaitMs(hintMs); }, nb::arg("hint_ms"),
+      "What the SDK waits on a server's hint: 0 for 0 or below, the hint up to "
+      "MAX_RETRY_AFTER_WAIT_MS, and that for anything longer.");
+  m.def(
+      "server_text",
+      [](const std::string& text, std::size_t maxChars) { return serverText(text, maxChars); },
+      nb::arg("text"), nb::arg("max_chars") = kServerTextMaxChars,
+      "A server's text made fit to log: one line, cut at max_chars bytes.");
+  m.def(
+      "connect_address",
+      [](const std::string& ip4, const std::string& ip6, bool preferIpv6) {
+        return replication::connectAddress(Assignment{ip4, ip6, 0}, preferIpv6);
+      },
+      nb::arg("ip4"), nb::arg("ip6"), nb::arg("prefer_ipv6") = false,
+      "The address a connection opens its socket to for a server; empty for one with neither.");
   nb::dict errc;
   for (int code = 0; code <= static_cast<int>(Errc::NotCarried); ++code)
     errc[errcName(static_cast<Errc>(code))] = code;
@@ -139,10 +167,18 @@ void register_replication(nb::module_& m) {
           nb::arg("authorized_on_current_server"))
       .def(
           "answer_error",
-          [](ProviderBridge& b, std::uint64_t id, int code) {
-            b.answerError(id, static_cast<Errc>(code));
+          [](ProviderBridge& b, std::uint64_t id, int code, const std::string& apiCode,
+             std::int64_t retryAfterMs, const std::string& message) {
+            ApiFailure why;
+            why.code = apiCode;
+            why.retryAfterMs = retryAfterMs;
+            why.message = message;
+            b.answerError(id, static_cast<Errc>(code), std::move(why));
           },
-          nb::arg("id"), nb::arg("code") = static_cast<int>(Errc::Rejected))
+          nb::arg("id"), nb::arg("code") = static_cast<int>(Errc::Rejected),
+          nb::arg("api_code") = "", nb::arg("retry_after_ms") = 0, nb::arg("message") = "",
+          "Refuse a request. For an assignment, api_code, retry_after_ms and message are what "
+          "the Application API said; the connection keeps them (last_assignment_failure).")
       .def_prop_ro("closed", &ProviderBridge::closed)
       .def("close", &ProviderBridge::close);
   m.attr("ASSIGN") = ProviderBridge::kAssign;
@@ -274,6 +310,11 @@ void register_replication(nb::module_& m) {
       .def("request_reassignment", &PyConnection::requestReassignment)
       .def("set_wake_fd", &PyConnection::setWakeFd, nb::arg("fd"))
       .def("assignment", &PyConnection::assignment)
+      .def("last_assignment_failure", &PyConnection::lastAssignmentFailure,
+           "(error, code, retry_after_ms, message) of the last server assignment.")
+      .def("not_present", &PyConnection::notPresent, nb::arg("uuid"),
+           "(uuid, (x, y, z), sequence, verified, player_game_token_id) of the report that "
+           "stands for the actor, or None.")
       .def("send_spatial", &PyConnection::sendSpatial, nb::arg("type"), nb::arg("x"), nb::arg("y"),
            nb::arg("z"), nb::arg("uuid"), nb::arg("payload"), nb::arg("distance"),
            nb::arg("decay"))

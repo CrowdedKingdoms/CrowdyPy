@@ -93,6 +93,11 @@ enum class FleetCarryStatus : std::uint8_t {
   /// There is no room for the carry: the session already carries as many players as it may
   /// (`openFleetSession`'s `maxPlayers`), or the realtime server has no place for it.
   NoRoom = 4,
+  /// The session's table is full, so nothing was sent: it holds as many rows as it may
+  /// (FleetSession::tableLimit(): `maxPlayers` and kFleetTableMargin more), carried players
+  /// and carries that wait together. Release the players who left, or open another
+  /// session. Never on the wire.
+  TableFull = 253,
   /// No answer came before FleetConfig::carryTimeoutMs. Never on the wire.
   TimedOut = 254,
   /// A refusal this build does not know; FleetCarryResult::wireStatus has the byte.
@@ -106,6 +111,7 @@ inline const char* fleetCarryStatusName(FleetCarryStatus s) {
     case FleetCarryStatus::OtherOrganization: return "OtherOrganization";
     case FleetCarryStatus::ProofRefused: return "ProofRefused";
     case FleetCarryStatus::NoRoom: return "NoRoom";
+    case FleetCarryStatus::TableFull: return "TableFull";
     case FleetCarryStatus::TimedOut: return "TimedOut";
     case FleetCarryStatus::Refused: return "Refused";
   }
@@ -117,7 +123,7 @@ struct FleetCarryResult {
   /// The player's user id when carried; 0 otherwise.
   std::int64_t userId = 0;
   FleetCarryStatus status = FleetCarryStatus::TimedOut;
-  /// The status byte the server sent; 255 when none came (TimedOut).
+  /// The status byte the server sent; 255 when none came (TimedOut, TableFull).
   std::uint8_t wireStatus = 255;
 
   bool carried() const { return status == FleetCarryStatus::Carried; }
@@ -329,6 +335,23 @@ struct FleetHandlers {
   /// the same frame. The session changes no carry on it: FleetSendRefused says what the
   /// code means and what to do.
   std::function<void(const FleetSendRefused&)> sendRefused;
+  /// A carried player's keepalive (sendHeartbeat(player, ...)) was refused UNAUTHORIZED, in
+  /// a frame that verified: that player's actor is not present where the keepalive named
+  /// (ActorNotPresent, with `playerGameTokenId`; 0.95.0, for realtime servers v0.51.0). From
+  /// v0.51.0 a keepalive is accepted only where the player's actor update would be, so this
+  /// is what a player with no `access` at a place looks like: every keepalive there is
+  /// refused, every few seconds. Once per player, actor and place, after `genericError` for
+  /// the same frame, and in place of `sendRefused`, which a keepalive's UNAUTHORIZED never
+  /// reaches. Keep sending the player's keepalives at the same rate: the session carries
+  /// the player as before, and access granted later admits the next keepalive within about
+  /// 6 seconds. The first report needs a refusal whose sequence number can only be that
+  /// keepalive's (as `sendRefused` does); once it stands, any refusal of the player's
+  /// keepalive there keeps it standing.
+  std::function<void(const ActorNotPresent&)> notPresent;
+  /// That report ended: a keepalive there was accepted (no refusal for
+  /// kKeepaliveAnswerWaitMs), the player's next keepalive or update named another chunk, or
+  /// the keepalives stopped (NotPresentEnd). Once per report.
+  std::function<void(const ActorNotPresent&, NotPresentEnd)> notPresentEnded;
   /// The realtime server ended the session, in a frame signed with the fleet token
   /// (COMMAND_SESSION_RELEASED, 28, or 45 bound to this connection), for any reason but
   /// idleness: the Application API closed it, its org token was revoked or fleet sessions
@@ -359,6 +382,39 @@ struct FleetHandlers {
   std::function<void(const FleetReleased&)> released;
 };
 
+/// `refreshFleetSession`'s `currentServer` (0.95.0): the realtime server a fleet session is
+/// connected to, named by the address the session connected to and its port. Exactly one of
+/// `ip4` and `ip6` is set: the Application API refuses both, and neither. Naming an `ip6`
+/// needs Application API v2.90.0; an earlier one takes an `ip4` only.
+struct FleetCurrentServer {
+  std::string ip4;  ///< set when the session connected over IPv4
+  std::string ip6;  ///< set when the session connected over IPv6
+  int clientPort = 0;
+};
+
+/// The `currentServer` that names `server`: the address a session connects to there
+/// (connectAddress(): its `ip4` when it has one, its `ip6` otherwise, or its `ip6` first
+/// with `preferIpv6`) and its `clientPort`. Give it a session answer's server as it is.
+/// Empty for a server with no address or no port. CrowdyJS `fleetCurrentServer`.
+std::optional<FleetCurrentServer> fleetCurrentServer(const Assignment& server, bool preferIpv6 = false);
+
+/// What `refreshFleetSession` takes for one session (FleetSession::refreshInput()).
+struct FleetRefreshInput {
+  std::int64_t appId = 0;
+  std::int64_t gameTokenId = 0;
+  /// The server the session is connected to. Empty asks for a new server.
+  std::optional<FleetCurrentServer> currentServer;
+};
+
+/// How many rows a session's table may hold past its `maxPlayers`: room for the carries that
+/// wait for an answer while the table is full, such as a new player's while one who left is
+/// still to be released. The realtime servers allow a session the same 32 carries past
+/// `maxPlayers` at once.
+inline constexpr std::size_t kFleetTableMargin = 32;
+/// The most players any session may carry: FleetSession::tableLimit() counts from it when
+/// FleetConfig::maxPlayers names no number.
+inline constexpr std::size_t kFleetMaxPlayersCeiling = 1'024;
+
 /// How long after a send a refusal of it can still arrive: the realtime servers hold a send
 /// up to 2 seconds before they refuse it. FleetHandlers::sendRefused names a player only
 /// when no send for another player used the same sequence number in this time.
@@ -385,6 +441,15 @@ struct FleetConfig {
   TokenInfo token;
   /// The realtime server `openFleetSession` answered (`ip4`, `ip6`, `clientPort`).
   Assignment server;
+
+  /// How many players the session may carry at once, as `openFleetSession` answered it
+  /// (`maxPlayers`; domains::fleetConfigOf sets it). The table holds this many rows and
+  /// kFleetTableMargin more (FleetSession::tableLimit()), and a carry for a new player past
+  /// that ends FleetCarryStatus::TableFull with nothing sent, so a game server that never
+  /// releases the players who left cannot grow the table without bound. 0, or a number
+  /// above kFleetMaxPlayersCeiling, counts as that ceiling. The realtime servers enforce
+  /// `maxPlayers` themselves either way (FleetCarryStatus::NoRoom).
+  int maxPlayers = 0;
 
   /// Ask for the state this session's own carried players sent, when another of its
   /// carried players is in range (ClientCapability::kFleetOwnState). Off by default: a game
@@ -434,7 +499,10 @@ struct FleetConfig {
   /// was only out of reach goes on when it is heard again. When the refresh answers a
   /// server, the session carries every player again there, the same server included: a
   /// server that was silent may hold no carry. 0 switches the timeout off; a smaller value
-  /// than 3,000 is raised to 3,000.
+  /// than 3,000 is raised to 3,000. Every value fires between itself and one capabilities
+  /// interval later: the acknowledgement of the advertisement that left as the timeout
+  /// passed has up to 1,000 ms to arrive. (Until 0.95.0 a timeout of 3,000 to about 3,300
+  /// never fired.)
   ///
   /// A live session with nobody in range hears only the acknowledgements of its
   /// capabilities, so `advertiseIntervalMs` (15,000) is held to at most a third of the
@@ -459,6 +527,9 @@ class FleetSession {
     std::uint64_t sessionReleases = 0;
     /// Verified refusals FleetHandlers::sendRefused could name a player for.
     std::uint64_t sendRefusalsNamed = 0;
+    /// Carries for a new player that ended FleetCarryStatus::TableFull: the table held
+    /// tableLimit() rows, and nothing was sent.
+    std::uint64_t carriesRefusedTableFull = 0;
   };
   using CarryCallback = std::function<void(const FleetCarryResult&)>;
 
@@ -505,6 +576,13 @@ class FleetSession {
   Status setServer(const Assignment& server);
   /// The server the session is on, or will open at.
   Assignment server() const;
+  /// What `refreshFleetSession` takes for this session (0.95.0; CrowdyJS
+  /// `FleetSession.refreshInput()`): its app, its gameTokenId and the server it is on, named
+  /// by the one address the session connected to. `currentServer` is empty when the session
+  /// was told to move (moveOrdered()), so the answer names a new server.
+  /// domains::FleetSessionsAPI::refresh(session) sends exactly this; a game server with an
+  /// HTTP client of its own sends it too, and gives the answer to applyRefresh().
+  FleetRefreshInput refreshInput() const;
   /// The app the session is in (FleetConfig::appId).
   std::int64_t appId() const { return config_.appId; }
 
@@ -594,6 +672,12 @@ class FleetSession {
   /// A carry that is refused or times out leaves the player not carried under that
   /// gameTokenId. A carry repeated before its result reports once, to the newer callback.
   ///
+  /// A carry for a NEW player while the table holds tableLimit() rows ends
+  /// FleetCarryStatus::TableFull: nothing is sent, no row is made, and the result reaches
+  /// `done` and FleetHandlers::carryResult from the next poll(), as every result does
+  /// (Stats::carriesRefusedTableFull counts them). A carry for a player the table already
+  /// holds, and one whose `replaces` names such a player, are never refused this way.
+  ///
   /// InvalidArgument for a token that is not 64 characters or a gameTokenId that is the
   /// session's own; NotConnected before open() and after close().
   Status carry(const PlayerToken& player, CarryCallback done = {});
@@ -609,11 +693,23 @@ class FleetSession {
   /// True when the server confirmed a carry of this gameTokenId and nothing ended it.
   /// While a refreshed token's carry waits (PlayerToken::replaces), true for both ids.
   bool carries(std::int64_t playerGameTokenId) const;
+  /// The not-present report that stands for one of the player's actors, if one does
+  /// (FleetHandlers::notPresent, 0.95.0). poll() makes and ends reports.
+  std::optional<ActorNotPresent> notPresent(std::int64_t playerGameTokenId,
+                                            const core::ActorUuid& uuid) const;
   std::optional<FleetPlayer> player(std::int64_t playerGameTokenId) const;
   /// Every row of the table: carried players and carries still waiting.
   std::vector<FleetPlayer> players() const;
   /// How many players the server confirmed and nothing ended.
   std::size_t carriedCount() const;
+  /// The most rows the table holds, carried players and carries that wait together:
+  /// `maxPlayers` (kFleetMaxPlayersCeiling when FleetConfig::maxPlayers named none, and at
+  /// most that) and kFleetTableMargin more.
+  std::size_t tableLimit() const noexcept;
+  /// A refresh's answer may name another `maxPlayers` (an operator changed the
+  /// organization's limit): domains::applyFleetRefresh passes it here. It changes
+  /// tableLimit() for the carries that follow and ends no carry.
+  void setMaxPlayers(int maxPlayers) noexcept;
 
   // ----- Sends for a carried player -------------------------------------------
   //
@@ -836,6 +932,11 @@ class FleetSession {
   std::atomic<std::uint64_t> replacedIdFrames_{0};
   std::atomic<std::uint64_t> sessionReleases_{0};
   std::atomic<std::uint64_t> sendRefusalsNamed_{0};
+  std::atomic<std::uint64_t> carriesRefusedTableFull_{0};
+  std::atomic<int> maxPlayers_{0};
+  /// Carries that ended here before anything was sent (TableFull), to be reported from the
+  /// next poll(). Under playersMutex_.
+  std::vector<std::pair<FleetCarryResult, CarryCallback>> endedHere_;
   /// open() started a session anew (after Idle, Closed, Failed or Inactive): the server
   /// holds none of the table's carries, whichever server it is.
   std::atomic<bool> sessionRestarted_{false};

@@ -26,11 +26,16 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Any, Final, NamedTuple, Protocol
 
 from crowdypy import _native
-from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
+from crowdypy.errors import (
+    ApiFailure,
+    CrowdyRealtimeError,
+    CrowdyReplicationError,
+    api_failure_of,
+)
 from crowdypy.wire import (
     CHANNEL_RANGED_MAX_DISTANCE,
     VOXEL_STATE_MAX_BYTES,
@@ -40,15 +45,23 @@ from crowdypy.wire import (
 )
 
 __all__ = [
+    "KEEPALIVE_ANSWER_WAIT_MS",
+    "NOT_PRESENT",
+    "NOT_PRESENT_ENDED",
+    "NOT_PRESENT_IDLE_MS",
+    "RECEIVE_PASS_DATAGRAMS",
     "STATUS",
+    "ActorNotPresent",
     "Assignment",
     "AsyncReplicationConnection",
     "ConnState",
+    "NotPresentEnd",
     "Notification",
     "NotificationBatch",
     "ReplicationConnection",
     "SessionProvider",
     "TokenMaterial",
+    "connect_address",
     "token_material",
 ]
 
@@ -56,6 +69,20 @@ _r: Any = _native.replication
 
 #: The row type of a connection-state change in a batch. The wire never carries 255.
 STATUS: Final[int] = _r.STATUS_ROW
+#: The row type of a not-present report in a batch (:class:`ActorNotPresent`): an actor's
+#: keepalive was refused. The wire never carries 253.
+NOT_PRESENT: Final[int] = _r.NOT_PRESENT_ROW
+#: The row type of a not-present report's end. The wire never carries 252.
+NOT_PRESENT_ENDED: Final[int] = _r.NOT_PRESENT_ENDED_ROW
+#: How long a keepalive's refusal may take to arrive, in milliseconds: a keepalive that has
+#: had no refusal for this long was accepted.
+KEEPALIVE_ANSWER_WAIT_MS: Final[int] = _r.KEEPALIVE_ANSWER_WAIT_MS
+#: A not-present report ends by itself when no keepalive was sent for the actor there for
+#: this long, in milliseconds.
+NOT_PRESENT_IDLE_MS: Final[int] = _r.NOT_PRESENT_IDLE_MS
+#: The most datagrams one :meth:`ReplicationConnection.pump` reads; what is still queued then
+#: is read by the next call.
+RECEIVE_PASS_DATAGRAMS: Final[int] = _r.RECEIVE_PASS_DATAGRAMS
 
 _LOG_LEVELS = {
     0: logging.DEBUG,
@@ -86,6 +113,72 @@ class Assignment(NamedTuple):
     ip4: str
     ip6: str
     client_port: int
+
+
+def connect_address(server: Assignment | Sequence[Any], prefer_ipv6: bool = False) -> str:
+    """The address a connection opens its socket to for ``server`` (``ip4``, ``ip6``,
+    ``client_port``): the ``ip6`` when ``prefer_ipv6`` and the server has one, otherwise the
+    ``ip4``, and the ``ip6`` when the server has no ``ip4``. Empty for a server with neither."""
+    result: str = _r.connect_address(server[0] or "", server[1] or "", bool(prefer_ipv6))
+    return result
+
+
+class NotPresentEnd(StrEnum):
+    """Why a not-present report ended."""
+
+    #: A keepalive for the actor there went :data:`KEEPALIVE_ANSWER_WAIT_MS` without a
+    #: refusal, or the actor's own update there came back from the server: the actor is
+    #: present.
+    ACCEPTED = "accepted"
+    #: The actor's next keepalive or update named another chunk. Nothing is known of the new
+    #: place yet: a refused keepalive there makes a new report.
+    MOVED = "moved"
+    #: No keepalive was sent for the actor there for :data:`NOT_PRESENT_IDLE_MS`.
+    STOPPED = "stopped"
+
+
+_NOT_PRESENT_ENDS: Final[dict[int, NotPresentEnd]] = {
+    _r.NOT_PRESENT_END_ACCEPTED: NotPresentEnd.ACCEPTED,
+    _r.NOT_PRESENT_END_MOVED: NotPresentEnd.MOVED,
+    _r.NOT_PRESENT_END_STOPPED: NotPresentEnd.STOPPED,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ActorNotPresent:
+    """An actor's keepalive was answered ``UNAUTHORIZED``: the actor is not present at
+    ``chunk`` (0.41.0, for realtime servers v0.51.0). From v0.51.0 a keepalive is accepted
+    only where the player's actor update would be, so where the player has no ``access``
+    every keepalive is refused: other players there are not told of the actor, and the
+    session is sent nothing of the place. The session stays connected. Keep sending
+    keepalives at the same rate: never faster, and never stop. Once access is granted the
+    next keepalive is accepted within about 6 seconds, with no new sign-in.
+
+    One report stands for each actor. It is made once, at the first refused keepalive (the
+    ``not_present`` handler), stays readable (``not_present()``), and ends once (the
+    ``not_present_ended`` handler) when a keepalive or an update there is accepted, when the
+    actor's next keepalive or update names another chunk, or when its keepalives stop."""
+
+    uuid: str
+    #: The place: the chunk the refused keepalive named.
+    chunk: tuple[int, int, int]
+    #: The sequence number of the first refused keepalive.
+    sequence: int
+    #: Whether that refusal arrived inside a bundle the session verified. A player's session
+    #: is sent every refusal alone and unsigned, so on a player's connection this is false,
+    #: and the report changes nothing else in the connection: take it as what to show the
+    #: player. A fleet session reports only refusals that verified.
+    verified: bool
+    #: A fleet session only: the carried player whose keepalive it was (the game token id
+    #: the keepalive was sent for). ``None`` on a player's own connection.
+    player_game_token_id: int | None = None
+
+
+def _not_present(raw: tuple[Any, ...] | None) -> ActorNotPresent | None:
+    if raw is None:
+        return None
+    uuid, chunk, sequence, verified, player = raw
+    return ActorNotPresent(uuid, tuple(chunk), sequence, bool(verified), player or None)
 
 
 class TokenMaterial(NamedTuple):
@@ -165,7 +258,12 @@ _HANDLER_KEYS: dict[int, str] = {
     MessageType.CHANNEL_AUDIO_NOTIFICATION: "channel_audio",
     MessageType.GENERIC_ERROR: "generic_error",
     STATUS: "status",
+    NOT_PRESENT: "not_present",
+    NOT_PRESENT_ENDED: "not_present_ended",
 }
+
+#: The rows a connection makes itself; ``any`` is for what the server sent.
+_OWN_ROWS: Final = frozenset((STATUS, NOT_PRESENT, NOT_PRESENT_ENDED))
 
 #: The handler names :meth:`AsyncReplicationConnection.subscribe` accepts.
 HANDLER_NAMES: Final = frozenset([*_HANDLER_KEYS.values(), "any"])
@@ -233,8 +331,40 @@ class Notification:
         """A generic error's: true when the frame arrived inside a MESSAGE_BUNDLE_SIGNED whose
         HMAC held (CrowdyCPP 0.94.0). An error frame is 3 bytes with no HMAC of its own, so one
         that arrives any other way is the word of whoever could put a datagram on the
-        session's flow. A player's connection acts on either, as it always has."""
+        session's flow. Verified or not, a frame settles the awaited send whose sequence
+        number it names. A player's connection reassigns on a verified ``TOKEN_EXPIRED``; on
+        an unverified one it asks its session provider for a fresh token, at most once every
+        30 seconds, and does what the answer says (CrowdyCPP 0.95.0; until then it reassigned
+        on either)."""
         return bool(self.extras[1])
+
+    @property
+    def keepalive(self) -> bool:
+        """A generic error's: true when the frame answers a keepalive (``send_heartbeat``):
+        the last message this connection sent under ``sequence`` was one, within
+        :data:`KEEPALIVE_ANSWER_WAIT_MS`. ``UNAUTHORIZED`` for a keepalive means the actor is
+        not present where the keepalive named, and the realtime servers answer every
+        keepalive there the same way, every few seconds. The connection reports that once,
+        through ``not_present``; a handler that reads every frame can tell the repeats by
+        this."""
+        return bool(self.extras[2])
+
+    @property
+    def not_present(self) -> ActorNotPresent | None:
+        """The report of a :data:`NOT_PRESENT` or :data:`NOT_PRESENT_ENDED` row; ``None`` for
+        any other."""
+        if self.type not in (NOT_PRESENT, NOT_PRESENT_ENDED):
+            return None
+        return ActorNotPresent(
+            self.uuid, self.chunk, self.sequence, bool(self.extras[0]), self.extras[1] or None
+        )
+
+    @property
+    def not_present_end(self) -> NotPresentEnd | None:
+        """Why a :data:`NOT_PRESENT_ENDED` row's report ended; ``None`` for any other row."""
+        if self.type != NOT_PRESENT_ENDED:
+            return None
+        return _NOT_PRESENT_ENDS.get(self.extras[2], NotPresentEnd.STOPPED)
 
     @property
     def state(self) -> ConnState:
@@ -400,13 +530,19 @@ class _ProviderServer:
                         token.authorized_on_current_server,
                     )
             except BaseException as exc:  # the thread must outlive any one failure
+                # What the Application API said goes with an assignment's refusal: its code
+                # and its retryAfterMs tell "busy, try again in a moment" from a refusal. Its
+                # text is a server's: it is logged as one bounded line.
+                why = api_failure_of(exc)
                 self._logger.warning(
-                    "replication %s request failed: %s",
+                    "replication %s request failed: %s%s",
                     "assignment" if kind == _r.ASSIGN else "token refresh",
-                    exc,
+                    f"{why.code}: " if why.code else "",
+                    why.message or type(exc).__name__,
                 )
-                code = _r.ERRC["Timeout"] if isinstance(exc, TimeoutError) else _r.ERRC["Rejected"]
-                self._bridge.answer_error(request_id, code)
+                self._bridge.answer_error(
+                    request_id, _r.ERRC[why.error], why.code, why.retry_after_ms, why.message
+                )
 
     def _call(self, fn: Callable[..., Any], *args: Any) -> Any:
         result = fn(*args)
@@ -449,10 +585,10 @@ def _answered(event: Notification) -> Notification:
     raise CrowdyRealtimeError(f"the server refused the send: {name}", code=name, retryable=False)
 
 
-def _replication_error(exc: Exception) -> CrowdyReplicationError:
+def _replication_error(exc: Exception, failure: ApiFailure | None = None) -> CrowdyReplicationError:
     message = str(exc)
     code, _, detail = message.partition(": ")
-    return CrowdyReplicationError(detail or message, code=code if detail else None)
+    return CrowdyReplicationError(detail or message, code=code if detail else None, failure=failure)
 
 
 def _uuid_rows(uuids: Any) -> Any:
@@ -523,7 +659,7 @@ class _ConnectionCore:
         *,
         app_id: int | str,
         logger: logging.Logger | None = None,
-        subscriptions: list[Mapping[str, Callable[[Notification], Any]]] | None = None,
+        subscriptions: list[Mapping[str, Callable[..., Any]]] | None = None,
         **options: Any,
     ) -> None:
         self._logger = logger or logging.getLogger("crowdypy.replication")
@@ -554,11 +690,39 @@ class _ConnectionCore:
     def assignment(self) -> Assignment:
         return Assignment(*self._native.assignment())
 
+    def last_assignment_failure(self) -> ApiFailure:
+        """Why the last server assignment failed (0.41.0): the first :meth:`connect`, a later
+        one, or a reassignment that left the state ``FAILED``. ``failed()`` is false when the
+        last assignment succeeded or none was made. The Application API's refusal keeps its
+        code and its ``retry_after_ms`` here, so a caller can tell ``PLATFORM_BUSY`` (wait
+        that long and connect again) from a refusal. The error a failed ``connect()`` raises
+        carries the same as ``failure``."""
+        return ApiFailure(*self._native.last_assignment_failure())
+
+    def _connect_error(self, exc: Exception) -> CrowdyReplicationError:
+        failure = self.last_assignment_failure()
+        return _replication_error(exc, failure if failure.failed() else None)
+
+    def not_present(self, uuid: str | bytes) -> ActorNotPresent | None:
+        """The not-present report that stands for ``uuid``, if one does
+        (:class:`ActorNotPresent`): the actor's keepalive was refused ``UNAUTHORIZED`` where
+        ``chunk`` says, and nothing has ended the report since. A poll makes and ends
+        reports, so this changes only there and in a send that names another chunk for the
+        actor."""
+        return _not_present(self._native.not_present(uuid))
+
     def stats(self) -> dict[str, Any]:
         """CrowdyCPP's cumulative counters: a local diagnostic, not a bill (egress is what is
-        billed, measured at the platform's interface). ``wrong_app`` and
-        ``unsigned_notifications`` count two checks only a fleet session makes
-        (:mod:`crowdypy.fleet`) and stay 0 here."""
+        billed, measured at the platform's interface).
+
+        Three count what the connection dropped or declined on a frame nothing verified
+        (CrowdyCPP 0.95.0): ``unsigned_notifications`` (notifications that nothing signed),
+        ``wrong_app`` (notifications that named another app than this connection's, however
+        they were signed) and ``unverified_token_expired`` (``TOKEN_EXPIRED`` frames that
+        nothing verified; none of them reassigned). The first two should stay 0: anything
+        else is worth reporting to Crowded Kingdoms. ``keepalives_refused`` counts every
+        keepalive answered ``UNAUTHORIZED`` and ``not_present_reports`` the reports made of
+        them, one for each actor and place."""
         result: dict[str, Any] = self._native.stats()
         return result
 
@@ -878,16 +1042,21 @@ class _ConnectionCore:
 
     # ----- receive
 
-    def subscribe(
-        self, handlers: Mapping[str, Callable[[Notification], Any]]
-    ) -> Callable[[], None]:
+    def subscribe(self, handlers: Mapping[str, Callable[..., Any]]) -> Callable[[], None]:
         """Call ``handlers[name](notification)`` for each event: ``actor_update``,
         ``voxel_update``, ``audio``, ``video``, ``actor_left``, ``chunk_changed`` (a chunk
         replaced as a whole: read it again), ``text``, ``client_event``,
         ``server_event``, ``generic_spatial``, ``single_actor_message``, ``channel_message``,
-        ``channel_audio``, ``generic_error``, ``status``, and ``any`` (every event but
-        status). Returns the unsubscribe function. One object per event: prefer batches on a
-        hot path."""
+        ``channel_audio``, ``generic_error``, ``status``, and ``any`` (every event the server
+        sent). Returns the unsubscribe function. One object per event: prefer batches on a
+        hot path.
+
+        Two are the connection's own (0.41.0), about a keepalive (:meth:`send_heartbeat`)
+        the server refused: ``not_present(report)`` is called once with an
+        :class:`ActorNotPresent` when an actor's keepalive is first refused at a place, after
+        ``generic_error`` for the same frame (the refusals that follow every few seconds
+        reach ``generic_error`` only), and ``not_present_ended(report, end)`` once when that
+        report ends, with a :class:`NotPresentEnd`."""
         unknown = set(handlers) - HANDLER_NAMES
         if unknown:
             raise ValueError(f"unknown handler name(s): {', '.join(sorted(unknown))}")
@@ -901,7 +1070,9 @@ class _ConnectionCore:
         return unsubscribe
 
     def pump(self, timeout_ms: int = 0) -> int:
-        """Manual-pump mode: do network work for up to ``timeout_ms``; returns datagrams read."""
+        """Manual-pump mode: do network work for up to ``timeout_ms``; returns datagrams read,
+        :data:`RECEIVE_PASS_DATAGRAMS` (1,024) at most. What is still queued then is read by
+        the next call, so call it until it returns fewer."""
         result: int = self._native.pump(timeout_ms)
         return result
 
@@ -918,17 +1089,23 @@ class _ConnectionCore:
         for event in batch:
             key = _HANDLER_KEYS.get(event.type)
             for handlers in list(self._handlers):
-                if event.type != STATUS:
+                if event.type not in _OWN_ROWS:
                     every = handlers.get("any")
                     if every is not None:
                         self._call_handler(every, event)
                 handler = handlers.get(key) if key else None
-                if handler is not None:
+                if handler is None:
+                    continue
+                if event.type == NOT_PRESENT:
+                    self._call_handler(handler, event.not_present)
+                elif event.type == NOT_PRESENT_ENDED:
+                    self._call_handler(handler, event.not_present, event.not_present_end)
+                else:
                     self._call_handler(handler, event)
 
-    def _call_handler(self, handler: Callable[[Notification], Any], event: Notification) -> None:
+    def _call_handler(self, handler: Callable[..., Any], *args: Any) -> None:
         try:
-            handler(event)
+            handler(*args)
         except Exception:
             self._logger.exception("replication handler failed")
 
@@ -978,7 +1155,7 @@ class AsyncReplicationConnection(_ConnectionCore):
         try:
             await asyncio.to_thread(self._native.connect)
         except ValueError as exc:
-            raise _replication_error(exc) from None
+            raise self._connect_error(exc) from None
         if self._reader is None or self._reader.done():
             self._reader = loop.create_task(self._read(), name="crowdypy-replication-reader")
 
@@ -1133,7 +1310,7 @@ class ReplicationConnection(_ConnectionCore):
         try:
             self._native.connect()
         except ValueError as exc:
-            raise _replication_error(exc) from None
+            raise self._connect_error(exc) from None
 
     def disconnect(self) -> None:
         """Close the socket and stop the network thread; handlers and subscriptions stay."""

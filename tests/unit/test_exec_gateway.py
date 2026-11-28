@@ -15,6 +15,7 @@ import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
 from crowdypy.domains.exec import CrowdyExecError, ExecEndpoint
+from crowdypy.errors import ApiFailure, CrowdyGraphQLError, api_failure_of
 from crowdypy.exec_gateway import (
     AsyncExecConnection,
     ExecCall,
@@ -479,3 +480,139 @@ def test_the_blocking_connection_ends_on_4403_too() -> None:
         assert stop is not None
         loop.call_soon_threadsafe(stop.set_result, None)
         thread.join(5)
+
+
+# ---- CrowdyCPP 0.95.0, CrowdyJS 18.41.0: why a hub connection could not be made ----
+
+BUSY = CrowdyGraphQLError(
+    [
+        {
+            "message": "the platform is busy",
+            "extensions": {"code": "PLATFORM_BUSY", "retryAfterMs": 750},
+        }
+    ]
+)
+BUSY_FAILURE = ApiFailure("Rejected", "PLATFORM_BUSY", 750, "the platform is busy")
+
+
+async def test_a_refused_connect_call_is_kept_and_cleared_by_the_next(
+    gateways: tuple[Gateway, Gateway],
+) -> None:
+    a, _ = gateways
+    refusals: list[Exception] = [BUSY]
+
+    async def dial() -> ExecEndpoint:
+        if refusals:
+            raise refusals.pop()
+        return ExecEndpoint(gateway_url=f"ws://127.0.0.1:{a.port}", token="t1", host="host-a")
+
+    connection = AsyncExecConnection(dial, reconnect=False)
+    assert connection.last_connect_failure() == ApiFailure()
+    # The first connect raises the API's own error, and the connection keeps why.
+    with pytest.raises(CrowdyGraphQLError) as refused:
+        await connection.connect()
+    assert api_failure_of(refused.value) == BUSY_FAILURE
+    failure = connection.last_connect_failure()
+    assert failure == BUSY_FAILURE
+    assert failure.failed()
+    assert failure.platform_busy()
+
+    await connection.connect()
+    assert connection.host == "host-a"
+    assert not connection.last_connect_failure().failed()
+    await connection.close()
+
+
+def test_the_blocking_connection_keeps_why_too() -> None:
+    def dial() -> ExecEndpoint:
+        raise CrowdyGraphQLError(
+            [{"message": "not\nyours", "extensions": {"code": "FORBIDDEN", "retryAfterMs": -4}}]
+        )
+
+    connection = ExecConnection(dial, reconnect=False)
+    with pytest.raises(CrowdyGraphQLError):
+        connection.connect()
+    failure = connection.last_connect_failure()
+    assert failure == ApiFailure("Rejected", "FORBIDDEN", 0, "not yours")
+    assert not failure.platform_busy()
+    connection.close()
+
+
+def test_what_the_api_said_is_bounded() -> None:
+    hour = CrowdyGraphQLError(
+        [
+            {"message": "first", "extensions": {"code": "C" * 200}},
+            {"message": "second", "extensions": {"code": "PLATFORM_BUSY", "retryAfterMs": 3.6e6}},
+        ]
+    )
+    failure = api_failure_of(hour)
+    # The first error's code and message, the first wait any error names, each bounded.
+    assert (failure.code, failure.retry_after_ms, failure.message) == ("C" * 64, 30_000, "first")
+    long = api_failure_of(CrowdyGraphQLError([{"message": "line\r\n" + "é" * 600}]))
+    assert long.code == ""
+    assert long.message.startswith("line éé")
+    assert len(long.message.encode()) <= 500
+    assert "\n" not in long.message
+    assert api_failure_of(TimeoutError()).error == "Timeout"
+    assert api_failure_of(RuntimeError("boom")) == ApiFailure("Rejected", "", 0, "boom")
+
+
+async def test_a_failed_connect_names_the_gateway_and_never_the_token() -> None:
+    token = "connect-token-" + "s" * 50
+    errors: list[CrowdyExecError] = []
+    # Nothing listens here: the socket's own error is what the message carries.
+    with pytest.raises(CrowdyExecError) as failed:
+        await AsyncExecConnection.open(f"ws://user:pw@127.0.0.1:1/gw?token={token}", token)
+    errors.append(failed.value)
+    assert failed.value.status == "Unavailable"
+    assert failed.value.message.startswith("Unavailable: connecting to ws://127.0.0.1:1 failed")
+    # A URL that is no URL at all may be the token passed in the URL's place.
+    with pytest.raises(CrowdyExecError) as failed:
+        await AsyncExecConnection.open(token, token)
+    errors.append(failed.value)
+    assert "no socket could be opened to a gateway URL that does not parse" in str(failed.value)
+    assert failed.value.__cause__ is None
+    with pytest.raises(CrowdyExecError) as failed:
+        ExecConnection.open(token, token)
+    errors.append(failed.value)
+    assert failed.value.__cause__ is None
+    for error in errors:
+        assert token not in str(error)
+        assert "pw@" not in str(error)
+
+
+def test_a_close_reason_is_shown_without_the_token_on_one_line_and_bounded() -> None:
+    from crowdypy.exec_gateway import _closed_why
+
+    token = "connect-token-" + "s" * 50
+    endpoint = ExecEndpoint(
+        gateway_url=f"wss://gw.example.org/?token={token}", token=token, host="h"
+    )
+    # The close reason is the gateway's text: it is treated as a failed connect's is.
+    why = _closed_why(
+        endpoint, RuntimeError(f"closed 1008 for wss://gw/?token={token}\r\n" + "x" * 900)
+    )
+    assert why.startswith(
+        "the gateway closed the connection (closed 1008 for wss://gw/?token=<token>"
+    )
+    assert token not in why
+    assert "\n" not in why
+    assert "\r" not in why
+    assert len(why) <= len("the gateway closed the connection ()") + 200
+    # A connection that never had an endpoint still answers, and still hides a token in a query.
+    assert "tail" not in _closed_why(None, RuntimeError("closed ?token=secret-tail"))
+
+
+def test_a_dropped_read_waits_the_apis_hint_up_to_30_seconds() -> None:
+    from crowdypy._dropped_read import dropped_read_wait_ms
+
+    def busy(wait: Any) -> CrowdyGraphQLError:
+        return CrowdyGraphQLError(
+            [{"message": "busy", "extensions": {"code": "PLATFORM_BUSY", "retryAfterMs": wait}}]
+        )
+
+    assert dropped_read_wait_ms(busy(4_000), 1_500) == 4_000
+    assert dropped_read_wait_ms(busy(200), 1_500) == 1_500  # never below the caller's interval
+    assert dropped_read_wait_ms(busy(3_600_000), 1_500) == 30_000
+    assert dropped_read_wait_ms(busy(3_600_000), 60_000) == 60_000  # the caller's own, if longer
+    assert dropped_read_wait_ms(RuntimeError("boom"), 1_500) == 1_500

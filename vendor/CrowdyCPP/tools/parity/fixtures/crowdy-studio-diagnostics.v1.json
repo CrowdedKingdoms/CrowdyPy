@@ -1,8 +1,8 @@
 {
   "contractVersion": "crowdy.studio-diagnostics/1",
   "crowdyJs": {
-    "version": "18.40.0",
-    "commit": "3aed4a4773d617d11ecbcc9db96981a436c199b3"
+    "version": "18.41.0",
+    "commit": "238850273b7a09b21dba409b44d12f102ebeaec3"
   },
   "cases": [
     {

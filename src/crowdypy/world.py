@@ -43,9 +43,7 @@ class WorldClient:
             default_decay=default_decay,
         )
 
-    def subscribe(
-        self, handlers: Mapping[str, Callable[[Notification], Any]]
-    ) -> Callable[[], None]:
+    def subscribe(self, handlers: Mapping[str, Callable[..., Any]]) -> Callable[[], None]:
         """Per-event handlers, as :meth:`crowdypy.domains.udp.UdpAPI.subscribe`."""
         return self._udp.subscribe(handlers)
 

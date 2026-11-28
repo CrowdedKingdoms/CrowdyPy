@@ -52,7 +52,7 @@ from crowdypy._server_only import assert_organization_server
 from crowdypy.domains._base import Domain
 from crowdypy.utils import bigint
 
-__all__ = ["FleetServer", "FleetSessionAnswer", "FleetSessionsAPI"]
+__all__ = ["FleetServer", "FleetSessionAnswer", "FleetSessionsAPI", "fleet_current_server"]
 
 
 class FleetServer(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -97,6 +97,44 @@ class FleetSessionAnswer(msgspec.Struct, rename="camel", frozen=True, kw_only=Tr
         )
 
 
+def _server_fields(server: Any) -> tuple[Any, Any, Any]:
+    """``(ip4, ip6, client_port)`` of a server: a :class:`FleetServer`, an input struct, a
+    mapping with the API's names or these, or an ``(ip4, ip6, client_port)`` tuple."""
+    if isinstance(server, Mapping):
+        port = server.get("clientPort", server.get("client_port"))
+        return server.get("ip4"), server.get("ip6"), port
+    if isinstance(server, tuple) and not hasattr(server, "client_port"):
+        return server if len(server) == 3 else (None, None, None)
+    return (
+        getattr(server, "ip4", None),
+        getattr(server, "ip6", None),
+        getattr(server, "client_port", None),
+    )
+
+
+def fleet_current_server(server: Any, prefer_ipv6: bool = False) -> dict[str, Any]:
+    """The ``currentServer`` that names a realtime server (0.41.0): its ``ip4`` when it has
+    one, its ``ip6`` otherwise (its ``ip6`` first with ``prefer_ipv6``), and its
+    ``clientPort``. A fleet session connects to a server the same way
+    (:func:`crowdypy.replication.connect_address`), so this names the address the session
+    connected to. Give it a session answer's ``server`` as it is: the Application API takes
+    exactly one address (v2.90.0; an earlier one takes ``ip4`` only), and refuses the
+    server's other fields.
+
+    Raises :class:`ValueError` for a server with no ``ip4`` and no ``ip6``, or no port. The
+    message names no value."""
+    ip4, ip6, port = _server_fields(server)
+    ip4 = ip4 if isinstance(ip4, str) and ip4 else None
+    ip6 = ip6 if isinstance(ip6, str) and ip6 else None
+    if isinstance(port, bool) or not isinstance(port, int) or not 0 < port <= 0xFFFF:
+        raise ValueError("currentServer names no clientPort from 1 to 65535")
+    if ip6 is not None and (prefer_ipv6 or ip4 is None):
+        return {"ip6": ip6, "clientPort": port}
+    if ip4 is not None:
+        return {"ip4": ip4, "clientPort": port}
+    raise ValueError("currentServer names no ip4 and no ip6 address")
+
+
 def _named(input: Any) -> Any:
     """A mapping's ``appId`` and ``gameTokenId`` as the decimal strings a BigInt travels as,
     so a session's own integers (``fleet.app_id``, ``fleet.game_token_id``) are taken as they
@@ -108,6 +146,28 @@ def _named(input: Any) -> Any:
         if field in named:
             named[field] = bigint(named[field])
     return named
+
+
+def _refresh_input(input: Any) -> Any:
+    """``refreshFleetSession``'s input with its ``currentServer`` as one address and the
+    port: the API refuses both addresses, neither, and a server's other fields."""
+    if isinstance(input, inputs.RefreshFleetSessionInput):
+        current = input.current_server
+        if current is None or current is msgspec.UNSET:
+            return input
+        named = fleet_current_server(current)
+        return msgspec.structs.replace(
+            input,
+            current_server=inputs.FleetCurrentServerInput(
+                ip4=named.get("ip4", msgspec.UNSET),
+                ip6=named.get("ip6", msgspec.UNSET),
+                client_port=named["clientPort"],
+            ),
+        )
+    named_input = _named(input)
+    if isinstance(named_input, dict) and named_input.get("currentServer") is not None:
+        named_input["currentServer"] = fleet_current_server(named_input["currentServer"])
+    return named_input
 
 
 class FleetSessionsAPI(Domain):
@@ -131,17 +191,20 @@ class FleetSessionsAPI(Domain):
         the session, before ``expires_at``. The session's ``refresh_due()`` says when, and its
         ``refresh_input()`` builds this input (``appId``, ``gameTokenId``, ``currentServer``).
 
-        Name the realtime server the session is connected to (``currentServer``, the ``ip4``
-        and ``clientPort`` it was given) and the session stays there while that server still
-        serves the app. Leave it out, or name one that no longer serves, and the answer's
-        ``server`` is another one to connect to: do that after a realtime server told the
-        session to move.
+        Name the realtime server the session is connected to (``currentServer``: the ``ip4``
+        or the ``ip6`` it connected to, and the ``clientPort``) and the session stays there
+        while that server still serves the app. Leave it out, or name one that no longer
+        serves, and the answer's ``server`` is another one to connect to: do that after a
+        realtime server told the session to move. A ``currentServer`` with both addresses (a
+        session answer's ``server`` as it is) is sent with one of them, the ``ip4`` when there
+        is one (:func:`fleet_current_server`); one with neither raises :class:`ValueError`
+        before any request. Naming an ``ip6`` needs Application API v2.90.0.
 
         Raises :class:`crowdypy.errors.CrowdyGraphQLError` with ``NOT_FOUND`` for a session
         that expired, was closed, or was opened with another org token
         (:func:`crowdypy.errors.fleet_session_not_found_of`): open a new one."""
         assert_organization_server("fleet_sessions.refresh")
-        payload = await self._request(ops.REFRESH_FLEET_SESSION, {"input": _named(input)})
+        payload = await self._request(ops.REFRESH_FLEET_SESSION, {"input": _refresh_input(input)})
         return msgspec.convert(payload, FleetSessionAnswer)
 
     async def close(self, input: inputs.CloseFleetSessionInput | Mapping[str, Any]) -> bool:

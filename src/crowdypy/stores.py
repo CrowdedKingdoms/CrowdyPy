@@ -31,7 +31,7 @@ from crowdypy._concurrency import run_soon
 from crowdypy.codecs import StateCodec, json_codec, raw_codec
 from crowdypy.domains._base import sleep
 from crowdypy.errors import CrowdyError
-from crowdypy.replication import ConnState
+from crowdypy.replication import ActorNotPresent, ConnState, _not_present
 from crowdypy.utils import decode_base64, encode_base64
 from crowdypy.wire import DecayRate, ErrorCode, assert_voxel_edit
 
@@ -306,6 +306,12 @@ class WorldSessionCore:
         result: str = self._native.actor_uuid
         return result
 
+    def not_present(self) -> ActorNotPresent | None:
+        """The not-present report that stands for this session's actor, if one does: its
+        keepalive was refused where ``chunk`` says (``on("not_present", ...)``). :meth:`tick`
+        makes and ends it."""
+        return _not_present(self._native.not_present())
+
     def tick(self) -> None:
         """Drive everything once: drain into the stores, run the send loop and reaping, fire
         the callbacks the tick queued, start any timer that is due. Call once per frame."""
@@ -339,7 +345,7 @@ class WorldSessionCore:
 
         return cancel
 
-    def on(self, name: str, handler: Callable[[Notification], Any]) -> Callable[[], None]:
+    def on(self, name: str, handler: Callable[..., Any]) -> Callable[[], None]:
         """Per-event handlers for what the stores do not keep: ``audio``, ``video``,
         ``text``, ``generic_spatial`` (opcode 140, an app-defined spatial payload),
         ``channel_audio`` (channel voice, which the channel inbox does not get) and
@@ -347,7 +353,16 @@ class WorldSessionCore:
         :attr:`chunks` merged it, with its sender, voxel and state, for a game that keeps its
         own world; it includes the server's echo of your own edits (compare the uuid and
         sequence with your send's). The stores hold the rest. Returns the unsubscribe
-        function."""
+        function.
+
+        ``not_present(report)`` and ``not_present_ended(report, end)`` (0.41.0) say that the
+        session's keepalive was refused ``UNAUTHORIZED`` at a place and when that ended
+        (:class:`crowdypy.replication.ActorNotPresent`): from realtime servers v0.51.0 that
+        is what having no ``access`` there looks like. Each is called once for a report,
+        however many keepalives are refused there, and :attr:`errors` records that one
+        refusal as a ``heartbeat`` error. The session keeps sending keepalives at the same
+        rate and stays connected, so access granted later takes effect within about 6
+        seconds."""
         if name in ("voxel_update", "any"):
             self._native.watch_voxels(True)
         return self.connection.subscribe({name: handler})
