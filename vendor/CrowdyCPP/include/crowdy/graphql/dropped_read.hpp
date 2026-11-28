@@ -43,11 +43,11 @@ inline bool isDroppedRead(const GraphQLOutcome& outcome) {
 }
 
 /// How long a busy refusal asked to wait before the next read (`extensions.retryAfterMs`),
-/// or 0.
+/// or 0. Never more than kMaxRetryAfterWaitMs (retryWaitMs): the caller waits on it.
 inline std::int64_t retryAfterMsOf(const GraphQLOutcome& outcome) {
   if (outcome.kind != GraphQLErrorKind::GraphQL || outcome.errors.empty()) return 0;
   const auto& after = outcome.errors.front().retryAfterMs;
-  return after && *after > 0 ? *after : 0;
+  return after ? retryWaitMs(*after) : 0;
 }
 
 /// What a dropped or refused read reports, for a run's or a controller's message.
@@ -62,7 +62,7 @@ inline std::string failureOf(const GraphQLOutcome& outcome) {
 #ifndef CROWDY_NO_EXCEPTIONS
 /// isDroppedRead for the exception being handled, as GraphQLClient::request throws it.
 /// Call it only inside a catch block. `retryAfterMs`, when given, receives a busy
-/// refusal's wait (0 otherwise).
+/// refusal's wait (0 otherwise), never more than kMaxRetryAfterWaitMs (retryWaitMs).
 inline bool isDroppedReadException(std::int64_t* retryAfterMs = nullptr) {
   if (retryAfterMs) *retryAfterMs = 0;
   try {
@@ -76,7 +76,7 @@ inline bool isDroppedReadException(std::int64_t* retryAfterMs = nullptr) {
   } catch (const CrowdyGraphQLError& error) {
     if (error.errors().empty() || !isBusyRefusal(error.errors().front())) return false;
     const auto& after = error.errors().front().retryAfterMs;
-    if (retryAfterMs && after && *after > 0) *retryAfterMs = *after;
+    if (retryAfterMs && after) *retryAfterMs = retryWaitMs(*after);
     return true;
   } catch (const CrowdyProtocolError& error) {
     // GraphQLClient::request throws this message for Errc::ResponseTooLarge.

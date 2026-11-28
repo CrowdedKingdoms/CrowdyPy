@@ -120,7 +120,13 @@ struct ExecReply {
   bool retryable() const { return execStatusRetryable(status); }
   /// The caller's call limit refused it (`Busy` "rate limited ...", or `RateLimited`).
   bool rateLimited() const;
-  /// How long to wait before calling again, when a rate-limit refusal says (`retry in N ms`).
+  /// The connection could not be made because the Application API was shedding load
+  /// (0.95.0): its connect call was refused PLATFORM_BUSY, and the message names the code.
+  /// Wait `retryAfterMs()`, then call again (the next call connects again).
+  bool platformBusy() const;
+  /// How long to wait before calling again, when a rate-limit refusal or a PLATFORM_BUSY
+  /// refusal of the connect call says (`retry in N ms`). A gateway's or the API's word, so
+  /// it is never more than kMaxRetryAfterWaitMs (30 s), whatever the message says (0.95.0).
   std::optional<long> retryAfterMs() const;
   /// The payload decoded from MessagePack (a null Json when it is not).
   graphql::Json value() const { return graphql::Json::fromMsgpack(payload); }
@@ -136,6 +142,11 @@ struct ExecPush {
 
   graphql::Json value() const { return graphql::Json::fromMsgpack(payload); }
 };
+
+/// Why a hub connection's connect call (`execConnect`, `execConnectAsDeveloper`,
+/// `execConnectAsServer`) failed (ExecConnection::lastConnectFailure(), 0.95.0): the
+/// Application API's refusal code and its `retryAfterMs`. See ApiFailure.
+using ExecConnectFailure = ApiFailure;
 
 using ExecReplyCallback = std::function<void(ExecReply)>;
 using ExecPushHandler = std::function<void(const ExecPush&)>;
@@ -286,6 +297,20 @@ class ExecConnection {
   /// Close; nothing reconnects and pending calls fail as Unavailable.
   void close();
 
+  /// Why the last connect call found no host (0.95.0): the Application API's refusal code,
+  /// its `retryAfterMs` and its message. `error` is Errc::Ok when the last dial found one,
+  /// or none was made. `platformBusy()` means "wait `retryAfterMs` and call again"; any
+  /// other code is a refusal. Calls that waited on the dial fail `Unavailable` as before,
+  /// with a message that starts "no host for this app" and now goes on to name the code and
+  /// the wait (ExecReply::platformBusy(), retryAfterMs()). A connection made by ExecAPI
+  /// knows this by itself; one built over an ExecDial of your own learns it from
+  /// explainDialFailures().
+  ExecConnectFailure lastConnectFailure() const;
+  /// For a connection built over your own ExecDial: `why` is asked, right after the dial
+  /// answered an error, for what the Application API said (graphql::apiFailureOf reads it
+  /// from an outcome). ExecAPI sets this on the connections it makes.
+  void explainDialFailures(std::function<ExecConnectFailure()> why);
+
   /// Dial only gateways `execGatewayRefusal` passes for the Game API `gameApiUrl()` names (read
   /// at each dial). ExecAPI::connect pins the connections it makes; pin one you build yourself
   /// over an ExecDial the same way. A refused gateway is never dialed: the attempt fails
@@ -404,6 +429,12 @@ class ExecAPI : public DomainBase {
   /// The same, calling back once the connection is open (or with the failure).
   void connectAsync(std::string appId, ExecConnectOptions options,
                     std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const;
+  /// connectAsync that also says why it failed (0.95.0): the Application API's refusal code
+  /// and `retryAfterMs`, where the form above answers an Errc alone. `why` has not failed()
+  /// when the connection opened.
+  void connectAsync(
+      std::string appId, ExecConnectOptions options,
+      std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure why)> done) const;
 
   /// Deploy a new version of the app's nodes and make it active (`execDeploy`),
   /// blocking: the manifest with each module's SHA-256, and each distinct module
@@ -639,6 +670,10 @@ class ExecAPI : public DomainBase {
   std::shared_ptr<ExecConnection> connectAsDeveloper(std::string appId, ExecConnectOptions options = {}) const;
   void connectAsDeveloperAsync(std::string appId, ExecConnectOptions options,
                                std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const;
+  /// The same, also saying why it failed (0.95.0); see connectAsync.
+  void connectAsDeveloperAsync(
+      std::string appId, ExecConnectOptions options,
+      std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure why)> done) const;
 
   // ---- an organization's game server ----
   //
@@ -675,6 +710,11 @@ class ExecAPI : public DomainBase {
   std::shared_ptr<ExecConnection> connectAsServer(std::string appId, ExecConnectOptions options = {}) const;
   void connectAsServerAsync(std::string appId, ExecConnectOptions options,
                             std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const;
+  /// The same, also saying why it failed (0.95.0): PLATFORM_BUSY with its `retryAfterMs`
+  /// (wait, then connect again), or the refusal's code; see connectAsync.
+  void connectAsServerAsync(
+      std::string appId, ExecConnectOptions options,
+      std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure why)> done) const;
 
   /// Guest log lines (`execLogs`), newest first, kept for 24 hours: an array of
   /// `{ id, nodeType, key, level, host, at, text, flow }`. `flow` is the call the line was
@@ -710,6 +750,18 @@ class ExecAPI : public DomainBase {
   /// `view_compute_diagnostics`.
   graphql::Json status(std::string appId) const;
   void statusAsync(std::string appId, graphql::GraphQLCallback done) const;
+  /// The organization's compute ceiling (`orgComputeCeiling`; 0.95.0, Application API
+  /// v2.88.0): what each of its apps may run of compute modules in one datacenter once the
+  /// organization is funded. `{ orgId, maxInstances, maxReservedMb, operatorSet, funded,
+  /// defaultMaxInstances, defaultMaxReservedMb, reason, updatedAt }`: `maxInstances` placed
+  /// at once and `maxReservedMb` of memory they reserve (each instance reserves its type's
+  /// memory limit times its copies). `operatorSet` is true when a Crowded Kingdoms operator
+  /// set them for this organization, with `reason` and `updatedAt`; otherwise they are the
+  /// platform's defaults. While `funded` is false the organization's apps keep the free tier
+  /// limits whatever this says: status() reports what an app has now. Read-only: an operator
+  /// changes it. Requires `view_compute_diagnostics` on the organization.
+  graphql::Json orgComputeCeiling(std::string orgId) const;
+  void orgComputeCeilingAsync(std::string orgId, graphql::GraphQLCallback done) const;
   /// Make an earlier version active again, a rollback (`execActivateVersion`). As after
   /// a deploy, instances of the types it keeps pick it up when they next start, and those
   /// of a type it lacks are persisted and stopped at once; a type it lacks leaves the
@@ -734,7 +786,12 @@ class ExecAPI : public DomainBase {
  private:
   /// Who a dialer asks for a connect token as.
   enum class DialAs { Player, Developer, Server };
-  ExecDial dialer(std::string appId, std::string nodeType, std::string key, DialAs as = DialAs::Player) const;
+  /// What a dialer keeps of the Application API's last refusal, for the connection to read.
+  struct DialRefusal;
+  ExecDial dialer(std::string appId, std::string nodeType, std::string key, DialAs as,
+                  std::shared_ptr<DialRefusal> refusal) const;
+  /// A dialer, and the connection over it, pinned and told how to explain a failed dial.
+  std::shared_ptr<ExecConnection> dialed(std::string appId, ExecConnectOptions options, DialAs as) const;
   /// A connection over `dial` that dials only gateways the Game API this client talks to may name.
   std::shared_ptr<ExecConnection> pinned(ExecDial dial, ExecConnectOptions options) const;
   static graphql::JVal deployVariables(std::string appId, std::string root, const std::vector<ExecNodeType>& types,

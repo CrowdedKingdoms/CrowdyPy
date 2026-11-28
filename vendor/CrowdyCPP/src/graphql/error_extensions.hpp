@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -45,7 +46,15 @@ inline GraphQLErrorDetail readGraphQLError(Json entry, std::string_view fallback
   // would make an absent key indistinguishable from an explicit 0, which is the
   // one distinction this field exists to preserve.
   const Json retryAfterMs = extensions["retryAfterMs"];
-  if (retryAfterMs.isNumber()) detail.retryAfterMs = retryAfterMs.asInt64();
+  if (retryAfterMs.isNumber()) {
+    // A number past int64 (an unsigned one, or a real such as 1e300) reads as the largest or
+    // the smallest int64, never as whatever a conversion out of range would leave: this is
+    // a server's hint, and what waits on it bounds it next (crowdy::retryWaitMs).
+    const double asked = retryAfterMs.asDouble();
+    detail.retryAfterMs = asked >= 9.0e18    ? std::numeric_limits<std::int64_t>::max()
+                          : asked <= -9.0e18 ? std::numeric_limits<std::int64_t>::min()
+                                             : retryAfterMs.asInt64();
+  }
   const Json httpStatus = extensions["httpStatus"];
   if (httpStatus.isNumber()) detail.httpStatus = static_cast<int>(httpStatus.asInt64());
   detail.cause = extensions["cause"].asString();

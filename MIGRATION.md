@@ -3,6 +3,90 @@
 CrowdyPy is pre-1.0. Within a minor line, patch releases keep source compatibility; each
 new minor may change the API. Read the section for every minor you skip.
 
+## 0.41.0
+
+Vendors CrowdyCPP 0.95.0 and syncs CrowdyJS 18.41.0's schema and operations. It follows Application API v2.90.0,
+realtime servers v0.51.0, and ck-exec 0.26.1, which have been on dev, test, and prod since November 27, 2026.
+
+**One change needs a server release:** every call that answers an app token now selects `userId`, so
+`portal.mint_app_token`, `exchange_code`, `refresh`, `exchange_managed_player_assertion`, and
+`sign_in_with_minecraft` need Application API v2.90.0. An older API refuses them with a GraphQL validation error.
+`managed_players.delete_many` and an `ip6` in a fleet refresh's `currentServer` need v2.90.0 too. Everything else
+needs what 0.40.0 needs.
+
+**Three things behave differently with no change to your code:**
+
+- **A player's connection drops what is not its own.** A notification that nothing signed, and one that names
+  another app than the connection's, reaches no handler. `connection.stats()` counts them
+  (`unsigned_notifications`, `wrong_app`). A connection made with `verify_notifications=False` still takes an
+  unsigned one.
+- **A `TOKEN_EXPIRED` refusal reassigns only when it arrived inside a signed bundle.** For one that arrived
+  alone, the connection asks its session provider for a fresh token instead, at most once every 30 seconds, and
+  does what the answer says (`unverified_token_expired` in `stats()`). Until 0.41.0 it reassigned on either.
+- **A wait on a server's hint is 30 seconds at most.** `CrowdyExecError.retry_after_ms`, the Game Kit's hold
+  after a rate-limited call, and the waits of `CrowdyStudioController` and `exec.wait_for_mod_build` after a
+  dropped read never exceed `MAX_RETRY_AFTER_WAIT_MS` (30,000), whatever the server sent.
+  `retry_after_ms_of(err)` and `platform_busy_of(err)` still return what the server sent: pass it through
+  `retry_wait_ms` before you wait on it.
+
+What is new:
+
+- **A refused keepalive is reported once** (for realtime servers v0.51.0). From v0.51.0, the realtime servers
+  accept a keepalive (`send_heartbeat`) only where they would accept the player's actor update. Where the player
+  has no `access`, the server answers every keepalive `UNAUTHORIZED`, tells no other player there of the actor,
+  and sends the session nothing of the place. The session stays connected. Subscribe to `not_present(report)` and
+  `not_present_ended(report, end)` on `client.udp`, a connection, a world session (`session.on`), or a fleet
+  session (`handlers`). `report` is an `ActorNotPresent` (`uuid`, `chunk`, `sequence`, `verified`, and
+  `player_game_token_id` on a fleet session), and `end` is a `NotPresentEnd`: `accepted`, `moved`, or `stopped`.
+  `connection.not_present(uuid)`, `session.not_present()`, and `fleet.not_present(player, uuid)` return the report
+  that stands. Keep sending keepalives at the same rate: once access is granted, the next one is accepted within
+  about 6 seconds. A `generic_error` notification has `keepalive`, true when the frame answers a keepalive, and
+  `stats()` gains `keepalives_refused` and `not_present_reports`. A world session records one `heartbeat` error
+  for a report, where each refusal used to be recorded as an error of an unknown or a stale kind.
+- **Why a connection could not be made.** `ApiFailure` has `error`, `code`, `retry_after_ms`, `message`,
+  `failed()`, and `platform_busy()`. `connection.last_assignment_failure()` returns it for a realtime server
+  assignment, and the `CrowdyReplicationError` that a failed `client.udp.connect()` or `connection.connect()`
+  raises carries it as `failure`. `AsyncExecConnection.last_connect_failure()` and
+  `ExecConnection.last_connect_failure()` return it for a hub connection's connect call.
+  `api_failure_of(error)` reads one from any error the SDK raised. The `retry_after_ms` is bounded, and the
+  `code` and `message` are one line of bounded length. A session provider of your own raises
+  `CrowdyGraphQLError` from `assign_server` as before, and the connection keeps its code.
+- **`retry_wait_ms(hint_ms)` and `MAX_RETRY_AFTER_WAIT_MS`**: 0 for a hint of 0 or below, the hint up to 30,000,
+  and 30,000 for anything longer.
+- **Fleet sessions:**
+  - `fleet.table_limit` is the most rows the table holds: `max_players` and 32 more (`TABLE_MARGIN`). A carry
+    for a new player past it ends `FleetCarryOutcome.TABLE_FULL` with nothing sent, and `stats()` counts it
+    (`carries_refused_table_full`). If your code branches on every `FleetCarryOutcome`, add the case. A refresh's
+    answer that names another `max_players` moves the limit.
+  - `silence_timeout_ms` goes down to 3,000 (`MIN_SILENCE_TIMEOUT_MS`). 0.40.0 raised a shorter one to 4,500. If
+    you passed a value under 4,500, the session now orders a move sooner.
+  - `refresh_input()` names the one address the session connected to: `{"ip4", "clientPort"}`, or
+    `{"ip6", "clientPort"}` for a server with no `ip4` and for a session made with `prefer_ipv6`. 0.40.0 sent no
+    `currentServer` for a server with no `ip4`. `fleet_sessions.refresh` sends one address whatever it is given,
+    the `ip4` when there is one, and raises `ValueError` before any request for a `currentServer` with neither.
+    `fleet_current_server(server, prefer_ipv6=False)` builds the same `currentServer` from a session answer's
+    `server`, and `crowdypy.replication.connect_address(server, prefer_ipv6=False)` returns the address a
+    connection opens its socket to.
+- **`AppTokenResponse.user_id`**: the user the token signs in, as a decimal string, on every call that answers
+  an app token. `adopt_app_token` reads it from the answer your server hands the device, and it is `None` for an
+  answer without it.
+- **`client.managed_players.delete_many(org_id, external_ids)`** deletes 1 to 100 players in one call
+  (`deleteManagedPlayers`; CrowdyJS's `deleteMany`, CrowdyCPP's `removeMany`). It raises `ValueError` before
+  any request for no ids or more than `MANAGED_PLAYERS_DELETE_MAX`. The answer counts `deleted`, `notFound`, and
+  `held`, and `players` names each id once with its `outcome`: `DELETED`, `NOT_FOUND`, or `LEGAL_HOLD`. A held
+  player does not fail the call.
+- **`client.managed_players.settings(org_id)`** reports the organization's fleet limits: `fleetSessionsEnabled`,
+  `maxFleetSessions`, and `maxFleetPlayers`.
+- **`client.exec.org_compute_ceiling(org_id)`** returns an `OrgComputeCeiling`: `max_instances`,
+  `max_reserved_mb`, `operator_set`, `funded`, `default_max_instances`, `default_max_reserved_mb`, `reason`, and
+  `updated_at`. It needs `view_compute_diagnostics` on the organization (Application API v2.88.0).
+- **`pump()` reads 1,024 datagrams at most** (`RECEIVE_PASS_DATAGRAMS`). In manual-pump mode, call it until it
+  returns fewer. `disconnect()` returns while datagrams are still arriving: the network thread stops reading at
+  the 16 datagrams it has in hand.
+- **Error messages show no value that may be a secret.** A hub gateway is named by its scheme, host, and port,
+  and a failed hub connect never shows the connect token. `exec_gateway_refusal` describes an Application API URL
+  that is not absolute by its length.
+
 ## 0.40.0
 
 Vendors CrowdyCPP 0.94.1 and syncs CrowdyJS 18.40.0's schema and operations. Your code needs no change, and

@@ -17,7 +17,7 @@ from crowdypy import media, wire
 from crowdypy.client import AsyncCrowdyClient
 from crowdypy.datacenter_redirect import DatacenterMove
 from crowdypy.domains.portal import AppTokenResponse
-from crowdypy.errors import CrowdyReplicationError
+from crowdypy.errors import ApiFailure, CrowdyReplicationError, retry_wait_ms
 from crowdypy.replication import ConnState
 from crowdypy.sync import CrowdyClient
 from crowdypy.wire import DecayRate, MessageType
@@ -48,6 +48,8 @@ class World:
         self.channel: list[bytes] = []
         self.audio: list[bytes] = []
         self.client: Any = None
+        #: While set, the Application API refuses the server assignment with these extensions.
+        self.refusal: dict[str, Any] | None = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         body = httpx.Request("POST", "http://x", content=request.content).read()
@@ -57,6 +59,9 @@ class World:
         name = payload.get("operationName") or ""
         with self.lock:
             self.calls.append((name, request.headers.get("authorization", "")))
+        if name == "ServerWithLeastClients" and self.refusal is not None:
+            error = {"message": "the platform is busy", "extensions": self.refusal}
+            return httpx.Response(200, json={"errors": [error]})
         if name == "ServerWithLeastClients":
             data = {
                 "serverWithLeastClients": {"ip4": "127.0.0.1", "ip6": None, "clientPort": self.port}
@@ -181,6 +186,29 @@ async def test_connect_without_an_app_token_says_what_it_needs(world: World) -> 
     with pytest.raises(CrowdyReplicationError) as caught:
         await client.udp.send_actor_update((0, 0, 0), ME)
     assert caught.value.code == "NotConnected"
+
+
+async def test_a_refused_assignment_says_why_on_the_error_connect_raises(world: World) -> None:
+    # CrowdyCPP 0.95.0's GameSession::failure: PLATFORM_BUSY means wait and connect again.
+    client = async_client(world)
+    world.refusal = {"code": "PLATFORM_BUSY", "retryAfterMs": 500}
+    with pytest.raises(CrowdyReplicationError) as refused:
+        await client.udp.connect(app_token(), **OPTIONS)
+    failure = refused.value.failure
+    assert failure == ApiFailure("Rejected", "PLATFORM_BUSY", 500, "the platform is busy")
+    assert failure is not None
+    assert failure.platform_busy()
+    connection = client.udp.connection
+    assert connection is not None
+    assert connection.last_assignment_failure() == failure
+
+    world.refusal = None
+    await asyncio.sleep(retry_wait_ms(failure.retry_after_ms) / 1000)
+    status = await client.udp.connect()
+    assert status.state in (ConnState.CONNECTING, ConnState.CONNECTED)
+    assert not connection.last_assignment_failure().failed()
+    await client.udp.disconnect()
+    await client.aclose()
 
 
 async def test_a_datacenter_move_reassigns_the_udp_session(world: World) -> None:

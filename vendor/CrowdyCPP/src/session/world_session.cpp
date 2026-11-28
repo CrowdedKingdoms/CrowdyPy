@@ -123,9 +123,32 @@ void WorldSession::installHandlers() {
   };
   handlers.genericError = [this](const replication::GenericError& e) {
     const auto now = core::systemClock().monotonicMillis();
+    if (e.keepalive) {
+      // It answers a keepalive, so it is about no update and no edit, whatever used the
+      // same sequence number 256 sends earlier. UNAUTHORIZED comes every few seconds for
+      // as long as the actor is not present there: the connection reports it once
+      // (notPresent, below), and the repeats are not errors to keep. Any other code is
+      // recorded as a keepalive's.
+      if (e.code != wire::ErrorCode::Unauthorized) {
+        errors_.recordSend(e.sequence, SendKind::Heartbeat);
+        errors_.ingest(e, now);
+      }
+      return;
+    }
     self_->recordError(e, now);
     errors_.ingest(e, now);
     chunks_->ingestError(e);
+  };
+  handlers.notPresent = [this](const replication::ActorNotPresent& report) {
+    errors_.recordSend(report.sequence, SendKind::Heartbeat, report.uuid);
+    errors_.ingest(replication::GenericError{report.sequence, wire::ErrorCode::Unauthorized,
+                                             report.verified, /*keepalive=*/true},
+                   core::systemClock().monotonicMillis());
+    if (config_.onNotPresent) config_.onNotPresent(report);
+  };
+  handlers.notPresentEnded = [this](const replication::ActorNotPresent& report,
+                                    replication::NotPresentEnd why) {
+    if (config_.onNotPresentEnded) config_.onNotPresentEnded(report, why);
   };
   handlers.channelMessage = [this](const replication::ChannelNotification& n) {
     InboxMessage m;

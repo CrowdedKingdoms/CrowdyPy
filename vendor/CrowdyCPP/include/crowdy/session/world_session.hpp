@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "crowdy/session/chunk_store.hpp"
@@ -98,6 +99,16 @@ struct WorldSessionConfig {
   /// removed the actor from `actors()` and fired its onLeave; this is for state
   /// the game keeps outside the store (voice/video textures, name tags).
   std::function<void(const core::ActorUuid&, std::uint8_t reason)> onActorLeft;
+  /// A keepalive was refused UNAUTHORIZED: the actor is not present at that place, which
+  /// from realtime servers v0.51.0 is what having no `access` there looks like
+  /// (replication::ActorNotPresent, 0.95.0). Once per actor and place, however many
+  /// keepalives are refused there; errors() records that one refusal as a
+  /// SendKind::Heartbeat error. The session keeps sending keepalives at the same rate and
+  /// stays connected, so access granted later takes effect within about 6 seconds.
+  std::function<void(const replication::ActorNotPresent&)> onNotPresent;
+  /// That report ended: a keepalive or an update there was accepted, the actor moved to
+  /// another chunk, or its keepalives stopped.
+  std::function<void(const replication::ActorNotPresent&, replication::NotPresentEnd)> onNotPresentEnded;
 };
 
 class WorldSession {
@@ -121,6 +132,10 @@ class WorldSession {
   replication::Connection& connection() { return *conn_; }
 
   const core::ActorUuid& actorUuid() const { return uuid_; }
+  /// The not-present report that stands for this session's actor, if one does: its
+  /// keepalive was refused where `chunk` says (WorldSessionConfig::onNotPresent). tick()
+  /// makes and ends it.
+  std::optional<replication::ActorNotPresent> notPresent() const { return conn_->notPresent(uuid_); }
   bool amIHost() const { return amIHost_; }
   /// The elected host's user id ("" while unknown).
   const std::string& hostUserId() const { return hostUserId_; }

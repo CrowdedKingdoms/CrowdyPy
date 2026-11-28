@@ -109,7 +109,6 @@ FleetSession = "AsyncFleetSession"
 "query.crmSyncStatus" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.freeTierLevels" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.orgAppLimit" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
-"query.orgComputeCeiling" = { kind = "browser-exclusion", reason = "an organization's compute ceiling as Studio shows it; CrowdyJS does not wrap it" }
 "query.portalReturnAllowed" = { kind = "browser-exclusion", reason = "asked by Studio's hosted sign-in page when a player cancels; CrowdyJS does not wrap it" }
 "query.orgFreeTier" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
 "query.orgProjectProfile" = { kind = "browser-exclusion", reason = "an organization's free tier, profile and app cap, the tier levels and the player trial, read by Studio, or the operator's CRM reads; not a game-client surface" }
@@ -173,7 +172,6 @@ FleetSession = "AsyncFleetSession"
 "FleetSession.forgetActor" = { kind = "native-equivalent", reason = "CrowdyCPP's session keeps no table of a player's actors and sends no heartbeat by itself, so there is nothing to forget: the game server calls send_heartbeat(player, chunk, uuid) every 2 seconds for an idle actor and stops when the actor leaves" }
 "FleetSession.settled" = { kind = "native-equivalent", reason = "CrowdyCPP verifies every datagram in its network thread before it queues it, and poll() returns once the handlers of everything queued have run; there is no pending verification to wait for" }
 "FleetSession.status" = { kind = "native-equivalent", reason = "session.state, CrowdyCPP's ConnState as a player's connection reports it (the `status` handler receives it); a release by the realtime server is the session_released handler and move_ordered" }
-"FleetSession.tableLimit" = { kind = "native-equivalent", reason = "CrowdyCPP's session has no table limit of its own: the realtime server answers a carry past max_players with status 4 (FleetCarryOutcome.SESSION_FULL), and a carry that is refused or times out leaves the table" }
 "FleetSession.tick" = { kind = "native-equivalent", reason = "CrowdyCPP's network thread does the session's timed work (capabilities, carry sends and retries); with manual_pump=True call pump(), and poll() reports the carries nothing answered" }
 "FleetSession.toJSON" = { kind = "native-equivalent", reason = "repr(session): the app, the game token id, the state, the server and the carried count, never a token" }
 
@@ -209,6 +207,7 @@ FleetSession = "AsyncFleetSession"
 "packMessageBundle" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.bundle" }
 "parseFleetDatagram" = { kind = "native-equivalent", reason = "crowdypy.fleet's session reads and verifies a whole datagram in CrowdyCPP's network thread and hands Python batches (FleetBatch); by hand it is crowdypy.wire.verify_signed_bundle or verify_fleet_frame, split_datagram and the three parse_fleet_* functions" }
 "parseNotification" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: parse_long_spatial, parse_channel_notification and parse_generic_error read one notification, and parse_datagram each member of a datagram" }
+"parsePlayerDatagram" = { kind = "native-equivalent", reason = "a player's connection reads and checks a whole datagram in CrowdyCPP's network thread (the signature, the app, the bundle) and hands Python batches; what it dropped is in connection.stats() (unsigned_notifications, wrong_app, hmac_failures). By hand it is crowdypy.wire.parse_datagram with verify_signed_bundle and verify_long_spatial" }
 "parseRelayFrame" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.parse_datagram (a relay frame is one datagram)" }
 "payloadBytesOf" = { kind = "native-equivalent", reason = "connection.stats(): CrowdyCPP's counters (datagrams, messages and bytes, by message type)" }
 "serializeActorHeartbeat" = { kind = "native-equivalent", reason = "the same codec, CrowdyCPP's, through crowdypy.wire: crowdypy.wire.encode_long_spatial with MessageType.CLIENT_ACTOR_HEARTBEAT" }

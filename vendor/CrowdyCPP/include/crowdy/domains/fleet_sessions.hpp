@@ -90,9 +90,44 @@ class FleetSessionsAPI : public DomainBase {
                     parsed(std::move(cb)));
   }
 
-  /// The same, naming the realtime server the session is connected to (the `ip4` and
-  /// `clientPort` it was given). The session stays there while that server still serves the
-  /// app; otherwise the answer's `server` is another one to connect to.
+  /// The same, naming the realtime server the session is connected to by the one address it
+  /// connected to (0.95.0): `currentServer.ip4` or `currentServer.ip6`, and the `clientPort`.
+  /// replication::fleetCurrentServer(server) makes one from a session answer's server. The
+  /// session stays there while that server still serves the app; otherwise the answer's
+  /// `server` is another one to connect to. Naming an `ip6` needs Application API v2.90.0.
+  /// A `currentServer` with both addresses or neither is refused before any request
+  /// (Errc::InvalidArgument; blocking, a graphql::CrowdyError with code "INVALID_ARGUMENT",
+  /// or an empty answer in a CROWDY_NO_EXCEPTIONS build), as the API would refuse it.
+  FleetSessionResponse refresh(std::string_view appId, std::string_view gameTokenId,
+                               const replication::FleetCurrentServer& currentServer) const {
+    if (!namesOneAddress(currentServer)) {
+#ifndef CROWDY_NO_EXCEPTIONS
+      throw graphql::CrowdyError("INVALID_ARGUMENT", kCurrentServerRefusal);
+#else
+      return {};
+#endif
+    }
+    return FleetSessionResponse::fromJson(execUnwrap(
+        kRefreshFleetSessionDocument, sessionVars(appId, gameTokenId, currentServer)));
+  }
+  void refreshAsync(std::string_view appId, std::string_view gameTokenId,
+                    const replication::FleetCurrentServer& currentServer, Callback cb) const {
+    if (!namesOneAddress(currentServer)) {
+      graphql::GraphQLOutcome out;
+      out.status = Errc::InvalidArgument;
+      out.kind = graphql::GraphQLErrorKind::Protocol;
+      out.errorMessage = kCurrentServerRefusal;
+      deliverAsync(std::move(out), parsed(std::move(cb)));
+      return;
+    }
+    execUnwrapAsync(kRefreshFleetSessionDocument,
+                    sessionVars(appId, gameTokenId, currentServer), {}, parsed(std::move(cb)));
+  }
+  /// Refusal text of a refresh whose `currentServer` does not name exactly one address.
+  static constexpr const char* kCurrentServerRefusal =
+      "refresh: currentServer names an ip4 or an ip6, exactly one of them, and a clientPort";
+
+  /// The same, by the server's `ip4` (the form 0.94.0 had; an `ip6` needs the form above).
   FleetSessionResponse refresh(std::string_view appId, std::string_view gameTokenId,
                                std::string_view currentIp4, int currentClientPort) const {
     return FleetSessionResponse::fromJson(execUnwrap(
@@ -107,8 +142,10 @@ class FleetSessionsAPI : public DomainBase {
   }
 
   /// Refresh the session a replication::FleetSession holds: its app, its gameTokenId and the
-  /// server it is on, which is left out when the session was told to move. Pass the answer
-  /// to applyFleetRefresh().
+  /// server it is on, named by the address the session connected to (its `ip4`, or its
+  /// `ip6` when it connected over IPv6; 0.95.0), which is left out when the session was
+  /// told to move. It sends replication::FleetSession::refreshInput(). Pass the answer to
+  /// applyFleetRefresh().
   FleetSessionResponse refresh(const replication::FleetSession& session) const {
     return FleetSessionResponse::fromJson(
         execUnwrap(kRefreshFleetSessionDocument, sessionVars(session)));
@@ -161,13 +198,25 @@ class FleetSessionsAPI : public DomainBase {
     vars["input"]["currentServer"]["clientPort"] = currentClientPort;
     return vars;
   }
+  static graphql::JVal sessionVars(std::string_view appId, std::string_view gameTokenId,
+                                   const replication::FleetCurrentServer& current) {
+    graphql::JVal vars = sessionVars(appId, gameTokenId);
+    // Exactly one address: the API refuses both, and neither.
+    if (!current.ip6.empty()) vars["input"]["currentServer"]["ip6"] = current.ip6;
+    else vars["input"]["currentServer"]["ip4"] = current.ip4;
+    vars["input"]["currentServer"]["clientPort"] = current.clientPort;
+    return vars;
+  }
+  static bool namesOneAddress(const replication::FleetCurrentServer& current) {
+    return current.ip4.empty() != current.ip6.empty() && current.clientPort > 0;
+  }
   static graphql::JVal sessionVars(const replication::FleetSession& session) {
-    const std::string appId = std::to_string(session.appId());
-    const std::string gameTokenId = std::to_string(session.token().gameTokenId);
+    const replication::FleetRefreshInput input = session.refreshInput();
+    const std::string appId = std::to_string(input.appId);
+    const std::string gameTokenId = std::to_string(input.gameTokenId);
     // A session told to move asks for a new server by naming none.
-    if (session.moveOrdered()) return sessionVars(appId, gameTokenId);
-    const replication::Assignment server = session.server();
-    return sessionVars(appId, gameTokenId, server.ip4, server.clientPort);
+    if (!input.currentServer) return sessionVars(appId, gameTokenId);
+    return sessionVars(appId, gameTokenId, *input.currentServer);
   }
   static graphql::GraphQLCallback parsed(Callback cb) {
     return [cb = std::move(cb)](graphql::GraphQLOutcome out) mutable {
@@ -202,8 +251,8 @@ inline replication::Assignment fleetServerOf(const FleetSessionResponse& answer)
 
 /// The configuration of a replication::FleetSession for a session `openFleetSession`
 /// answered: `base` (your transport options, handlers of a move, carry timings) with the
-/// app, the fleet token and the realtime server taken from the answer, and `carryBurst`
-/// raised to the answer's `maxPlayers`.
+/// app, the fleet token, the realtime server and `maxPlayers` taken from the answer, and
+/// `carryBurst` raised to the answer's `maxPlayers`.
 ///
 ///   auto opened = client.admin().fleetSessions().open(appId);
 ///   replication::FleetSession fleet(fleetConfigOf(opened).value(), crypto);
@@ -221,6 +270,8 @@ inline Result<replication::FleetConfig> fleetConfigOf(const FleetSessionResponse
   base.appId = *appId;
   base.token = token;
   base.server = server;
+  // How many rows the session's table holds (replication::FleetSession::tableLimit()).
+  base.maxPlayers = opened.maxPlayers;
   // The server lets a session send its `maxPlayers` + 32 carries at once, so one that moves
   // to another realtime server can carry all its players again without waiting on the rate.
   if (opened.maxPlayers > base.carryBurst) base.carryBurst = opened.maxPlayers;
@@ -244,6 +295,8 @@ inline Status applyFleetRefresh(replication::FleetSession& session,
   if (token.token.empty() || refreshed.appIdInt64() != session.appId() ||
       token.gameTokenId != session.token().gameTokenId)
     return Errc::InvalidArgument;
+  // An operator may have changed how many players the session may carry.
+  if (refreshed.maxPlayers > 0) session.setMaxPlayers(refreshed.maxPlayers);
   return session.applyRefresh(token, fleetServerOf(refreshed));
 }
 

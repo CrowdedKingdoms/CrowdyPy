@@ -5,4 +5,4 @@ pins under `[tool.crowdypy.crowdycpp]`. It is written by
 `scripts/vendor_crowdycpp.py` and checked in CI by re-deriving it from that commit.
 Do not edit it: change CrowdyCPP, release it on the same tier, and re-vendor.
 
-Vendored from `prod/v0.94.1` (`b4a1fbb50f172c6f0037399b57391766b8343f4a`).
+Vendored from `test/v0.95.0` (`7e3795e40e4ca26b4213b5f12e931483ecc0ccdb`).

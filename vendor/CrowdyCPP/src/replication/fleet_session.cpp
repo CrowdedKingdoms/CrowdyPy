@@ -15,6 +15,9 @@ namespace {
 
 /// How long the silence check waits for the answer to the capabilities that last left, so
 /// that the acknowledgement of the advertisement sent as the timeout passes still counts.
+/// Never longer than the capabilities interval, and never past the timeout by more than
+/// itself (checkSilence): a wait that started again with every advertisement would, at an
+/// interval as short as itself, never end.
 constexpr std::int64_t kAcknowledgementGraceMs = 1'000;
 
 bool sameServer(const Assignment& a, const Assignment& b) {
@@ -149,6 +152,7 @@ FleetSession::FleetSession(FleetConfig config, const core::ICrypto& crypto,
       crypto_(crypto),
       clock_(clock),
       endpoint_(std::make_shared<Endpoint>(config_.server, config_.reassign)) {
+  maxPlayers_.store(config_.maxPlayers, std::memory_order_relaxed);
   // The session's CLIENT_CAPABILITIES binds it to its address, so it is not an option here.
   config_.transport.advertiseCapabilities = true;
   // An idle session hears only the acknowledgements of its capabilities, so three
@@ -191,6 +195,11 @@ FleetSession::FleetSession(FleetConfig config, const core::ICrypto& crypto,
     if (active_.channelAudio) active_.channelAudio(n, FleetRecipients{});
   };
   plain.genericError = [this](const GenericError& e) { onGenericError(e); };
+  // The connection ends the reports this session makes (onGenericError), as it does a
+  // player's: by the keepalives and updates that leave, and by time.
+  plain.notPresentEnded = [this](const ActorNotPresent& report, NotPresentEnd why) {
+    if (active_.notPresentEnded) active_.notPresentEnded(report, why);
+  };
   plain.status = [this](ConnState s) {
     onStatus(s);
     if (active_.status) active_.status(s);
@@ -227,6 +236,7 @@ FleetSession::Stats FleetSession::stats() const {
   stats.replacedIdFrames = replacedIdFrames_.load(std::memory_order_relaxed);
   stats.sessionReleases = sessionReleases_.load(std::memory_order_relaxed);
   stats.sendRefusalsNamed = sendRefusalsNamed_.load(std::memory_order_relaxed);
+  stats.carriesRefusedTableFull = carriesRefusedTableFull_.load(std::memory_order_relaxed);
   return stats;
 }
 
@@ -281,8 +291,7 @@ Status FleetSession::setServer(const Assignment& server) {
 }
 
 Status FleetSession::place(const Assignment& server, bool& advertised) {
-  const std::string& host =
-      (config_.transport.preferIpv6 && !server.ip6.empty()) ? server.ip6 : server.ip4;
+  const std::string& host = connectAddress(server, config_.transport.preferIpv6);
   if (host.empty() || server.clientPort <= 0) return Errc::InvalidArgument;
   // The game server has named the session's server: an order to move is answered, whether
   // or not the answer is the server it is on. The server named has the silence timeout to
@@ -316,11 +325,30 @@ Status FleetSession::place(const Assignment& server, bool& advertised) {
 
 Assignment FleetSession::server() const { return endpoint_->get(); }
 
+std::optional<FleetCurrentServer> fleetCurrentServer(const Assignment& server, bool preferIpv6) {
+  const std::string& address = connectAddress(server, preferIpv6);
+  if (address.empty() || server.clientPort <= 0) return std::nullopt;
+  FleetCurrentServer current;
+  // Exactly one address: the one a session connects to.
+  if (&address == &server.ip6) current.ip6 = address;
+  else current.ip4 = address;
+  current.clientPort = server.clientPort;
+  return current;
+}
+
+FleetRefreshInput FleetSession::refreshInput() const {
+  FleetRefreshInput input;
+  input.appId = config_.appId;
+  input.gameTokenId = token().gameTokenId;
+  // A session told to move asks for a new server by naming none.
+  if (!moveOrdered()) input.currentServer = fleetCurrentServer(server(), config_.transport.preferIpv6);
+  return input;
+}
+
 Status FleetSession::applyRefresh(const TokenInfo& token, const Assignment& server) {
   // Both are checked before either is taken, so a bad answer changes nothing.
   if (token.token.size() != wire::kTokenOctets) return Errc::InvalidArgument;
-  const std::string& host =
-      (config_.transport.preferIpv6 && !server.ip6.empty()) ? server.ip6 : server.ip4;
+  const std::string& host = connectAddress(server, config_.transport.preferIpv6);
   if (host.empty() || server.clientPort <= 0) return Errc::InvalidArgument;
   const bool sameSession = token.gameTokenId == connection_->credentials().gameTokenId;
   const bool stays = sameServer(endpoint_->get(), server);
@@ -453,24 +481,33 @@ Status FleetSession::carry(const PlayerToken& player, CarryCallback done) {
 
   std::lock_guard lock(playersMutex_);
   auto it = players_.find(player.gameTokenId);
+  bool moved = false;
   if (it == players_.end() && player.replaces != 0 && player.replaces != player.gameTokenId) {
     // The same player with a refreshed token: the row moves to the new id at once, and the
     // player stays carried.
     const auto old = rowOfLocked(player.replaces);
-    if (old != players_.end()) it = supersedeLocked(old, player);
-  } else {
-    if (it == players_.end()) {
-      it = players_.try_emplace(player.gameTokenId).first;
-      it->second.sendId = player.gameTokenId;
+    if (old != players_.end()) {
+      it = supersedeLocked(old, player);
+      moved = true;
     }
-    // Straight from the caller's string into the row: no copy of the token is left behind.
-    (void)it->second.key.assign(player.token);
-    beginAttempt(it->second);
   }
   if (it == players_.end()) {
-    // `replaces` named nobody this session holds: a first carry.
+    // A new player (also when `replaces` named nobody this session holds). A game server
+    // that never releases anyone must not grow the table without bound: past the limit the
+    // carry ends here, with nothing sent, and poll() reports it.
+    if (players_.size() >= tableLimit()) {
+      carriesRefusedTableFull_.fetch_add(1, std::memory_order_relaxed);
+      FleetCarryResult full;
+      full.playerGameTokenId = player.gameTokenId;
+      full.status = FleetCarryStatus::TableFull;
+      endedHere_.emplace_back(full, std::move(done));
+      return Errc::Ok;
+    }
     it = players_.try_emplace(player.gameTokenId).first;
     it->second.sendId = player.gameTokenId;
+  }
+  if (!moved) {
+    // Straight from the caller's string into the row: no copy of the token is left behind.
     (void)it->second.key.assign(player.token);
     beginAttempt(it->second);
   }
@@ -581,8 +618,13 @@ void FleetSession::checkSilence() {
   const std::int64_t now = clock_.monotonicMillis();
   const std::int64_t heard = connection_->lastVerifiedMs_.load(std::memory_order_relaxed);
   if (now - heard <= timeout) return;
-  // The capabilities that just left are still owed their acknowledgement.
-  if (now - connection_->lastCapsMs_ < kAcknowledgementGraceMs) return;
+  // The capabilities that just left are still owed their acknowledgement, for the grace or
+  // one capabilities interval, whichever is shorter, and for no longer than that past the
+  // timeout: at the shortest timeout an advertisement leaves every 1,000 ms, so "the last
+  // one is younger than the grace" was true at every pass and the timeout never fired
+  // (0.95.0). Every timeout now fires within one capabilities interval of its value.
+  const std::int64_t grace = std::min(kAcknowledgementGraceMs, config_.transport.advertiseIntervalMs);
+  if (now - heard < timeout + grace && now - connection_->lastCapsMs_ < grace) return;
   if (connection_->logger_.enabled(core::LogLevel::Warn)) {
     connection_->logger_.log(
         core::LogLevel::Warn,
@@ -677,6 +719,17 @@ std::vector<FleetPlayer> FleetSession::players() const {
   for (const auto& [id, player] : players_)
     out.push_back(FleetPlayer{id, player.userId, player.carried, player.attempt});
   return out;
+}
+
+std::size_t FleetSession::tableLimit() const noexcept {
+  const int named = maxPlayers_.load(std::memory_order_relaxed);
+  const std::size_t players =
+      named > 0 ? std::min(static_cast<std::size_t>(named), kFleetMaxPlayersCeiling) : kFleetMaxPlayersCeiling;
+  return players + kFleetTableMargin;
+}
+
+void FleetSession::setMaxPlayers(int maxPlayers) noexcept {
+  maxPlayers_.store(maxPlayers, std::memory_order_relaxed);
 }
 
 std::size_t FleetSession::carriedCount() const {
@@ -949,11 +1002,37 @@ std::int64_t FleetSession::refusedPlayer(std::uint8_t sequence) {
   return slot.player;
 }
 
+std::optional<ActorNotPresent> FleetSession::notPresent(std::int64_t playerGameTokenId,
+                                                        const core::ActorUuid& uuid) const {
+  std::int64_t sentAs = playerGameTokenId;
+  {
+    // The id the player's messages leave under, which a refreshed token's carry changes.
+    std::lock_guard lock(playersMutex_);
+    const auto it = rowOfLocked(playerGameTokenId);
+    if (it != players_.end() && it->second.sendId != 0) sentAs = it->second.sendId;
+  }
+  return connection_->notPresentFor(sentAs, uuid);
+}
+
 void FleetSession::onGenericError(const GenericError& error) {
   if (active_.genericError) active_.genericError(error);
   // Only a refusal the server signed names a player: an unsigned frame could carry any
   // sequence number. Neither changes a carry.
   if (!error.verified) return;
+  if (error.keepalive && error.code == wire::ErrorCode::Unauthorized) {
+    // A carried player's keepalive, refused: the player's actor is not present there
+    // (realtime servers v0.51.0: no access at that place). Every keepalive there is refused
+    // the same way, so this is told once, by notPresent, and not by sendRefused. The first
+    // report needs what sendRefused needs, a number that can only be that keepalive's; a
+    // report that stands is kept standing by any refusal of the player's keepalive there.
+    const auto sent = connection_->keepaliveAnswered(error.sequence);
+    if (!sent || sent->player == 0) return;  // the session's own keepalive registers no actor
+    const bool standing = connection_->notPresentFor(sent->player, sent->uuid).has_value();
+    if (!standing && refusedPlayer(error.sequence) != sent->player) return;
+    const auto report = connection_->keepaliveRefused(*sent, error.sequence, /*verified=*/true);
+    if (report && active_.notPresent) active_.notPresent(*report);
+    return;
+  }
   const std::int64_t player = refusedPlayer(error.sequence);
   if (player == 0) return;
   FleetSendRefused refused;
@@ -1169,9 +1248,10 @@ void FleetSession::expireCarries() {
   std::vector<std::int64_t> releaseOnServer;
   {
     std::lock_guard lock(playersMutex_);
-    if (!attemptsPending_) return;
+    // The carries that ended in carry() itself (TableFull) are reported first.
+    expired.swap(endedHere_);
     const std::int64_t now = clock_.monotonicMillis();
-    for (auto it = players_.begin(); it != players_.end();) {
+    for (auto it = players_.begin(); attemptsPending_ && it != players_.end();) {
       Player& player = it->second;
       if (!player.attempt || player.deadlineMs == 0 || now < player.deadlineMs) {
         ++it;
