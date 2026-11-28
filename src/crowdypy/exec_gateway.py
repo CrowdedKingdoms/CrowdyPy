@@ -281,18 +281,30 @@ def _no_socket(endpoint: ExecEndpoint) -> CrowdyExecError:
     )
 
 
-def _connect_failed(endpoint: ExecEndpoint, error: BaseException) -> CrowdyExecError:
-    """A failed connect, named by its gateway's scheme, host and port, with what the socket
-    said: the connect token and anything from ``?token=`` on taken out, cut at 200
-    characters."""
+def _socket_text(endpoint: ExecEndpoint | None, error: BaseException) -> str:
+    """What the socket said, as a message may show it: the connect token and anything from
+    ``?token=`` on taken out, on one line, cut at 200 characters."""
     text = str(error)
-    if endpoint.token:
+    if endpoint is not None and endpoint.token:
         text = text.replace(endpoint.token, "<token>")
         text = text.replace(quote(endpoint.token, safe=""), "<token>")
-    text = " ".join(_TOKEN_IN_QUERY.sub(r"\1<token>", text).split())[:200]
+    return " ".join(_TOKEN_IN_QUERY.sub(r"\1<token>", text).split())[:200]
+
+
+def _connect_failed(endpoint: ExecEndpoint, error: BaseException) -> CrowdyExecError:
+    """A failed connect, named by its gateway's scheme, host and port, with what the socket
+    said (:func:`_socket_text`)."""
     return CrowdyExecError(
-        "Unavailable", f"connecting to {_gateway_name(endpoint.gateway_url)} failed: {text}"
+        "Unavailable",
+        f"connecting to {_gateway_name(endpoint.gateway_url)} failed: "
+        f"{_socket_text(endpoint, error)}",
     )
+
+
+def _closed_why(endpoint: ExecEndpoint | None, error: BaseException) -> str:
+    """Why a connection the gateway closed ended. The close reason is the gateway's text, so
+    it is shown the way a failed connect's is: no connect token, one line, 200 characters."""
+    return f"the gateway closed the connection ({_socket_text(endpoint, error)})"
 
 
 def _status_error(status: int, payload: bytes) -> CrowdyExecError:
@@ -476,9 +488,7 @@ class AsyncExecConnection:
         try:
             ws = await connect(_url(endpoint), open_timeout=self._open_timeout, max_size=None)
         except ConnectionClosed as exc:
-            raise CrowdyExecError(
-                _closed_status(exc), f"the gateway closed the connection ({exc})"
-            ) from exc
+            raise CrowdyExecError(_closed_status(exc), _closed_why(endpoint, exc)) from exc
         except InvalidURI:
             raise _no_socket(endpoint) from None
         except (InvalidHandshake, OSError, TimeoutError) as exc:
@@ -504,7 +514,7 @@ class AsyncExecConnection:
                 if isinstance(message, bytes):
                     self._on_message(ws, message)
         except ConnectionClosed as exc:
-            status, why = _closed_status(exc), f"the gateway closed the connection ({exc})"
+            status, why = _closed_status(exc), _closed_why(self._endpoint, exc)
             ended = _access_ended(exc)
         finally:
             self._on_closed(ws, status, why, ended)
@@ -853,9 +863,7 @@ class ExecConnection:
                 # The connection outlives any with-block; entering it says so (websockets 17.1+).
                 ws.__enter__()
             except ConnectionClosed as exc:
-                raise CrowdyExecError(
-                    _closed_status(exc), f"the gateway closed the connection ({exc})"
-                ) from exc
+                raise CrowdyExecError(_closed_status(exc), _closed_why(endpoint, exc)) from exc
             except InvalidURI:
                 raise _no_socket(endpoint) from None
             except (InvalidHandshake, OSError, TimeoutError) as exc:
@@ -878,7 +886,7 @@ class ExecConnection:
                 if isinstance(message, bytes):
                     self._on_message(message)
         except ConnectionClosed as exc:
-            status, why = _closed_status(exc), f"the gateway closed the connection ({exc})"
+            status, why = _closed_status(exc), _closed_why(self._endpoint, exc)
             ended = _access_ended(exc)
         finally:
             self._on_closed(ws, status, why, ended)

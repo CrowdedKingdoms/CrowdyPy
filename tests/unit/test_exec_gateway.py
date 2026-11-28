@@ -581,6 +581,28 @@ async def test_a_failed_connect_names_the_gateway_and_never_the_token() -> None:
         assert "pw@" not in str(error)
 
 
+def test_a_close_reason_is_shown_without_the_token_on_one_line_and_bounded() -> None:
+    from crowdypy.exec_gateway import _closed_why
+
+    token = "connect-token-" + "s" * 50
+    endpoint = ExecEndpoint(
+        gateway_url=f"wss://gw.example.org/?token={token}", token=token, host="h"
+    )
+    # The close reason is the gateway's text: it is treated as a failed connect's is.
+    why = _closed_why(
+        endpoint, RuntimeError(f"closed 1008 for wss://gw/?token={token}\r\n" + "x" * 900)
+    )
+    assert why.startswith(
+        "the gateway closed the connection (closed 1008 for wss://gw/?token=<token>"
+    )
+    assert token not in why
+    assert "\n" not in why
+    assert "\r" not in why
+    assert len(why) <= len("the gateway closed the connection ()") + 200
+    # A connection that never had an endpoint still answers, and still hides a token in a query.
+    assert "tail" not in _closed_why(None, RuntimeError("closed ?token=secret-tail"))
+
+
 def test_a_dropped_read_waits_the_apis_hint_up_to_30_seconds() -> None:
     from crowdypy._dropped_read import dropped_read_wait_ms
 
