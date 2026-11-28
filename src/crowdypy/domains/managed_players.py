@@ -57,7 +57,7 @@ __all__ = [
     "private_jwk_member",
 ]
 
-#: The most players one :meth:`ManagedPlayersAPI.remove_many` call names.
+#: The most players one :meth:`ManagedPlayersAPI.delete_many` call names.
 MANAGED_PLAYERS_DELETE_MAX = 100
 
 #: The JWK members only a private key has (RFC 7518); the API refuses a key with any.
@@ -187,7 +187,7 @@ class ManagedPlayersAPI(Domain):
             )
         )
 
-    async def remove_many(self, org_id: str | int, external_ids: Sequence[str]) -> dict[str, Any]:
+    async def delete_many(self, org_id: str | int, external_ids: Sequence[str]) -> dict[str, Any]:
         """Delete up to 100 players in one call (0.41.0, Application API v2.90.0). Each is
         deleted as :meth:`delete` deletes one, with the same authorization. The answer counts
         each outcome (``deleted``, ``notFound``, ``held``) and names every external id sent,
@@ -205,13 +205,13 @@ class ManagedPlayersAPI(Domain):
         """
         if isinstance(external_ids, (str, bytes)) or not isinstance(external_ids, Sequence):
             raise ValueError(
-                "managed_players.remove_many takes a list of 1 to "
+                "managed_players.delete_many takes a list of 1 to "
                 f"{MANAGED_PLAYERS_DELETE_MAX} external ids"
             )
         count = len(external_ids)
         if not 1 <= count <= MANAGED_PLAYERS_DELETE_MAX:
             raise ValueError(
-                f"managed_players.remove_many takes 1 to {MANAGED_PLAYERS_DELETE_MAX} "
+                f"managed_players.delete_many takes 1 to {MANAGED_PLAYERS_DELETE_MAX} "
                 f"external ids, and was given {count}"
             )
         result: dict[str, Any] = await self._request(

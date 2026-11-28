@@ -254,10 +254,9 @@ of its `AGENTS.md` are the list of what changed; read them before a change here.
   is the whole URL, connect token included) and raises with no cause, and scrubs the token
   from any other socket error. Anything new that puts a caller's value or a server's text in
   a message describes it or bounds it first.
-- **`managed_players.remove_many`** is CrowdyCPP's name (`removeMany`), as the 0.41.0 task
-  asked, beside this repo's `delete`: CrowdyJS's `deleteMany` is classified
-  `native-equivalent`, and there is no `delete_many` alias because this SDK aliases nothing.
-  Rename it only together with the classification, the README and `MIGRATION.md`.
+- **`managed_players.delete_many`** is CrowdyJS's name (`deleteMany`), beside this repo's
+  `delete`. CrowdyCPP calls the pair `remove` and `removeMany` because `delete` is a C++
+  keyword. The branch first carried CrowdyCPP's name and was renamed before the merge.
 - **`AppTokenResponse.user_id`** is optional on purpose: `adopt_app_token` takes an answer an
   organization's server made, which may predate Application API v2.90.0. `_APP_TOKEN_FIELDS`
   selects `userId` for every token mutation (`domains/portal.py`, a CODEOWNERS path).

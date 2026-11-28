@@ -36,7 +36,7 @@ requirement names one exactly, the same way a caret never matches an npm prerele
 
 - 0.41.0 selects `userId` on every call that answers an app token (`portal.mint_app_token`, `exchange_code`,
   `refresh`, `exchange_managed_player_assertion`, and `sign_in_with_minecraft`), so those need Application API
-  v2.90.0; so do `managed_players.remove_many` and an `ip6` in a fleet refresh's `currentServer`.
+  v2.90.0; so do `managed_players.delete_many` and an `ip6` in a fleet refresh's `currentServer`.
   `managed_players.settings` selects the fleet limits (v2.89.0) and `exec.org_compute_ceiling` needs v2.88.0. An
   older Application API answers these with a GraphQL validation error. The refused-keepalive report
   (`not_present`) describes realtime servers v0.51.0; an older server accepts a keepalive wherever it is sent, so

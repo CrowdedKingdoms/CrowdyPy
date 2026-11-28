@@ -215,7 +215,7 @@ def test_no_operation_mints_with_an_org_token() -> None:
 # ---- CrowdyJS 18.41.0, Application API v2.90.0 ----
 
 
-async def test_remove_many_deletes_up_to_100_players_and_names_each_outcome(
+async def test_delete_many_deletes_up_to_100_players_and_names_each_outcome(
     api: MockApi, graphql: AsyncGraphQLClient
 ) -> None:
     answer = {
@@ -231,7 +231,7 @@ async def test_remove_many_deletes_up_to_100_players_and_names_each_outcome(
     api.reply_with_root(answer)
     players = ManagedPlayersAPI(graphql)
     # A held player does not fail the call: the answer says which.
-    removed = await players.remove_many(3, ("acct-1", "acct-2", "acct-3", "acct-1"))
+    removed = await players.delete_many(3, ("acct-1", "acct-2", "acct-3", "acct-1"))
     assert removed == answer
     assert api.last.operation_name == "DeleteManagedPlayers"
     assert "deleteManagedPlayers(input: $input)" in api.last.query
@@ -241,9 +241,9 @@ async def test_remove_many_deletes_up_to_100_players_and_names_each_outcome(
         "input": {"orgId": "3", "externalIds": ["acct-1", "acct-2", "acct-3", "acct-1"]}
     }
 
-    await players.remove_many("3", [f"acct-{n}" for n in range(MANAGED_PLAYERS_DELETE_MAX)])
+    await players.delete_many("3", [f"acct-{n}" for n in range(MANAGED_PLAYERS_DELETE_MAX)])
     assert len(api.last.variables["input"]["externalIds"]) == 100
-    assert not hasattr(players, "delete_many")  # one name; this SDK aliases none
+    assert not hasattr(players, "remove_many")  # one name; this SDK aliases none
 
 
 @pytest.mark.parametrize(
@@ -255,12 +255,12 @@ async def test_remove_many_deletes_up_to_100_players_and_names_each_outcome(
         (None, "takes a list of 1 to 100 external ids"),
     ],
 )
-async def test_remove_many_refuses_no_ids_and_more_than_100_before_any_request(
+async def test_delete_many_refuses_no_ids_and_more_than_100_before_any_request(
     api: MockApi, graphql: AsyncGraphQLClient, external_ids: Any, said: str
 ) -> None:
     assert MANAGED_PLAYERS_DELETE_MAX == 100
     with pytest.raises(ValueError, match=said) as refused:
-        await ManagedPlayersAPI(graphql).remove_many(3, external_ids)
+        await ManagedPlayersAPI(graphql).delete_many(3, external_ids)
     assert "secret" not in str(refused.value)  # it says how many, and names none
     assert api.sent == []
 

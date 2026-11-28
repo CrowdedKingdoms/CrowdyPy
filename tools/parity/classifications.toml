@@ -168,7 +168,6 @@ FleetSession = "AsyncFleetSession"
 # --- native-equivalent
 "CrowdyClient.close" = { kind = "native-equivalent", reason = "AsyncCrowdyClient.aclose(), the asyncio spelling; the blocking CrowdyClient has close()" }
 "KitError.from" = { kind = "native-equivalent", reason = "KitError.from_error(error): `from` is a Python keyword" }
-"ManagedPlayersAPI.deleteMany" = { kind = "native-equivalent", reason = "managed_players.remove_many(org_id, external_ids), CrowdyCPP's name for it (removeMany): the same mutation, the same 1 to 100 ids refused before any request, and MANAGED_PLAYERS_DELETE_MAX" }
 "FleetNotCarriedError.code" = { kind = "native-equivalent", reason = "error.code, the attribute every CrowdyReplicationError carries: 'NotCarried', CrowdyCPP's name for the refusal (Errc::NotCarried)" }
 "FleetSession.forgetActor" = { kind = "native-equivalent", reason = "CrowdyCPP's session keeps no table of a player's actors and sends no heartbeat by itself, so there is nothing to forget: the game server calls send_heartbeat(player, chunk, uuid) every 2 seconds for an idle actor and stops when the actor leaves" }
 "FleetSession.settled" = { kind = "native-equivalent", reason = "CrowdyCPP verifies every datagram in its network thread before it queues it, and poll() returns once the handlers of everything queued have run; there is no pending verification to wait for" }

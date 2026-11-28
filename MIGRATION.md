@@ -11,7 +11,7 @@ realtime servers v0.51.0, and ck-exec 0.26.1, which have been on dev, test, and 
 **One change needs a server release:** every call that answers an app token now selects `userId`, so
 `portal.mint_app_token`, `exchange_code`, `refresh`, `exchange_managed_player_assertion`, and
 `sign_in_with_minecraft` need Application API v2.90.0. An older API refuses them with a GraphQL validation error.
-`managed_players.remove_many` and an `ip6` in a fleet refresh's `currentServer` need v2.90.0 too. Everything else
+`managed_players.delete_many` and an `ip6` in a fleet refresh's `currentServer` need v2.90.0 too. Everything else
 needs what 0.40.0 needs.
 
 **Three things behave differently with no change to your code:**
@@ -70,8 +70,8 @@ What is new:
 - **`AppTokenResponse.user_id`**: the user the token signs in, as a decimal string, on every call that answers
   an app token. `adopt_app_token` reads it from the answer your server hands the device, and it is `None` for an
   answer without it.
-- **`client.managed_players.remove_many(org_id, external_ids)`** deletes 1 to 100 players in one call
-  (`deleteManagedPlayers`; CrowdyJS names it `deleteMany`, CrowdyCPP `removeMany`). It raises `ValueError` before
+- **`client.managed_players.delete_many(org_id, external_ids)`** deletes 1 to 100 players in one call
+  (`deleteManagedPlayers`; CrowdyJS's `deleteMany`, CrowdyCPP's `removeMany`). It raises `ValueError` before
   any request for no ids or more than `MANAGED_PLAYERS_DELETE_MAX`. The answer counts `deleted`, `notFound`, and
   `held`, and `players` names each id once with its `outcome`: `DELETED`, `NOT_FOUND`, or `LEGAL_HOLD`. A held
   player does not fail the call.
