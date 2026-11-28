@@ -68,6 +68,10 @@ QUIET: dict[str, Any] = {
     "bundle_sends": False,
     "capabilities_interval_ms": 3_600_000,
     "silence_timeout_ms": 0,
+    # A carry is sent once unless a test asks for re-sends. At the default (250 ms) a slow
+    # runner's answer came after a re-send, and the next read took that re-send for the next
+    # player's carry (Windows, 2026-11-28).
+    "carry_retry_ms": 3_600_000,
 }
 
 
