@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/application-api.graphql).
-// schema.gql sha256: e5208bcab442f867d017408ab63a1467289ac05e6df6ff28a1cee9a0e72ed087
-// operations sha256: c1ac9408e125fccfd99e6cae63238e2cfabae915de5168311b755bd1321340dc
+// schema.gql sha256: 22595915cfc02c8ccfaa01bcf3c330b42ceeeb729e939eab6881795738945cf8
+// operations sha256: eb30824b4030a900259f587fafbccbd74c092f37262db30454301712ae9bef76
 
 #pragma once
 
@@ -5090,6 +5090,20 @@ query ExecAppStatus($appId: BigInt!) {
   }
 }
 
+query OrgComputeCeiling($orgId: BigInt!) {
+  orgComputeCeiling(orgId: $orgId) {
+    orgId
+    maxInstances
+    maxReservedMb
+    operatorSet
+    funded
+    defaultMaxInstances
+    defaultMaxReservedMb
+    reason
+    updatedAt
+  }
+}
+
 mutation ExecActivateVersion($appId: BigInt!, $version: Int!) {
   execActivateVersion(appId: $appId, version: $version) {
     ...ExecAppStatusFields
@@ -5586,6 +5600,20 @@ fragment ExecAppStatusFields on ExecAppStatus {
   reservedMb
 })gql";
 inline constexpr std::string_view kExecAppStatusOperationName = "ExecAppStatus";
+inline constexpr std::string_view kOrgComputeCeilingIsolatedDocument = R"gql(query OrgComputeCeiling($orgId: BigInt!) {
+  orgComputeCeiling(orgId: $orgId) {
+    orgId
+    maxInstances
+    maxReservedMb
+    operatorSet
+    funded
+    defaultMaxInstances
+    defaultMaxReservedMb
+    reason
+    updatedAt
+  }
+})gql";
+inline constexpr std::string_view kOrgComputeCeilingOperationName = "OrgComputeCeiling";
 inline constexpr std::string_view kExecActivateVersionIsolatedDocument = R"gql(mutation ExecActivateVersion($appId: BigInt!, $version: Int!) {
   execActivateVersion(appId: $appId, version: $version) {
     ...ExecAppStatusFields
@@ -6169,6 +6197,7 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "ExecVersions") return kExecVersionsIsolatedDocument;
   if (operationName == "ExecEndpointStats") return kExecEndpointStatsIsolatedDocument;
   if (operationName == "ExecAppStatus") return kExecAppStatusIsolatedDocument;
+  if (operationName == "OrgComputeCeiling") return kOrgComputeCeilingIsolatedDocument;
   if (operationName == "ExecActivateVersion") return kExecActivateVersionIsolatedDocument;
   if (operationName == "ExecSetEnabled") return kExecSetEnabledIsolatedDocument;
   if (operationName == "ExecRestartType") return kExecRestartTypeIsolatedDocument;
@@ -7113,6 +7142,18 @@ mutation DeleteManagedPlayer($orgId: BigInt!, $externalId: String!) {
   deleteManagedPlayer(orgId: $orgId, externalId: $externalId)
 }
 
+mutation DeleteManagedPlayers($input: DeleteManagedPlayersInput!) {
+  deleteManagedPlayers(input: $input) {
+    deleted
+    notFound
+    held
+    players {
+      externalId
+      outcome
+    }
+  }
+}
+
 query OrgManagedPlayerSettings($orgId: BigInt!) {
   orgManagedPlayerSettings(orgId: $orgId) {
     orgId
@@ -7122,6 +7163,9 @@ query OrgManagedPlayerSettings($orgId: BigInt!) {
     mintsPerMinute
     defaultSessionTtlSeconds
     maxSessionTtlSeconds
+    fleetSessionsEnabled
+    maxFleetSessions
+    maxFleetPlayers
     termsVersion
     termsUrl
     termsAccepted
@@ -7237,6 +7281,18 @@ inline constexpr std::string_view kDeleteManagedPlayerIsolatedDocument = R"gql(m
   deleteManagedPlayer(orgId: $orgId, externalId: $externalId)
 })gql";
 inline constexpr std::string_view kDeleteManagedPlayerOperationName = "DeleteManagedPlayer";
+inline constexpr std::string_view kDeleteManagedPlayersIsolatedDocument = R"gql(mutation DeleteManagedPlayers($input: DeleteManagedPlayersInput!) {
+  deleteManagedPlayers(input: $input) {
+    deleted
+    notFound
+    held
+    players {
+      externalId
+      outcome
+    }
+  }
+})gql";
+inline constexpr std::string_view kDeleteManagedPlayersOperationName = "DeleteManagedPlayers";
 inline constexpr std::string_view kOrgManagedPlayerSettingsIsolatedDocument = R"gql(query OrgManagedPlayerSettings($orgId: BigInt!) {
   orgManagedPlayerSettings(orgId: $orgId) {
     orgId
@@ -7246,6 +7302,9 @@ inline constexpr std::string_view kOrgManagedPlayerSettingsIsolatedDocument = R"
     mintsPerMinute
     defaultSessionTtlSeconds
     maxSessionTtlSeconds
+    fleetSessionsEnabled
+    maxFleetSessions
+    maxFleetPlayers
     termsVersion
     termsUrl
     termsAccepted
@@ -7319,6 +7378,7 @@ inline constexpr std::string_view documentFor(std::string_view operationName) {
   if (operationName == "UpdateManagedPlayer") return kUpdateManagedPlayerIsolatedDocument;
   if (operationName == "EndManagedPlayerSessions") return kEndManagedPlayerSessionsIsolatedDocument;
   if (operationName == "DeleteManagedPlayer") return kDeleteManagedPlayerIsolatedDocument;
+  if (operationName == "DeleteManagedPlayers") return kDeleteManagedPlayersIsolatedDocument;
   if (operationName == "OrgManagedPlayerSettings") return kOrgManagedPlayerSettingsIsolatedDocument;
   if (operationName == "OrgSigningKeys") return kOrgSigningKeysIsolatedDocument;
   if (operationName == "RegisterOrgSigningKey") return kRegisterOrgSigningKeyIsolatedDocument;
@@ -9080,6 +9140,7 @@ mutation SignInWithMinecraft($input: SignInWithMinecraftInput!) {
   signInWithMinecraft(input: $input) {
     token
     gameTokenId
+    userId
     appId
     expiresAt
     applicationApiUrl
@@ -9105,6 +9166,7 @@ inline constexpr std::string_view kSignInWithMinecraftIsolatedDocument = R"gql(m
   signInWithMinecraft(input: $input) {
     token
     gameTokenId
+    userId
     appId
     expiresAt
     applicationApiUrl

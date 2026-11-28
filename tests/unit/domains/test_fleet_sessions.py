@@ -19,7 +19,12 @@ from conftest import MockApi
 from crowdypy import AsyncCrowdyClient, _server_only
 from crowdypy.auth_state import AuthState
 from crowdypy.domains.exec import CrowdyExecError, ExecAPI, ExecEndpoint
-from crowdypy.domains.fleet_sessions import FleetServer, FleetSessionAnswer, FleetSessionsAPI
+from crowdypy.domains.fleet_sessions import (
+    FleetServer,
+    FleetSessionAnswer,
+    FleetSessionsAPI,
+    fleet_current_server,
+)
 from crowdypy.errors import (
     FLEET_SESSION_LIMIT_CODE,
     NOT_FOUND_CODE,
@@ -36,7 +41,12 @@ from crowdypy.errors import (
     retry_after_ms_of,
 )
 from crowdypy.graphql import AsyncGraphQLClient
-from crowdypy.inputs import CloseFleetSessionInput, CurrentServerInput, RefreshFleetSessionInput
+from crowdypy.inputs import (
+    CloseFleetSessionInput,
+    CurrentServerInput,
+    FleetCurrentServerInput,
+    RefreshFleetSessionInput,
+)
 from crowdypy.sync import CrowdyClient
 
 ORG_TOKEN = "cko_" + "o" * 60
@@ -403,3 +413,92 @@ async def test_connect_as_server_opens_a_server_connection_and_redials_with_a_ne
         assert await hubs.call_as("77", "player", "p-77", "grant") is True
         await hubs.close()
         await client.aclose()
+
+
+# ---- CrowdyJS 18.41.0, Application API v2.90.0: currentServer names one address ----
+
+IP4, IP6 = "203.0.113.10", "2001:db8::10"
+
+
+def test_fleet_current_server_names_one_address_and_the_port() -> None:
+    both = FleetServer(ip4=IP4, ip6=IP6, client_port=9000, server_id="rt-1", clients=12)
+    assert fleet_current_server(both) == {"ip4": IP4, "clientPort": 9000}
+    assert fleet_current_server(both, prefer_ipv6=True) == {"ip6": IP6, "clientPort": 9000}
+    assert fleet_current_server(FleetServer(ip6=IP6, client_port=9000)) == {
+        "ip6": IP6,
+        "clientPort": 9000,
+    }
+    # The API's names, these names, and (ip4, ip6, client_port) are all taken.
+    assert fleet_current_server({"ip4": IP4, "ip6": None, "clientPort": 9000}) == {
+        "ip4": IP4,
+        "clientPort": 9000,
+    }
+    assert fleet_current_server({"ip6": IP6, "client_port": 9000}) == {
+        "ip6": IP6,
+        "clientPort": 9000,
+    }
+    assert fleet_current_server(("", IP6, 9000)) == {"ip6": IP6, "clientPort": 9000}
+    assert crowdypy.fleet_current_server is fleet_current_server
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        {"clientPort": 9000},
+        {"ip4": "", "ip6": None, "clientPort": 9000},
+        {"ip4": IP4},
+        {"ip4": IP4, "clientPort": 0},
+        {"ip4": IP4, "clientPort": "9000"},
+    ],
+)
+def test_fleet_current_server_refuses_a_server_with_no_address_or_no_port(
+    server: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="currentServer names no") as refused:
+        fleet_current_server(server)
+    assert IP4 not in str(refused.value)
+
+
+async def test_refresh_sends_one_address_whatever_it_is_given(
+    api: MockApi, graphql: AsyncGraphQLClient
+) -> None:
+    api.reply_with_root(ANSWER)
+    fleet = FleetSessionsAPI(graphql)
+    named = {"appId": "7", "gameTokenId": "9001"}
+
+    # A session answer's server as it is: both addresses and the fields the API refuses.
+    await fleet.refresh({**named, "currentServer": {**ANSWER["server"], "ip6": IP6}})
+    assert api.last.variables == {
+        "input": {**named, "currentServer": {"ip4": "203.0.113.9", "clientPort": 9000}}
+    }
+    # A server the session reached over IPv6.
+    await fleet.refresh({**named, "currentServer": {"ip6": IP6, "clientPort": 9000}})
+    assert api.last.variables == {
+        "input": {**named, "currentServer": {"ip6": IP6, "clientPort": 9000}}
+    }
+    await fleet.refresh(
+        RefreshFleetSessionInput(
+            app_id="7",
+            game_token_id="9001",
+            current_server=FleetCurrentServerInput(ip4=IP4, ip6=IP6, client_port=9000),
+        )
+    )
+    assert api.last.variables == {
+        "input": {**named, "currentServer": {"ip4": IP4, "clientPort": 9000}}
+    }
+    await fleet.refresh(
+        RefreshFleetSessionInput(
+            app_id="7",
+            game_token_id="9001",
+            current_server=FleetCurrentServerInput(ip6=IP6, client_port=9000),
+        )
+    )
+    assert api.last.variables == {
+        "input": {**named, "currentServer": {"ip6": IP6, "clientPort": 9000}}
+    }
+
+    # Neither address: refused before any request, as the API would refuse it.
+    sent = len(api.sent)
+    with pytest.raises(ValueError, match="no ip4 and no ip6"):
+        await fleet.refresh({**named, "currentServer": {"clientPort": 9000}})
+    assert len(api.sent) == sent

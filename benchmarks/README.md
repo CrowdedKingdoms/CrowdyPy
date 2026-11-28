@@ -163,3 +163,37 @@ bundling on, manual pump, and a peer that answers the 200 carries and is never r
 Before it signs, a send for a carried player looks the player up in the session's table, and
 afterwards it records the sequence number the message left under, each under a lock. Together
 they are the 70 ns a batch row costs over a player's connection.
+
+## Re-check, 0.41.0
+
+0.41.0 re-vendored CrowdyCPP 0.95.0 and added two row types and three counters to the binding.
+Both builds below ran back to back on the CKS builder on November 27, 2026, under CPython
+3.12.3 and the system's shared OpenSSL 3.0.13, each from its own build. Each row is three
+interleaved runs unless it says one.
+
+| | 0.40.0 (CrowdyCPP 0.94.1) | 0.41.0 (CrowdyCPP 0.95.0) |
+|---|---|---|
+| 1a. `send_actor_updates`, one batch of 200 | 746.1, 744.0, 740.2 ns/entity | 743.9, 738.7, 748.9 ns/entity |
+| 1a. `native.send_spatial` x200 | 915.0, 911.3, 926.7 ns/entity | 931.2, 930.6, 936.3 ns/entity |
+| 1a. `send_actor_update` x200 | 1043.8, 1041.7, 1097.9 ns/entity | 1070.5, 1057.8, 1071.4 ns/entity |
+| 2. notifications delivered to Python | 1.508, 1.514, 1.484 million/s | 1.716, 1.723, 1.710 million/s |
+| 2. mean batch | 19 events | 27 to 30 events |
+| 4. echo round trip, p50 (one run) | 83.6 µs | 75.0 µs |
+| 6. `fleet.send_actor_updates`, one batch of 200 players (one run) | 818.5 ns/entity | 811.6 ns/entity |
+
+**Receiving is 14% faster than 0.40.0 in section 2**, with no ring drop and no HMAC failure in
+either build: 1.72 against 1.50 million notifications a second. That is within 2% of the
+1.75 million that 0.39.1 (CrowdyCPP 0.93.0) measured on this machine the day before, so the
+loss the 0.40.0 re-check recorded is recovered, with the two checks a player's connection
+gained in CrowdyCPP 0.95.0 (a notification's signature and its app) included. A batch send is
+unchanged. A single send through the raw binding measured about 15 ns more (1.6%); its cause
+was not looked for.
+
+**`close()` returns under a flood.** A script like the 0.40.0 re-check's, which closes a
+connection after three seconds of section 2's flood with the blaster still running, returned
+in 0.2 to 0.3 ms in each of six runs with CrowdyCPP 0.95.0. With 0.94.1 it had not returned
+23 seconds later in four runs of six. Section 2 still stops its blaster before it closes, so that
+its last counters are read with nothing arriving.
+
+Section 6's ratio to a player's connection is unchanged: 1.09x for a batch row (811.6 against
+a mean of 743.8).

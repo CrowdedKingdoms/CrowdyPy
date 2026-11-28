@@ -11,6 +11,8 @@ CrowdyPy follows the [CrowdyJS](https://github.com/CrowdedKingdoms/CrowdyJS) API
 client, bound with [nanobind](https://github.com/wjakob/nanobind) and shipped inside the
 wheel. Python never touches a datagram.
 
+**v0.41.0: a refused keepalive is reported once, and a wait on a server's hint ends in 30 seconds.** From realtime servers v0.51.0, the server refuses a keepalive where the player has no `access`; the connection, the world session, and the fleet session report the refusal once (`not_present`) and say when the report ends. `connection.last_assignment_failure()` and `ExecConnection.last_connect_failure()` keep the Application API's refusal code and its `retry_after_ms`. A fleet session's table has a limit (`table_limit`, `table_full`), its silence timeout goes down to 3,000 ms, and `refresh_input()` names an IPv4 or an IPv6 server. From Application API v2.90.0, every app-token answer has `user_id`, and `managed_players.delete_many` deletes up to 100 players in one call. Vendors CrowdyCPP 0.95.0; schema at CrowdyJS 18.41.0. See [MIGRATION.md](MIGRATION.md).
+
 **v0.40.0: fleet sessions for an organization's game servers.** A game server opens one realtime session with the organization's org token (`client.fleet_sessions`), carries its players on it (`crowdypy.fleet`), and reaches hubs as itself (`client.exec.connect_as_server`, `call_as`). A player who moves between the organization's servers signs in once. Needs Application API v2.89.0 or later, realtime servers v0.50.3, and ck-exec 0.25.0 for the hub connection, and a Crowded Kingdoms operator switches fleet sessions on for an organization. See [Game servers: fleet sessions](#game-servers-fleet-sessions) and [MIGRATION.md](MIGRATION.md).
 
 **v0.39.1: a dropped build-status read no longer ends a Studio deploy.** `CrowdyStudioController`'s build wait and `exec.wait_for_mod_build` read the status again after no answer, an HTTP 5xx or 429 that is not the API's answer, or `PLATFORM_BUSY`, and a CLIENT-only project's mod listing and mod starter get one more try. A refusal still ends the wait. See [MIGRATION.md](MIGRATION.md).
@@ -263,6 +265,15 @@ too: `territory_not_supported_of` (with the `country`), `age_required_of` (give 
 age refusal at sign-up or at `record_player_age`, the same client is refused both for 24 hours
 whatever it sends: do not ask again.
 
+A `PLATFORM_BUSY` refusal names a wait (`platform_busy_of(error).retry_after_ms`). Pass it
+through `crowdypy.retry_wait_ms` before you wait on it: the result is never below 0 or above
+30 seconds (`MAX_RETRY_AFTER_WAIT_MS`), whatever the answer said. Every wait the SDK makes on
+a server's hint goes through it. When a connection could not be made, an `ApiFailure` says
+why: `code`, `retry_after_ms`, `message`, and `platform_busy()`.
+`connection.last_assignment_failure()` has it for a realtime server assignment, the error a
+failed `client.udp.connect()` raises carries it as `failure`, and a hub connection's
+`last_connect_failure()` has it for the connect call.
+
 ## Player safety
 
 `client.safety` is the player's own controls in one app, on the game client (the app token):
@@ -304,6 +315,35 @@ async for batch in conn.batches():
 Voxel positions and types are the app's signed 16-bit values, and a voxel state is at most
 1,024 bytes (`InvalidArgument` otherwise, nothing sent). Replication server v0.37.0 echoes
 every accepted voxel edit back to its sender as a `voxel_update`.
+
+From v0.51.0, the realtime servers accept a keepalive (`send_heartbeat`) only where they
+would accept the player's actor update. Where the player has no `access`, the server answers
+every keepalive `UNAUTHORIZED`, tells no other player of the actor, and sends the session
+nothing of the place. The session stays connected. The connection reports the refusal once
+for each actor and place:
+
+```python
+game.udp.subscribe(
+    {
+        "not_present": lambda report: hud.show_no_access(report.chunk),
+        # `end` is accepted, moved, or stopped.
+        "not_present_ended": lambda report, end: hud.clear(report.chunk),
+    }
+)
+report = game.udp.connection.not_present(my_uuid)  # the report that stands, or None
+```
+
+Keep sending keepalives at the same rate. Once access is granted, the next keepalive is
+accepted within about 6 seconds, with no new sign-in. A world session does the same
+(`session.on("not_present", ...)`, `session.not_present()`) and records one `heartbeat`
+error for the report. The refusals that follow every few seconds reach `generic_error`
+only, where `notification.keepalive` is true.
+
+A player's connection drops a notification that nothing signed and one that names another
+app, before any handler, and counts them in `connection.stats()`
+(`unsigned_notifications`, `wrong_app`). It reassigns on a `TOKEN_EXPIRED` refusal that
+arrived inside a signed bundle. For one that arrived alone, it asks its session provider
+for a fresh token instead, at most once every 30 seconds (`unverified_token_expired`).
 
 ## Voice
 
@@ -426,8 +466,10 @@ bearer.
   after it was opened or last refreshed.
 - **Limits.** An organization holds at most 512 fleet sessions at once, and a session
   carries at most 256 players, unless an operator set other numbers for the organization.
-  The answer's `max_players` is the session's own number. Open one session for each game
-  server.
+  The answer's `max_players` is the session's own number, and
+  `client.managed_players.settings(org_id)` reports the organization's
+  (`fleetSessionsEnabled`, `maxFleetSessions`, `maxFleetPlayers`). Open one session for each
+  game server.
 - **The fleet token is a signing key.** The Application API does not accept it as a bearer,
   and the repr of a `FleetSessionAnswer` and of a session never shows it.
 
@@ -444,11 +486,12 @@ game token id, the player's game token id, and the time. The result says how the
 
 | `status` | Meaning |
 | --- | --- |
-| `carried` | The session carries the player. `user_id` is the player's user id. |
+| `carried` | The session carries the player. `user_id` is the player's user id, the same one the sign-in's answer names (`userId`, Application API v2.90.0). |
 | `no_live_token` | The realtime servers know no live token by that id: it expired, the sign-in ended, or it belongs to another app. The session asked twice before it settled on this answer. |
 | `other_organization` | The token belongs to another organization's player. |
 | `proof_failed` | The proof or its time failed. A clock more than 30 seconds from the server's fails too. |
 | `session_full` | The session carries as many players as it may (`max_players`). |
+| `table_full` | The session's own table is full, and nothing was sent. Release the players who left, or open another session. |
 | `timed_out` | No answer came within 5 seconds of the first send. |
 | `refused` | A status this version of the SDK does not know. `wire_status` has the byte. |
 | `released`, `closed` | You called `release` for the player, or `close`, while the carry was waiting. |
@@ -461,6 +504,11 @@ game token id, the player's game token id, and the time. The result says how the
   sends at most 50 `FLEET_CARRY` messages a second, first sends and retries together
   (`max_carries_per_second`, at most 63). The realtime servers drop a session's carries past
   64 a second without an answer.
+- **The table holds `max_players` rows and 32 more** (`fleet.table_limit`): carried players
+  and carries that wait for their answer, together. A carry for a new player past the limit
+  ends `table_full`, and `fleet.stats()` counts it (`carries_refused_table_full`). A carry
+  for a player the table already holds is never refused this way. A refresh's answer can
+  name another `max_players`, and the limit follows.
 - **A crossing is a carry on the next server.** Stop sending for the player on this server,
   then give the next server the player's token over your own link. Its session carries the
   player, and this session's `released` handler fires with reason 1.
@@ -519,6 +567,25 @@ second), and idle timeout to it. Each send returns the message's sequence number
   chunk, uuid)` every 2 seconds for an actor that sends nothing else, so that it stays
   present. A heartbeat is not gameplay input and does not hold off the idle timeout.
 
+### A keepalive the server refuses is reported once
+
+From v0.51.0, the realtime servers accept a keepalive only where they would accept the
+player's actor update. Where a carried player has no `access`, the server answers each of
+that player's keepalives `UNAUTHORIZED`.
+
+- **The `not_present` handler is called once** for each player, actor, and place, with an
+  `ActorNotPresent`: `player_game_token_id`, `uuid`, `chunk`, `sequence`, and `verified`.
+  `fleet.not_present(player, uuid)` returns the report while it stands.
+- **The `not_present_ended` handler is called once** when the report ends, with the reason:
+  `accepted` (a keepalive there had no refusal for 3 seconds), `moved` (the player's next
+  keepalive or update named another chunk), or `stopped` (no keepalive was sent there for
+  30 seconds).
+- **Keep sending the player's keepalives at the same rate.** The session carries the player
+  as before. Once access is granted, the next keepalive is accepted within about 6 seconds.
+- **A fleet session reports only a refusal that verified.** The refusals reach
+  `generic_error` too, where `notification.keepalive` is true, and none of them reaches
+  `send_refused`. `fleet.stats()` counts them (`keepalives_refused`, `not_present_reports`).
+
 ### State arrives once for the session, and communications name their players
 
 Every notification handler receives `(notification, players)`:
@@ -563,13 +630,16 @@ refusal is 3 bytes: the message type, the sequence number of the send, and a cod
 
 `fleet.refresh_due()` is true once 12 of the session's 24 hours have passed. It is also true
 as soon as the realtime server tells the session to connect to another server, releases it,
-or says nothing that verifies for 45 seconds (`silence_timeout_ms`; the `move_ordered` and
-`session_released` handlers). Call `refreshFleetSession` then, with `fleet.refresh_input()`,
+or says nothing that verifies for 45 seconds (`silence_timeout_ms`, 3,000 ms at least, or 0
+for no timeout; the `move_ordered` and `session_released` handlers). Call `refreshFleetSession` then, with `fleet.refresh_input()`,
 and give the answer to `fleet.apply_refresh`.
 
 - **`refresh_input()` names the server the session is on**, so the session stays there
-  while that server still serves the app. After a move order it names no server, and the
-  answer's `server` is the next one.
+  while that server still serves the app. It names the one address the session connected
+  to: the `ip4`, or the `ip6` for a server with no `ip4` (Application API v2.90.0 takes
+  either). After a move order it names no server, and the answer's `server` is the next one.
+  `crowdypy.fleet_current_server(server)` makes the same `currentServer` from a session
+  answer's `server`.
 - **The same server:** the carries stand, and the session sends its capabilities again.
 - **Another server**, or the same one after it released the session or went quiet: the
   session connects, sends its capabilities, and carries every player again with a new time
@@ -608,6 +678,10 @@ await hubs.call_as(carry.user_id, "player", player_key, "grant", {"gold": 10})  
   is sent.
 - **The connection reconnects** with a fresh server connect token. `on_access_ended` fires
   when the org token is revoked or fleet sessions are switched off.
+- **A refused connect call says why.** The first `connect_as_server` raises the Application
+  API's error. For the reconnects that follow, `hubs.last_connect_failure()` is an
+  `ApiFailure` with the refusal's `code` and `retry_after_ms`: `platform_busy()` means wait
+  that long and call again.
 
 ### Refusals carry a code
 
@@ -639,23 +713,18 @@ The four calls raise `CrowdyGraphQLError`. Branch on its `code` with these reade
 
 ### The session follows CrowdyCPP where CrowdyJS's differs
 
-CrowdyPy's session is CrowdyCPP's `replication::FleetSession`, so five things differ from
+CrowdyPy's session is CrowdyCPP's `replication::FleetSession`, so four things differ from
 `FleetSession` in CrowdyJS:
 
 - **Ids are integers.** Game token ids and user ids are `int` in results, and every method
   that takes one also takes its decimal string.
-- **The table has no limit of its own.** CrowdyJS ends a carry `tableFull` once its table
-  holds `maxPlayers` and 32 more rows. Here the realtime server answers a carry past
-  `max_players` with `session_full`, and a carry that is refused or times out leaves the
-  table.
 - **Actors get no automatic heartbeat.** CrowdyJS sends one every 2 seconds for each actor
   it has sent an update for. Here your server calls `send_heartbeat`.
 - **The state is the connection's.** `fleet.state` is a `ConnState`, as on a player's
   connection, where CrowdyJS has `status`. The `session_released` and `move_ordered`
   handlers report what CrowdyJS's `released` status does.
-- **The shortest silence timeout is 4,500 ms.** A shorter `silence_timeout_ms` that is not 0
-  is raised to it. CrowdyCPP 0.94.1 holds the capabilities interval to a third of the
-  timeout, and it never counts a silence while that interval is 1,000 ms or less.
+- **The `generic_error` handler takes two arguments**, `(notification, verified)`. CrowdyJS
+  passes `keepalive` as a third. Here it is `notification.keepalive`.
 
 The wire codecs are in `crowdypy.wire` for a server that builds the messages itself:
 `fleet_carry_proof`, `encode_fleet_carry`, `encode_fleet_release`, `verify_fleet_frame`,

@@ -116,7 +116,12 @@ class ClientSessionProvider final : public replication::ISessionProvider {
         rediscover_(std::move(rediscover)) {}
 
   Result<replication::Assignment> assignServer() override {
-    Result<replication::Assignment> assigned = assignOnce();
+    replication::AssignmentFailure why;
+    return assignServerOrSayWhy(why);
+  }
+
+  Result<replication::Assignment> assignServerOrSayWhy(replication::AssignmentFailure& why) override {
+    Result<replication::Assignment> assigned = assignOnce(why);
     if (assigned.ok() || !rediscover_) return assigned;
 
     // Assignment goes through the API client, so a failure here often means the
@@ -128,7 +133,8 @@ class ClientSessionProvider final : public replication::ISessionProvider {
     if (!rediscover_()) return assigned;
     logger_.log(core::LogLevel::Info,
                 "re-discovered an endpoint; retrying assignment");
-    return assignOnce();
+    why = replication::AssignmentFailure{};
+    return assignOnce(why);
   }
 
   Result<replication::TokenInfo> refreshToken() override { return refreshToken(nullptr); }
@@ -161,28 +167,35 @@ class ClientSessionProvider final : public replication::ISessionProvider {
       return info;
 #ifndef CROWDY_NO_EXCEPTIONS
     } catch (const std::exception& e) {
-      logger_.log(core::LogLevel::Error, std::string("refreshToken failed: ") + e.what());
+      // The exception's text can be the API's message: bounded and one line, as above.
+      logger_.log(core::LogLevel::Error, "refreshToken failed: " + serverText(e.what()));
       return Errc::Rejected;
     }
 #endif
   }
 
  private:
-  Result<replication::Assignment> assignOnce() {
-#ifndef CROWDY_NO_EXCEPTIONS
-    try {
-#endif
-      domains::ServerAssignment a = serverStatus_.serverWithLeastClients();
-      if (a.clientPort <= 0 || (a.ip4.empty() && a.ip6.empty())) {
-        return Errc::Rejected;
-      }
-      return replication::Assignment{a.ip4, a.ip6, a.clientPort};
-#ifndef CROWDY_NO_EXCEPTIONS
-    } catch (const std::exception& e) {
-      logger_.log(core::LogLevel::Error, std::string("assignServer failed: ") + e.what());
+  /// One serverWithLeastClients call. A failure is Errc::Rejected, as it always was, and
+  /// `why` keeps what the Application API said: its refusal code, its `retryAfterMs` and its
+  /// message (or the transport's, when there was no answer).
+  Result<replication::Assignment> assignOnce(replication::AssignmentFailure& why) {
+    domains::ServerAssignment a;
+    const graphql::GraphQLOutcome out = serverStatus_.serverWithLeastClientsOutcome(a);
+    if (!out.ok()) {
+      // apiFailureOf bounds what the API sent (crowdy::bounded): the code and the message are
+      // a server's text, at most 64 and 500 characters and one line, so the log line is too.
+      why = graphql::apiFailureOf(out);
+      why.error = Errc::Rejected;  // what a failed assignment has always answered
+      logger_.log(core::LogLevel::Error,
+                  "assignServer failed: " + (why.code.empty() ? why.message : why.code + ": " + why.message));
       return Errc::Rejected;
     }
-#endif
+    if (a.clientPort <= 0 || (a.ip4.empty() && a.ip6.empty())) {
+      why.error = Errc::Rejected;
+      why.message = "the answer names no server";
+      return Errc::Rejected;
+    }
+    return replication::Assignment{a.ip4, a.ip6, a.clientPort};
   }
 
   domains::ServerStatusAPI& serverStatus_;

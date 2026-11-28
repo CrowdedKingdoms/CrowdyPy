@@ -1,8 +1,8 @@
 {
   "fixtureVersion": 1,
   "crowdyJs": {
-    "version": "18.40.0",
-    "commit": "3aed4a4773d617d11ecbcc9db96981a436c199b3"
+    "version": "18.41.0",
+    "commit": "359d3618323161d8b5a9664d2d1ca66cd2f968dd"
   },
   "errorCodes": [
     "AGENT_DISABLED",

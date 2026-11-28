@@ -2,8 +2,8 @@
 // Regenerate with: node scripts/codegen.mjs
 // Inputs: operations/**/*.graphql and schema.gql (synced from the published
 // SDL at https://docs.crowdedkingdoms.com/schema/application-api.graphql).
-// schema.gql sha256: e5208bcab442f867d017408ab63a1467289ac05e6df6ff28a1cee9a0e72ed087
-// operations sha256: c1ac9408e125fccfd99e6cae63238e2cfabae915de5168311b755bd1321340dc
+// schema.gql sha256: 22595915cfc02c8ccfaa01bcf3c330b42ceeeb729e939eab6881795738945cf8
+// operations sha256: eb30824b4030a900259f587fafbccbd74c092f37262db30454301712ae9bef76
 
 #pragma once
 
@@ -1134,6 +1134,28 @@ inline constexpr std::string_view toString(LegalAcceptanceMethod v) {
 inline std::optional<LegalAcceptanceMethod> legalAcceptanceMethodFromString(std::string_view s) {
   if (s == "CLICKWRAP") return LegalAcceptanceMethod::CLICKWRAP;
   if (s == "IN_GAME") return LegalAcceptanceMethod::IN_GAME;
+  return std::nullopt;
+}
+
+enum class ManagedPlayerDeletion {
+  DELETED,
+  NOT_FOUND,
+  LEGAL_HOLD,
+};
+
+inline constexpr std::string_view toString(ManagedPlayerDeletion v) {
+  switch (v) {
+    case ManagedPlayerDeletion::DELETED: return "DELETED";
+    case ManagedPlayerDeletion::NOT_FOUND: return "NOT_FOUND";
+    case ManagedPlayerDeletion::LEGAL_HOLD: return "LEGAL_HOLD";
+  }
+  return "";
+}
+
+inline std::optional<ManagedPlayerDeletion> managedPlayerDeletionFromString(std::string_view s) {
+  if (s == "DELETED") return ManagedPlayerDeletion::DELETED;
+  if (s == "NOT_FOUND") return ManagedPlayerDeletion::NOT_FOUND;
+  if (s == "LEGAL_HOLD") return ManagedPlayerDeletion::LEGAL_HOLD;
   return std::nullopt;
 }
 

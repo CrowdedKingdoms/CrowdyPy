@@ -28,12 +28,17 @@ from urllib.parse import urlsplit
 import msgspec
 
 from crowdypy._default_origin import CROWDY_DEFAULT_HTTP_ORIGIN
-from crowdypy._dropped_read import is_dropped_read, retry_after_ms_of
+from crowdypy._dropped_read import dropped_read_wait_ms, is_dropped_read
 from crowdypy._generated import operations as ops
 from crowdypy._generated.enums import ExecModScope
 from crowdypy._server_only import assert_organization_server
 from crowdypy.domains._base import Domain, omit_none, sleep
-from crowdypy.errors import CrowdyError, CrowdyProtocolError
+from crowdypy.errors import (
+    MAX_RETRY_AFTER_WAIT_MS,
+    CrowdyError,
+    CrowdyProtocolError,
+    retry_wait_ms,
+)
 from crowdypy.utils import bigint, decode_base64, encode_base64
 
 if TYPE_CHECKING:
@@ -68,6 +73,7 @@ __all__ = [
     "ExecStarterPack",
     "ExecStatus",
     "ExecVersion",
+    "OrgComputeCeiling",
     "exec_gateway_refusal",
     "exec_mod_type",
     "exec_status",
@@ -144,6 +150,14 @@ def is_name_list(value: object) -> TypeGuard[list[str]]:
     return isinstance(value, list) and all(isinstance(name, str) for name in value)
 
 
+def _retry_in_ms(digits: str) -> int:
+    """A gateway's "retry in N ms" as the SDK waits on it. Past the ceiling the digits only
+    say "longer", so a number too long to read is the ceiling."""
+    if len(digits) > 12:
+        return MAX_RETRY_AFTER_WAIT_MS
+    return int(retry_wait_ms(int(digits)))
+
+
 class CrowdyExecError(CrowdyError):
     """A call, subscription or connection that ck-exec refused or could not complete.
 
@@ -167,8 +181,10 @@ class CrowdyExecError(CrowdyError):
             status == "Busy" and message.startswith("rate limited")
         )
         retry_in = _RETRY_IN.search(message) if self.rate_limited else None
-        #: How long to wait before calling again, when the refusal says (``retry in N ms``).
-        self.retry_after_ms: int | None = int(retry_in.group(1)) if retry_in else None
+        #: How long to wait before calling again, when the refusal says (``retry in N ms``):
+        #: never below 0 or above ``MAX_RETRY_AFTER_WAIT_MS`` (30 s), whatever the gateway's
+        #: text said.
+        self.retry_after_ms: int | None = _retry_in_ms(retry_in.group(1)) if retry_in else None
 
 
 class ExecEndpoint(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -289,6 +305,29 @@ class ExecAppStatus(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
     instance_limit: int | None = None
     instances: int | None = None
     reserved_mb: int | None = None
+
+
+class OrgComputeCeiling(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
+    """What each of an organization's apps may run of compute modules in one datacenter once
+    the organization is funded: ``max_instances`` placed at once and ``max_reserved_mb`` of
+    memory they reserve (each instance reserves its type's memory limit times its copies).
+
+    ``operator_set`` is true when a Crowded Kingdoms operator set them for this organization,
+    with ``reason`` and ``updated_at``; otherwise they are the platform's defaults
+    (``default_max_instances``, ``default_max_reserved_mb``). While ``funded`` is false the
+    organization's apps keep the free tier limits whatever this says:
+    :meth:`ExecAPI.status` reports what an app has now.
+    """
+
+    org_id: str
+    max_instances: int
+    max_reserved_mb: int
+    operator_set: bool
+    funded: bool
+    default_max_instances: int
+    default_max_reserved_mb: int
+    reason: str | None = None
+    updated_at: str | None = None
 
 
 class ExecRestartResult(msgspec.Struct, rename="camel", frozen=True, kw_only=True):
@@ -678,6 +717,25 @@ def _same_estate(a: _Url, b: _Url) -> bool:
     return site_a == ".".join(b.host.split(".")[-2:]) and "." in site_a
 
 
+def _gateway_name(gateway_url: object) -> str:
+    """A gateway URL as an error message may show it: its scheme, host and port, and nothing
+    after them. The URL comes beside a connect token, so a URL that already carries
+    ``?token=``, or the token passed in the URL's place, must not reach a message. What is not
+    a URL is described by its length or its type."""
+    if not isinstance(gateway_url, str):
+        return f"a gateway URL of type {type(gateway_url).__name__}"
+    try:
+        parts = urlsplit(gateway_url)
+        scheme, host, port = parts.scheme, parts.hostname, parts.port
+    except ValueError:
+        scheme, host, port = "", None, None
+    if not scheme or not host:
+        return f"a gateway URL that does not parse (a string of {len(gateway_url)} characters)"
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{scheme}://{host}{f':{port}' if port is not None else ''}"
+
+
 def exec_gateway_refusal(game_api_url: str, gateway_url: str) -> str | None:
     """Why :meth:`ExecAPI.connect` would not dial ``gateway_url`` for a game API at
     ``game_api_url``, or ``None`` when it would.
@@ -696,7 +754,8 @@ def exec_gateway_refusal(game_api_url: str, gateway_url: str) -> str | None:
         return "it carries credentials"
     api = _parse_url(game_api_url)
     if api is None:
-        return f"the game API URL {game_api_url} is not absolute"
+        # Described and never shown: a URL that is not absolute can still carry credentials.
+        return f"the Application API URL is not absolute ({len(game_api_url)} characters)"
     if api.scheme == "https" and gateway.scheme != "wss":
         return "a game API on https: hands out wss: gateways only"
     if _same_estate(api, gateway):
@@ -890,6 +949,14 @@ class ExecAPI(Domain):
         payload = await self._request(ops.EXEC_APP_STATUS, {"appId": bigint(app_id)})
         return msgspec.convert(payload, ExecAppStatus)
 
+    async def org_compute_ceiling(self, org_id: str | int) -> OrgComputeCeiling:
+        """The organization's compute ceiling: what each of its apps may run in one datacenter
+        once it is funded, and whether an operator set it for this organization (0.41.0,
+        Application API v2.88.0). Read-only: an operator changes it. Requires
+        ``view_compute_diagnostics`` on the organization."""
+        payload = await self._request(ops.ORG_COMPUTE_CEILING, {"orgId": bigint(org_id)})
+        return msgspec.convert(payload, OrgComputeCeiling)
+
     async def activate_version(self, app_id: str | int, version: int) -> ExecAppStatus:
         """Make an earlier version active again, a rollback.
 
@@ -1051,7 +1118,7 @@ class ExecAPI(Domain):
             except Exception as error:
                 if not is_dropped_read(error) or time.monotonic() > until:
                     raise
-                await sleep(max(interval, retry_after_ms_of(error)) / 1000)
+                await sleep(dropped_read_wait_ms(error, interval) / 1000)
                 continue
             if build.status in ("succeeded", "failed"):
                 return build
@@ -1507,7 +1574,7 @@ class ExecAPI(Domain):
         )
         if why:
             raise CrowdyExecError(
-                "Unavailable", f"refusing the gateway {endpoint.gateway_url}: {why}"
+                "Unavailable", f"refusing the gateway {_gateway_name(endpoint.gateway_url)}: {why}"
             )
         return endpoint
 

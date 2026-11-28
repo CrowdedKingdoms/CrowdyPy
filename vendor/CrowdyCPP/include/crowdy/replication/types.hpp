@@ -35,6 +35,20 @@ struct Assignment {
   int clientPort = 0;
 };
 
+/// The address a connection opens its socket to for an assignment: the `ip6` when
+/// `preferIpv6` (Config::preferIpv6) and the server has one, otherwise the `ip4`, and the
+/// `ip6` when the server has no `ip4` (0.95.0; until then a server with an `ip6` alone was
+/// refused unless preferIpv6 was set). Empty for a server with neither.
+inline const std::string& connectAddress(const Assignment& server, bool preferIpv6) {
+  if (preferIpv6 && !server.ip6.empty()) return server.ip6;
+  return server.ip4.empty() ? server.ip6 : server.ip4;
+}
+
+/// Why a server assignment did not happen (Connection::lastAssignmentFailure(), 0.95.0):
+/// the Application API's refusal code and its `retryAfterMs`, which connect()'s one Errc
+/// cannot carry. See ApiFailure.
+using AssignmentFailure = ApiFailure;
+
 enum class ConnState : std::uint8_t {
   Idle = 0,
   Connecting,    ///< assigning a server / waiting for session-ready
@@ -75,6 +89,17 @@ struct SpeakerList {
     return {wire::SpeakerMode::Only, std::move(actors)};
   }
 };
+
+/// How many datagrams a connection reads from its socket at a time, and the most it reads
+/// in one receive pass (one Connection::pump(), or one turn of the network thread) before
+/// it does its other work and reads again. Connection::disconnect() waits for the batch in
+/// hand at most, whatever is still arriving.
+inline constexpr std::size_t kReceiveBatchDatagrams = 16;
+inline constexpr std::size_t kReceivePassDatagrams = 1'024;
+
+/// The least time between two fresh tokens a player's Connection asks its session provider
+/// for because of TOKEN_EXPIRED frames that nothing verified (GenericError::verified).
+inline constexpr std::int64_t kTokenCheckIntervalMs = 30'000;
 
 struct Config {
   std::int64_t appId = 0;
@@ -231,11 +256,82 @@ struct GenericError {
   wire::ErrorCode code;
   /// True when the frame arrived inside a MESSAGE_BUNDLE_SIGNED whose HMAC verified. An
   /// error frame ([3][sequence][code]) carries no HMAC of its own, so one that arrives any
-  /// other way is the word of whoever could put a datagram on the session's flow. A
-  /// FleetSession changes no state on an unverified one; a Connection acts on either, as it
-  /// always has.
+  /// other way is the word of whoever could put a datagram on the session's flow, and the
+  /// realtime servers send a player's session every error frame alone. Verified or not, a
+  /// frame settles the awaited send whose sequence number it names and reaches this handler.
+  /// A FleetSession changes no other state on an unverified one. A Connection reassigns on
+  /// a verified TOKEN_EXPIRED; on an unverified one it asks its session provider for a fresh
+  /// token (at most once every 30 seconds, and only when Config::refreshLeadMs is not 0) and
+  /// does what the provider's answer says (0.95.0; until then it reassigned on either).
   bool verified = false;
+  /// The frame answers a keepalive (CLIENT_ACTOR_HEARTBEAT, Connection::sendHeartbeat): the
+  /// last message this connection sent under `sequence` was one, within
+  /// kKeepaliveAnswerWaitMs (0.95.0). UNAUTHORIZED for a keepalive means the actor is not
+  /// present where the keepalive named, and the realtime servers answer every keepalive
+  /// there the same way, every few seconds. The connection reports that once, through
+  /// Handlers::notPresent; a handler that reads every frame can tell the repeats by this.
+  bool keepalive = false;
 };
+
+/// How long a keepalive's refusal may take to arrive, in milliseconds. A keepalive that has
+/// had no refusal for this long was accepted: the realtime servers answer an accepted
+/// keepalive with nothing and a refused one at once. It is longer than the 2 seconds between
+/// two keepalives (LocalActorStore's default), so one lost refusal does not read as
+/// acceptance.
+inline constexpr std::int64_t kKeepaliveAnswerWaitMs = 3'000;
+
+/// A not-present report ends by itself when no keepalive was sent for the actor there for
+/// this long: whoever sent them stopped keeping the actor present.
+inline constexpr std::int64_t kNotPresentIdleMs = 30'000;
+
+/// An actor's keepalive was answered UNAUTHORIZED: the actor is not present at `chunk`
+/// (0.95.0, for realtime servers v0.51.0). From v0.51.0 a keepalive is accepted only where
+/// the player's actor update would be, so where the player has no `access` every keepalive
+/// is refused: other players there are not told of the actor, and the session is sent
+/// nothing of the place. The session stays connected. Keep sending keepalives at the same
+/// rate: never faster, and never stop. Once access is granted the next keepalive is
+/// accepted within about 6 seconds, with no new sign-in.
+///
+/// One report stands per actor. It is made once, at the first refused keepalive
+/// (Handlers::notPresent), stays readable (Connection::notPresent), and ends once
+/// (Handlers::notPresentEnded) when a keepalive or an update there is accepted, when the
+/// actor's next keepalive or update names another chunk, or when its keepalives stop.
+struct ActorNotPresent {
+  core::ActorUuid uuid{};
+  /// The place: the chunk the refused keepalive named.
+  wire::ChunkCoord chunk;
+  /// The sequence number of the first refused keepalive.
+  std::uint8_t sequence = 0;
+  /// GenericError::verified of that refusal. The realtime servers send a player's session
+  /// every refusal alone and unsigned, so on a player's Connection this is false, and the
+  /// report changes nothing else in the connection: take it as what to show the player. A
+  /// fleet session reports only refusals that verified.
+  bool verified = false;
+  /// A fleet session only: the carried player whose keepalive it was (the game token id
+  /// the keepalive was sent for). 0 on a player's own Connection.
+  std::int64_t playerGameTokenId = 0;
+};
+
+/// Why a not-present report ended.
+enum class NotPresentEnd : std::uint8_t {
+  /// A keepalive for the actor there went kKeepaliveAnswerWaitMs without a refusal, or the
+  /// actor's own update there came back from the server: the actor is present.
+  Accepted = 1,
+  /// The actor's next keepalive or update named another chunk. Nothing is known of the new
+  /// place yet: a refused keepalive there makes a new report.
+  Moved = 2,
+  /// No keepalive was sent for the actor there for kNotPresentIdleMs.
+  Stopped = 3,
+};
+
+inline constexpr const char* notPresentEndName(NotPresentEnd end) noexcept {
+  switch (end) {
+    case NotPresentEnd::Accepted: return "Accepted";
+    case NotPresentEnd::Moved: return "Moved";
+    case NotPresentEnd::Stopped: return "Stopped";
+  }
+  return "Unknown";
+}
 
 /// Notification handlers, mirroring CrowdyJS's UdpNotificationHandlers.
 /// All callbacks fire on the thread that calls poll().
@@ -264,6 +360,12 @@ struct Handlers {
   /// belong to; `payload` is opaque (one voice packet with the SDK voice helpers).
   std::function<void(const ChannelNotification&)> channelAudio;
   std::function<void(const GenericError&)> genericError;
+  /// An actor's keepalive was refused UNAUTHORIZED: the actor is not present at that place
+  /// (ActorNotPresent, 0.95.0). Once per report, after `genericError` for the same frame;
+  /// the refusals that follow every few seconds reach `genericError` only.
+  std::function<void(const ActorNotPresent&)> notPresent;
+  /// That report ended (NotPresentEnd). Once per report.
+  std::function<void(const ActorNotPresent&, NotPresentEnd)> notPresentEnded;
   /// Every spatial notification, before the typed handler.
   std::function<void(const SpatialNotification&)> any;
   std::function<void(ConnState)> status;

@@ -14,9 +14,18 @@ from crowdypy.errors import (
     CrowdyTimeoutError,
     player_fault_of,
     retry_after_ms_of,
+    retry_wait_ms,
 )
 
-__all__ = ["is_dropped_read", "retry_after_ms_of"]
+__all__ = ["dropped_read_wait_ms", "is_dropped_read", "retry_after_ms_of"]
+
+
+def dropped_read_wait_ms(error: object, floor_ms: float) -> float:
+    """How long to wait before reading again after a dropped read: the API's ``retryAfterMs``,
+    never below ``floor_ms`` (the caller's own poll interval) and never more than the SDK
+    waits on a server's hint (``MAX_RETRY_AFTER_WAIT_MS``, or ``floor_ms`` when that is
+    longer)."""
+    return max(floor_ms, retry_wait_ms(retry_after_ms_of(error)))
 
 
 def is_dropped_read(error: BaseException) -> bool:
