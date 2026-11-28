@@ -60,6 +60,33 @@ struct GraphQLOutcome {
 
 using GraphQLCallback = std::function<void(GraphQLOutcome)>;
 
+/// What a failed outcome says of why (0.95.0): the first GraphQL error's code and message,
+/// the first `retryAfterMs` any of its errors names, or the transport's account when the
+/// API gave no answer of its own. `error` is the outcome's Errc (Rejected for a refusal).
+/// An outcome that is ok() gives a failure that has not failed(). What the API sent is
+/// bounded (crowdy::bounded): the wait to kMaxRetryAfterWaitMs, the code and the message in
+/// length and to one line.
+inline ApiFailure apiFailureOf(const GraphQLOutcome& out) {
+  ApiFailure why;
+  if (out.ok()) return why;
+  why.error = out.status.ok() ? Errc::Rejected : out.status.code;
+  if (!out.errors.empty()) {
+    why.code = out.errors.front().code;
+    why.message = out.errors.front().message;
+    for (const GraphQLErrorDetail& error : out.errors) {
+      if (error.retryAfterMs && *error.retryAfterMs > 0) {
+        why.retryAfterMs = *error.retryAfterMs;
+        break;
+      }
+    }
+  } else if (!out.errorMessage.empty()) {
+    why.message = out.errorMessage;
+  } else if (out.httpStatus != 0) {
+    why.message = "HTTP " + std::to_string(out.httpStatus);
+  }
+  return bounded(std::move(why));
+}
+
 /// The answer to a REST call on the API origin (`getAsync`): the HTTP status and body
 /// whatever the status, or a transport failure (`Errc::Timeout`, `Cancelled`,
 /// `ResponseTooLarge`, `SocketError`) with `errorMessage`.

@@ -97,7 +97,7 @@ class UdpAPI:
     def __init__(self, client: CrowdyClient) -> None:
         self._client = client
         self._connection: ReplicationConnection | None = None
-        self._subscriptions: list[Mapping[str, Callable[[Notification], Any]]] = []
+        self._subscriptions: list[Mapping[str, Callable[..., Any]]] = []
         #: How many times :meth:`connect` opened a connection; with the connection's own
         #: reassignment count it names the current session.
         self._generation = 0
@@ -216,9 +216,7 @@ class UdpAPI:
         """Native sends complete when they return; this only flushes the pending bundle."""
         self.flush_sends()
 
-    def subscribe(
-        self, handlers: Mapping[str, Callable[[Notification], Any]]
-    ) -> Callable[[], None]:
+    def subscribe(self, handlers: Mapping[str, Callable[..., Any]]) -> Callable[[], None]:
         """Call ``handlers[name](notification)`` per event (names in
         :data:`crowdypy.replication.HANDLER_NAMES`); kept across reconnects. Returns the
         unsubscribe function. On a hot path read ``connection.batches()`` instead."""

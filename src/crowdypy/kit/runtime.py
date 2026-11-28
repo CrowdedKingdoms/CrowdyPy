@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from crowdypy._concurrency import AsyncSingleFlight
 from crowdypy.domains.exec import CrowdyExecError
+from crowdypy.errors import retry_wait_ms
 from crowdypy.kit.protocol import KIT_CODES, KitError, new_action_id, with_action_id
 
 if TYPE_CHECKING:
@@ -198,7 +199,9 @@ class KitRuntime:
                     and exc.status != "AppError"
                 ):
                     if exc.status == "Busy" and exc.rate_limited:
-                        self._budget.hold((exc.retry_after_ms or 1000) / 1000)
+                        # The gateway's "retry in N ms", held to what the SDK waits on
+                        # a server's hint.
+                        self._budget.hold(retry_wait_ms(exc.retry_after_ms or 1000) / 1000)
                         attempt += 1
                         continue
                     if exc.status in _DID_NOT_RUN or (action_id and exc.status in _UNKNOWN):

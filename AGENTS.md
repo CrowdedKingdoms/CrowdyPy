@@ -180,38 +180,96 @@ byte for byte 0.94.0's.
   ms while it waits, the asyncio reader wakes once a second with nothing to read
   (`_HOUSEKEEPING_S`), and the blocking session relies on the game's `poll()` every tick. A test
   that answers a carry polls before it expects the session to have acted on the answer.
-- **`MIN_SILENCE_TIMEOUT_MS` (4,500).** CrowdyCPP 0.94.1 (as 0.94.0) holds the capabilities
-  interval to a third of the silence timeout and skips its silence check while the last
-  capabilities are younger than 1,000 ms, so at its own minimum of 3,000 ms a silence is never
-  counted (measured through the raw binding: no move order in 30 s at 3,000 and 3,002 ms, one
-  at 3.3 s at 3,300 ms and at 4.5 s at 4,500 ms). The facade raises a shorter timeout. When a CrowdyCPP release fixes it, drop the floor, the README's fifth difference and
-  the test that names it.
+- **`MIN_SILENCE_TIMEOUT_MS` is CrowdyCPP's own (3,000) since 0.41.0.** 0.40.0 raised a shorter
+  timeout to 4,500, because CrowdyCPP 0.94 never counted a silence at 3,000 to about 3,300 ms.
+  0.95.0 passes at every value from 3,000 (between the timeout and one capabilities interval
+  later), so the facade passes the option through and adds no floor. Do not add one back.
 - **Differences from CrowdyJS's `FleetSession`**, each classified in the parity matrix (the gate
   reads `src/fleet/session.ts` since 0.40.0, `FleetSession` against `AsyncFleetSession`): ids are
-  `int`, no table limit (`tableFull`, `tableLimit`), no automatic actor heartbeat (`forgetActor`),
-  `state` for `status`, no `tick` or `settled`. `carry_nowait`, `send_actor_updates` and the
-  `send_refused` handler are CrowdyPy's and CrowdyCPP's own.
+  `int`, no automatic actor heartbeat (`forgetActor`), `state` for `status`, no `tick` or
+  `settled`. `carry_nowait`, `send_actor_updates` and the `send_refused` handler are CrowdyPy's
+  and CrowdyCPP's own. The table limit is CrowdyJS's since 0.41.0 (`table_limit`, `TABLE_FULL`).
 - **A player's connection** gained what CrowdyCPP 0.94.0 added to the types already bound:
   `Notification.verified`, `wrong_app` and `unsigned_notifications` in `stats()`, and `ERRC`
   through `NotCarried` (`register_replication` loops to the last `Errc`: move it when CrowdyCPP
   adds one).
 - **Tests.** `tests/unit/test_fleet_session.py` runs both sessions against a fake realtime server
-  (`QUIET` switches the silence timeout and the periodic capabilities off; one test waits 4.5 s
-  for a silence), `test_fleet_wire.py` holds the codec to CrowdyCPP's golden bytes, and
+  (`QUIET` switches the silence timeout and the periodic capabilities off; two tests wait about
+  3 s each for a silence), `test_fleet_wire.py` holds the codec to CrowdyCPP's golden bytes, and
   `domains/test_fleet_sessions.py` covers the calls and the refusals.
-- **Benchmarks** (`benchmarks/README.md`, "Re-check, 0.40.0"). A batch row for a carried player
-  costs 1.10x a player's connection's. Two findings are CrowdyCPP's and are open there: 0.94.1
-  (as 0.94.0) receives about 17% fewer notifications a second than 0.93.0 in section 2, with
-  either binding, and `disconnect()` does not return while datagrams arrive faster than the
-  network thread verifies them (its read loop ends only on a short batch). Section 2
-  stops its blaster before it closes for that reason. Neither can be fixed here: `vendor/` is
-  never edited.
-- **The live suite ran on dev on 2026-11-27** (three passes, `docs/e2e-coverage.md`).
-  `tests/e2e/test_e2e_fleet_sessions.py` reads `CROWDY_FLEET_API_URL`, `CROWDY_FLEET_APP_ID` and
-  `CROWDY_FLEET_ORG_TOKEN` (a module-level `E2E_REQUIRES` replaces the `CROWDY_E2E_*` four in
-  `conftest.py`). Its hub step has not run live: it needs `CROWDY_FLEET_HUB_APP_ID`, an app of
-  the same organization with a hub. A `CROWDY_FLEET_HUB_*` variable left in the shell from
-  another run fails the step with the Application API's refusal, so unset them first.
+- **Benchmarks** (`benchmarks/README.md`). A batch row for a carried player costs about 1.1x a
+  player's connection's. The two findings 0.40.0 recorded against CrowdyCPP 0.94 are closed by
+  0.95.0 (the latest re-check there has the numbers): section 2's receive rate is back, and
+  `disconnect()` returns while datagrams still arrive. Section 2 still stops its blaster before
+  it closes, so that the number is the receive path's alone.
+- **The live suite** (`tests/e2e/test_e2e_fleet_sessions.py`, runs in `docs/e2e-coverage.md`)
+  reads `CROWDY_FLEET_API_URL`, `CROWDY_FLEET_APP_ID` and `CROWDY_FLEET_ORG_TOKEN` (a
+  module-level `E2E_REQUIRES` replaces the `CROWDY_E2E_*` four in `conftest.py`). Its hub step
+  needs `CROWDY_FLEET_HUB_APP_ID`, an app of the same organization with a hub, and the hub's
+  node type, key and method (below). It first ran live on 2026-11-27, on dev, for 0.41.0
+  (`arena` / `m1` / `state`); it has not run on test or prod. A `CROWDY_FLEET_HUB_*` variable
+  left in the shell from another run fails the step with the Application API's refusal, so
+  unset them first.
+## CrowdyCPP 0.95.0 (0.41.0)
+
+0.41.0 vendors CrowdyCPP 0.95.0 (`dev/v0.95.0`, 3836244) with the pin at CrowdyJS 18.41.0
+(`dev/v18.41.0`, 2388502), for Application API v2.90.0, realtime servers v0.51.0 and ck-exec
+0.26.1. CrowdyCPP's `MIGRATION.md` 0.95.0 entry and the "A player's connection (0.95.0)" section
+of its `AGENTS.md` are the list of what changed; read them before a change here.
+
+- **A refused keepalive is two rows.** `kNotPresentRow` (253) and `kNotPresentEndedRow` (252)
+  are the connection's own rows, like the status row (255) and the fleet session's named
+  refusal (254): the wire never carries them. The row has the actor in the uuid column, the
+  chunk, the first refused keepalive's sequence, and `extras` (verified, the carried player's
+  game token id or 0, the end's reason or 0). `NotificationBatch::match` skips every row type
+  from 252 up, because a not-present row carries a sequence and an actor as an echo does. A
+  new own row takes a number below 252 and moves that bound.
+- **Handlers.** `not_present(report)` and `not_present_ended(report, end)` take an
+  `ActorNotPresent`, never a `Notification`, and the second takes two arguments, so
+  `subscribe`'s handler type is `Callable[..., Any]`. `any` is for what the server sent
+  (`_OWN_ROWS` in `replication.py`). The fleet session's `generic_error` handler keeps its two
+  arguments, `(notification, verified)`: CrowdyJS passes `keepalive` third, and a third
+  positional argument would break every handler written for 0.40.0, so it is
+  `notification.keepalive`.
+- **With a world session attached** the session owns the connection's handlers:
+  `session_binding.cpp` forwards `WorldSessionConfig::onNotPresent` and `onNotPresentEnded`
+  into the connection's rows, so `session.on("not_present", ...)` and `client.udp.subscribe`
+  hear the same thing.
+- **Why an assignment failed.** `ProviderBridge` overrides `assignServerOrSayWhy`: the provider
+  thread answers an error with what `api_failure_of(exc)` read (`answer_error(id, code,
+  api_code, retry_after_ms, message)`), and CrowdyCPP bounds it and keeps it
+  (`last_assignment_failure`). `_ProviderServer` logs the bounded message, never `str(exc)`: a
+  server's text can hold a line break.
+- **`ApiFailure` is built in two places.** CrowdyCPP makes the connection's; `errors.py` makes
+  the hub connection's and `api_failure_of`'s in Python, because `errors.py` imports no native
+  code. `_server_text` and `retry_wait_ms` there must answer as CrowdyCPP's `serverText` and
+  `retryWaitMs` do: `test_the_limits_are_crowdycpps` holds the wait to the native function,
+  and a change to either side changes both.
+- **Every wait on a server's hint goes through `retry_wait_ms`** (30 s at most):
+  `CrowdyExecError.retry_after_ms` (`_retry_in_ms`, which also survives a number too long for
+  `int()`), the kit runtime's hold, and `dropped_read_wait_ms` in `_dropped_read.py` for the
+  Studio controller and `wait_for_mod_build`. A new wait on anything a server sent uses it.
+- **A message shows no value that may be a secret.** `_gateway_name` (`domains/exec.py`) names
+  a gateway by its scheme, host and port; `exec_gateway.py` catches `InvalidURI` (whose text
+  is the whole URL, connect token included) and raises with no cause, and scrubs the token
+  from any other socket error. Anything new that puts a caller's value or a server's text in
+  a message describes it or bounds it first.
+- **`managed_players.delete_many`** is CrowdyJS's name (`deleteMany`), beside this repo's
+  `delete`. CrowdyCPP calls the pair `remove` and `removeMany` because `delete` is a C++
+  keyword. The branch first carried CrowdyCPP's name and was renamed before the merge.
+- **`AppTokenResponse.user_id`** is optional on purpose: `adopt_app_token` takes an answer an
+  organization's server made, which may predate Application API v2.90.0. `_APP_TOKEN_FIELDS`
+  selects `userId` for every token mutation (`domains/portal.py`, a CODEOWNERS path).
+- **`tools/parity/classifications.toml` must hold no key twice.** A duplicate key is a TOML
+  error that stops the whole gate, and it broke the 0.40.0 promotion. Before a push, load the
+  file with `tomllib` and look for a key that two sections' edits both added.
+- **The live suite** checks the sign-in's `userId` against the carry's, sends each carried
+  player's keepalive and requires no refusal (step 5b, after the actors have reached the
+  other server, because the first messages to a chunk can be refused while its permissions
+  load), and its hub step dials the node type and key it is given
+  (`CROWDY_FLEET_HUB_NODE_TYPE`, `_KEY`, `_METHOD`, and `CROWDY_FLEET_HUB_ORG_TOKEN` for a hub
+  under another org token). Nobody has made a player without access live: the report is
+  proven against the fake server.
 
 ## Releasing
 
@@ -347,7 +405,8 @@ The replication system saturates the local network stack, so the binding
   `CrowdyHttpError` 5xx or 429 whose body carries no GraphQL errors, or a fault
   `player_fault_of` reads as `blame == "PLATFORM"` with an explicit `retryable` (`PLATFORM_BUSY`);
   `CrowdyProtocolError` is the SDK's own refusal and is not one. The controller's `_await_mod_build`
-  counts a dropped read as a missed poll (waiting at least `retryAfterMs`), `_read_again_once`
+  counts a dropped read as a missed poll (waiting `dropped_read_wait_ms`: at least `retryAfterMs`,
+  30 s at most since 0.41.0), `_read_again_once`
   reads the CLIENT-only rider's `my_mods` and `mod_starter` once more, and
   `ExecAPI.wait_for_mod_build` (and its blocking twin) reads again until `timeout_ms`. Tests: the
   `DroppingMods` fake in `tests/unit/test_studio_controller.py`, `scripted_graphql` in

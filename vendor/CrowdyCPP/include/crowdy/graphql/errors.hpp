@@ -389,7 +389,9 @@ inline bool fleetSessionNotFoundOf(const std::vector<GraphQLErrorDetail>& errors
 
 /// A PLATFORM_BUSY refusal: the platform is shedding load, and the same call can succeed
 /// later. `retryAfterMs` is how long the API asked the caller to wait (extensions.retryAfterMs,
-/// GraphQLErrorDetail::retryAfterMs), absent when it named no wait.
+/// GraphQLErrorDetail::retryAfterMs), absent when it named no wait. It is what the API sent:
+/// pass it through crowdy::retryWaitMs() before you wait on it, as the SDK's own waits do
+/// (30 s at most, and nothing for 0 or below).
 struct PlatformBusy {
   std::optional<std::int64_t> retryAfterMs;
 };

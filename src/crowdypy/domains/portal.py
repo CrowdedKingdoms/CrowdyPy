@@ -77,6 +77,11 @@ class AppTokenResponse(msgspec.Struct, rename="camel", frozen=True, kw_only=True
     game_token_id: str
     app_id: str
     expires_at: str
+    #: The user the token signs in (a decimal string): the id ``users.me()`` returns as
+    #: ``userId`` (0.41.0, Application API v2.90.0). A game server that signs a player in
+    #: reads the player here and needs no ``me`` call. Every call that answers an app token
+    #: carries it; ``None`` for a token adopted from an answer that did not.
+    user_id: str | None = None
     application_api_url: str | None = None
     application_api_ws_url: str | None = None
     #: Deprecated: use ``application_api_url`` (the Game API is now the Application API); removed on January 1, 2027.
@@ -243,7 +248,7 @@ def is_email_confirmation_required_error(error: object) -> bool:
 
 
 _APP_TOKEN_FIELDS = (
-    "token gameTokenId appId expiresAt applicationApiUrl applicationApiWsUrl "
+    "token gameTokenId userId appId expiresAt applicationApiUrl applicationApiWsUrl "
     "gameApiUrl: applicationApiUrl gameApiWsUrl: applicationApiWsUrl discoveryUrl launchUrl "
     "runtimeGate { status reason }"
 )

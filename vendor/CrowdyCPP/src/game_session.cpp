@@ -1,5 +1,6 @@
 #include "crowdy/game_session.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <utility>
@@ -56,6 +57,12 @@ std::int64_t GameSession::appId() const {
   return graphql::parseBigInt(token.appId).value_or(0);
 }
 
+std::int64_t connectRetryWaitMs(int connectRetryDelayMs, const replication::AssignmentFailure& failure) {
+  // The API's own wait, when it named a longer one than the caller's, and never more than
+  // the ceiling: the hint is a server's word, and this thread stands still for it.
+  return std::max<std::int64_t>(std::max(connectRetryDelayMs, 0), retryWaitMs(failure.retryAfterMs));
+}
+
 GameSession startGameSession(const domains::AppTokenResponse& token, GameSessionOptions options) {
   GameSession session;
   session.token = token;
@@ -75,10 +82,15 @@ GameSession startGameSession(const domains::AppTokenResponse& token, GameSession
   auto connected = session.client->replication().connectWithStatus(config, std::move(options.handlers));
   session.connection = connected.connection;
   session.status = connected.status;
+  session.failure = connected.failure;
   for (int attempt = 1; !session.status.ok() && attempt < options.connectAttempts && session.connection;
        ++attempt) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(options.connectRetryDelayMs));
+    const std::int64_t wait = connectRetryWaitMs(options.connectRetryDelayMs, session.failure);
+    if (options.sleep) options.sleep(wait);
+    else std::this_thread::sleep_for(std::chrono::milliseconds(wait));
     session.status = session.connection->connect();
+    session.failure = session.status.ok() ? replication::AssignmentFailure{}
+                                          : session.connection->lastAssignmentFailure();
   }
   if (!session.status.ok() || options.connectTimeoutMs <= 0) return session;
 

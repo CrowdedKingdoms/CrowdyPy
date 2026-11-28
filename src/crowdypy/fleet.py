@@ -1,5 +1,6 @@
 """Fleet sessions: one realtime session an organization's game server opens for itself, in
-which it carries the players who are on it (realtime servers v0.50.3).
+which it carries the players who are on it (realtime servers v0.50.3; the refused-keepalive report is
+for v0.51.0).
 
 **A fleet session runs on a server your organization runs.** The organization's org token
 opens it (``client.fleet_sessions``), and its fleet token signs for every player the session
@@ -59,20 +60,25 @@ from typing import Any, Final, NamedTuple
 import msgspec
 
 from crowdypy import _native
-from crowdypy.domains.fleet_sessions import FleetSessionAnswer
+from crowdypy.domains.fleet_sessions import FleetSessionAnswer, fleet_current_server
 from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
 from crowdypy.replication import (
     _HANDLER_KEYS,
     _LOG_LEVELS,
     KEEP_SPEAKERS,
+    NOT_PRESENT,
+    NOT_PRESENT_ENDED,
     STATUS,
+    ActorNotPresent,
     Assignment,
     ConnState,
     KeepSpeakers,
     Notification,
     NotificationBatch,
+    NotPresentEnd,
     _chunk_rows,
     _column,
+    _not_present,
     _payload_rows,
     _replication_error,
     _speaker_change,
@@ -95,6 +101,8 @@ __all__ = [
     "RELEASED",
     "SEND_REFUSED",
     "SESSION_RELEASED",
+    "TABLE_MARGIN",
+    "ActorNotPresent",
     "AsyncFleetSession",
     "FleetBatch",
     "FleetBatchSend",
@@ -106,6 +114,8 @@ __all__ = [
     "FleetReleased",
     "FleetSendRefused",
     "FleetSession",
+    "NotPresentEnd",
+    "fleet_current_server",
 ]
 
 _r: Any = _native.replication
@@ -121,16 +131,21 @@ SESSION_RELEASED: Final[int] = _r.FLEET_SESSION_RELEASED_ROW
 SEND_REFUSED: Final[int] = _r.FLEET_SEND_REFUSED_ROW
 
 _CARRY_TIMED_OUT: Final[int] = _r.FLEET_CARRY_TIMED_OUT
+_CARRY_TABLE_FULL: Final[int] = _r.FLEET_CARRY_TABLE_FULL
+
+#: How many rows a session's table may hold past its ``max_players``: room for the carries
+#: that wait for an answer while the table is full, such as a new player's while one who left
+#: is still to be released (:attr:`AsyncFleetSession.table_limit`).
+TABLE_MARGIN: Final[int] = _r.FLEET_TABLE_MARGIN
 
 #: How often a waiting carry looks for its result: the deadline of a carry nothing answered
 #: is reported by a poll, and no datagram wakes the loop for it.
 _CARRY_CHECK_S = 0.05
-#: The shortest silence timeout this session keeps. CrowdyCPP holds the capabilities interval
-#: to a third of the timeout and gives each capabilities message 1,000 ms to be acknowledged
-#: before it counts the silence. At 3,000 ms the two are equal and the timeout never passes
-#: (CrowdyCPP 0.94.0 and 0.94.1; it passes from 3,300 ms), so a shorter one that is not 0 is
-#: raised to this.
-MIN_SILENCE_TIMEOUT_MS: Final[int] = 4_500
+#: The shortest silence timeout a session keeps, CrowdyCPP's own: a shorter one that is not
+#: 0 is raised to it. Every value from here up passes between itself and one capabilities
+#: interval later (CrowdyCPP 0.95.0; 0.40.0 raised a shorter one to 4,500 ms, because one of
+#: 3,000 to about 3,300 ms never passed with CrowdyCPP 0.94).
+MIN_SILENCE_TIMEOUT_MS: Final[int] = _r.FLEET_MIN_SILENCE_TIMEOUT_MS
 
 #: How often an asyncio session looks at itself when no event wakes it: a move ordered by the
 #: realtime server's silence queues nothing, and neither does the deadline of a carry made
@@ -174,6 +189,10 @@ class FleetCarryOutcome(StrEnum):
     #: The session already carries as many players as it may (``max_players``), or the
     #: realtime server has no place for the carry.
     SESSION_FULL = "session_full"
+    #: This session's table is full, so nothing was sent: it holds as many rows as it may
+    #: (``table_limit``), carried players and carries that wait together. Release the players
+    #: who left, or open another session.
+    TABLE_FULL = "table_full"
     #: A status this build does not know; ``wire_status`` has the byte.
     REFUSED = "refused"
     #: No answer came within ``carry_timeout_ms`` of the first send.
@@ -191,7 +210,10 @@ _OUTCOMES: Final[dict[int, FleetCarryOutcome]] = {
     FleetCarryStatus.PROOF_FAILED: FleetCarryOutcome.PROOF_FAILED,
     FleetCarryStatus.SESSION_FULL: FleetCarryOutcome.SESSION_FULL,
     _CARRY_TIMED_OUT: FleetCarryOutcome.TIMED_OUT,
+    _CARRY_TABLE_FULL: FleetCarryOutcome.TABLE_FULL,
 }
+#: The outcomes the server sent no status byte for.
+_UNANSWERED: Final = frozenset((FleetCarryOutcome.TIMED_OUT, FleetCarryOutcome.TABLE_FULL))
 
 
 class FleetPlayerToken(NamedTuple):
@@ -338,11 +360,6 @@ def _send_refused(exc: Exception, player: int) -> CrowdyReplicationError:
     return FleetNotCarriedError(player) if error.code == "NotCarried" else error
 
 
-def _silence(timeout_ms: int) -> int:
-    timeout = int(timeout_ms)
-    return 0 if timeout <= 0 else max(MIN_SILENCE_TIMEOUT_MS, timeout)
-
-
 def _user(user_id: int) -> int | None:
     return user_id or None
 
@@ -440,8 +457,10 @@ class FleetBatch:
     may receive it, and 0 when it arrived plain, once for the session.
 
     The session's own events are rows too, by type: :data:`CARRY_RESULT`, :data:`RELEASED`,
-    :data:`SESSION_RELEASED`, :data:`SEND_REFUSED`, ``MessageType.GENERIC_ERROR`` and
-    :data:`crowdypy.replication.STATUS`. Iterating yields ``(notification, players)`` pairs.
+    :data:`SESSION_RELEASED`, :data:`SEND_REFUSED`, ``MessageType.GENERIC_ERROR``,
+    :data:`crowdypy.replication.NOT_PRESENT`, :data:`crowdypy.replication.NOT_PRESENT_ENDED`
+    and :data:`crowdypy.replication.STATUS`. Iterating yields ``(notification, players)``
+    pairs.
     """
 
     __slots__ = ("_native", "notifications")
@@ -531,7 +550,10 @@ class _FleetCore:
                 # The realtime servers drop a session's carries past 64 a second unanswered.
                 carries_per_second=max(1, min(63, int(max_carries_per_second))),
                 advertise_interval_ms=max(1_000, int(capabilities_interval_ms)),
-                silence_timeout_ms=_silence(silence_timeout_ms),
+                # 0 switches it off; CrowdyCPP raises a shorter one to its own minimum.
+                silence_timeout_ms=max(0, int(silence_timeout_ms)),
+                # The table holds this many rows and TABLE_MARGIN more.
+                max_players=max(0, int(grant.max_players or 0)),
                 **transport,
             )
         except (ValueError, TypeError) as exc:
@@ -574,6 +596,16 @@ class _FleetCore:
     def max_players(self) -> int | None:
         """How many players the session may carry at once, when the answer said."""
         return self._max_players
+
+    @property
+    def table_limit(self) -> int:
+        """The most rows the session's table holds, carried players and carries that wait
+        together: ``max_players`` (1,024 when the answer named none, and at most that) and
+        :data:`TABLE_MARGIN` (32) more. A carry for a new player past it ends
+        ``TABLE_FULL`` with nothing sent, so a game server that never releases the players
+        who left cannot grow the table without bound. A carry for a player the table already
+        holds, and one whose ``replaces`` names such a player, are never refused this way."""
+        return int(self._native.table_limit)
 
     @property
     def expires_at(self) -> int | None:
@@ -619,8 +651,23 @@ class _FleetCore:
           session verified with the fleet token, which is how realtime servers from v0.50.3
           send them. A refusal that arrived alone is 3 bytes with no room for a signature:
           treat it as a hint. The session changes nothing on a refusal.
+          ``notification.keepalive`` is true when the frame answers a carried player's
+          keepalive (:meth:`send_heartbeat`).
         - ``send_refused(refused)``: a verified refusal the session could name a player for
           (:class:`FleetSendRefused`), after ``generic_error`` for the same frame.
+        - ``not_present(report)``: a carried player's keepalive was refused ``UNAUTHORIZED``,
+          in a frame that verified: that player's actor is not present where the keepalive
+          named (:class:`ActorNotPresent`, with ``player_game_token_id``; for realtime
+          servers v0.51.0). It is what a player with no ``access`` at a place looks like:
+          every keepalive there is refused, every few seconds. Called once for each player,
+          actor and place, after ``generic_error`` for the same frame, and in place of
+          ``send_refused``, which a keepalive's ``UNAUTHORIZED`` never reaches. Keep sending
+          the player's keepalives at the same rate: the session carries the player as
+          before, and access granted later admits the next keepalive within about 6 seconds.
+        - ``not_present_ended(report, end)``: that report ended (:class:`NotPresentEnd`): a
+          keepalive there was accepted (no refusal for 3 seconds), the player's next
+          keepalive or update named another chunk, or the keepalives stopped. Once for each
+          report.
         - ``carry_result(result)``: every carry the server answered or that timed out,
           including the carries made again after the session moved.
         - ``released(released)``: the server ended a carry (:class:`FleetReleased`).
@@ -640,8 +687,11 @@ class _FleetCore:
         """CrowdyCPP's cumulative counters for the session's socket, and the session's own:
         ``hmac_failures``, ``malformed``, ``unsigned_notifications`` and ``wrong_app`` (frames
         dropped before any handler), ``no_live_token_retries``, ``replaced_id_frames``,
-        ``session_releases``, ``send_refusals_named``, and messages by type
-        (``messages_sent_by_type[49]`` and ``[50]`` count carries and releases)."""
+        ``session_releases``, ``send_refusals_named``, ``carries_refused_table_full`` (carries
+        for a new player that ended ``TABLE_FULL``), ``keepalives_refused`` (every keepalive
+        answered ``UNAUTHORIZED``), ``not_present_reports`` (the reports made of them, one for
+        each player, actor and place), and messages by type (``messages_sent_by_type[49]``
+        and ``[50]`` count carries and releases)."""
         result: dict[str, Any] = self._native.stats()
         return result
 
@@ -667,16 +717,19 @@ class _FleetCore:
         so the session stays there while that server still serves the app. After a move was
         ordered it names none, and the answer's server is the next one.
 
-        ``currentServer`` is an IPv4 address and a port, which is all the Application API
-        takes. A session that was given no IPv4 address sends no ``currentServer``, so each
-        refresh may answer another server."""
-        refresh: dict[str, Any] = {
-            "appId": str(self._app_id),
-            "gameTokenId": str(self._game_token_id),
-        }
-        server = self.current_server
-        if not self.move_ordered and server.ip4:
-            refresh["currentServer"] = {"ip4": server.ip4, "clientPort": server.client_port}
+        ``currentServer`` is the one address the session connected to and the port: its
+        ``ip4``, or its ``ip6`` when the server has no ``ip4`` or the session was made with
+        ``prefer_ipv6`` (:func:`fleet_current_server`). Naming an ``ip6`` needs Application
+        API v2.90.0."""
+        app_id, game_token_id, server = self._native.refresh_input()
+        refresh: dict[str, Any] = {"appId": str(app_id), "gameTokenId": str(game_token_id)}
+        if server is not None:
+            ip4, ip6, client_port = server
+            refresh["currentServer"] = (
+                {"ip6": ip6, "clientPort": client_port}
+                if ip6
+                else {"ip4": ip4, "clientPort": client_port}
+            )
         return refresh
 
     def apply_refresh(self, answer: FleetSessionAnswer | Mapping[str, Any]) -> None:
@@ -713,6 +766,10 @@ class _FleetCore:
             raise _replication_error(exc) from None
         if grant.max_players is not None:
             self._max_players = grant.max_players
+            if grant.max_players > 0:
+                # An operator may have changed how many players the session may carry: the
+                # table's limit follows for the carries made from here on.
+                self._native.set_max_players(grant.max_players)
         self._move_seen = False
 
     def set_fleet_own_state(self, on: bool) -> None:
@@ -782,6 +839,14 @@ class _FleetCore:
         """True when the server confirmed a carry of this game token id and nothing ended it.
         While a refreshed token's carry waits, true for both ids."""
         return bool(self._native.carries(_id(player_game_token_id, "the player gameTokenId")))
+
+    def not_present(
+        self, player_game_token_id: int | str, uuid: str | bytes
+    ) -> ActorNotPresent | None:
+        """The not-present report that stands for one of a carried player's actors, if one
+        does (the ``not_present`` handler). A poll makes and ends reports."""
+        player = _id(player_game_token_id, "the player gameTokenId")
+        return _not_present(self._native.not_present(player, uuid))
 
     def players(self) -> list[FleetPlayer]:
         """Every row of the table: carried players and carries still waiting."""
@@ -1003,7 +1068,12 @@ class _FleetCore:
     def send_heartbeat(self, player: int | str, chunk: Sequence[int], uuid: str | bytes) -> int:
         """Idle keep-alive for one of a carried player's actors. Send it every 2 seconds or so
         while the actor is idle, so its presence never lapses: the session sends none by
-        itself. A heartbeat is not gameplay input and does not move the player's idle clock."""
+        itself. A heartbeat is not gameplay input and does not move the player's idle clock.
+
+        From realtime servers v0.51.0 a keepalive is accepted only where the player's actor
+        update would be. Where the player has no ``access`` each one is answered
+        ``UNAUTHORIZED``, and the session reports that once (the ``not_present`` handler,
+        :meth:`not_present`). Keep sending at the same rate."""
         result: int = self._send(
             self._native.send_heartbeat, player, chunk[0], chunk[1], chunk[2], uuid
         )
@@ -1133,7 +1203,7 @@ class _FleetCore:
                     player,
                     _user(user_id),
                     outcome,
-                    None if outcome is FleetCarryOutcome.TIMED_OUT else wire_status,
+                    None if outcome in _UNANSWERED else wire_status,
                 )
                 self._settle_carry(result)
                 self._call("carry_result", result)
@@ -1156,6 +1226,10 @@ class _FleetCore:
                 self._call("generic_error", event, bool(event.extras[1]))
             elif kind == STATUS:
                 self._call("status", event.state)
+            elif kind == NOT_PRESENT:
+                self._call("not_present", event.not_present)
+            elif kind == NOT_PRESENT_ENDED:
+                self._call("not_present_ended", event.not_present, event.not_present_end)
             else:
                 self._call("any", event, players)
                 key = _HANDLER_KEYS.get(kind)
@@ -1222,7 +1296,7 @@ class AsyncFleetSession(_FleetCore):
     ``carry_retry_ms`` (250), ``carry_timeout_ms`` (5,000), ``max_carries_per_second`` (50, at
     most 63), ``capabilities_interval_ms`` (15,000, and never more than a third of the silence
     timeout), ``silence_timeout_ms`` (45,000; 0 switches it off, and a shorter one is raised to
-    :data:`MIN_SILENCE_TIMEOUT_MS`, 4,500),
+    :data:`MIN_SILENCE_TIMEOUT_MS`, 3,000),
     ``logger``, and CrowdyCPP's transport options (``manual_pump``, ``prefer_ipv6``,
     ``session_ready_wait_ms``, ``ring_capacity``, ``socket_recv_buffer_bytes``,
     ``socket_send_buffer_bytes``, ``bundle_sends``, ``bundle_window_ms``, ``carry_burst``).
