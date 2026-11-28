@@ -257,6 +257,13 @@ of its `AGENTS.md` are the list of what changed; read them before a change here.
 - **`managed_players.delete_many`** is CrowdyJS's name (`deleteMany`), beside this repo's
   `delete`. CrowdyCPP calls the pair `remove` and `removeMany` because `delete` is a C++
   keyword. The branch first carried CrowdyCPP's name and was renamed before the merge.
+- **A fake server in a test answers late on a slow runner, so a test asks for re-sends or gets
+  none.** `tests/unit/test_fleet_session.py`'s `QUIET` sets `carry_retry_ms` to an hour. At
+  the default (250 ms) the Windows wheel job failed once on the promotion to prod
+  (2026-11-28): the answer to a carry came after its re-send, and the next read took the
+  re-send for the next player's carry. Reproduce a failure like that on purpose before calling
+  it flaky: answering each carry 300 ms late failed 9 of the file's 40 tests before the
+  change and none after. A test of re-sends sets `carry_retry_ms` itself.
 - **`AppTokenResponse.user_id`** is optional on purpose: `adopt_app_token` takes an answer an
   organization's server made, which may predate Application API v2.90.0. `_APP_TOKEN_FIELDS`
   selects `userId` for every token mutation (`domains/portal.py`, a CODEOWNERS path).
