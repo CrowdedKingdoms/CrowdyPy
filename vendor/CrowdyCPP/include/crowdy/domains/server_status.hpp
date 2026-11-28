@@ -25,6 +25,22 @@ class ServerStatusAPI : public DomainBase {
         execUnwrap(gen::serverStatus::kServerWithLeastClientsDocument));
   }
 
+  /// serverWithLeastClients() without throwing (0.95.0): the whole outcome, and the
+  /// assignment in `assignment` when it is ok(). A refusal's code and `retryAfterMs` are in
+  /// `outcome.errors` (graphql::platformBusyOf reads PLATFORM_BUSY).
+  graphql::GraphQLOutcome serverWithLeastClientsOutcome(ServerAssignment& assignment) const {
+    graphql::GraphQLOutcome out =
+        gql_->requestOutcome(gen::serverStatus::kServerWithLeastClientsDocument);
+    if (out.ok()) {
+      graphql::Json answer = out.data;
+      if (answer.isObject() && answer.size() == 1) {
+        answer.forEachMember([&](std::string_view, graphql::Json v) { answer = v; });
+      }
+      assignment = ServerAssignment::fromJson(answer);
+    }
+    return out;
+  }
+
   /// Async twin of serverWithLeastClients(). On success `assignment` is parsed;
   /// on failure inspect `outcome`. Mirrors the pattern every domain method
   /// follows to gain an async overload over the shared exec helpers.

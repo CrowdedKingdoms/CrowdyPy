@@ -14,9 +14,15 @@ import pytest
 
 from crowdypy import wire
 from crowdypy.codecs import f32, reserved, struct_codec, u16
-from crowdypy.replication import Assignment, ReplicationConnection, TokenMaterial
+from crowdypy.replication import (
+    ActorNotPresent,
+    Assignment,
+    NotPresentEnd,
+    ReplicationConnection,
+    TokenMaterial,
+)
 from crowdypy.stores import ChunkOverlayVoxel, WorldSessionCore, voxel_key
-from crowdypy.wire import MessageType
+from crowdypy.wire import ErrorCode, MessageType
 
 TOKEN = "t" * 64
 ME = "a" * 32
@@ -496,3 +502,42 @@ def test_a_refused_edit_is_undone_and_reported(world: Any) -> None:
     )
     assert session.chunks.voxel_type_at((4, 4, 4), 1, 2, 3) == 0
     assert session.chunks.edits_in_flight == 0
+
+
+def test_a_refused_keepalive_is_one_report_and_one_error(world: Any) -> None:
+    # CrowdyCPP 0.95.0, for realtime servers v0.51.0: where the player has no access every
+    # keepalive is answered UNAUTHORIZED, and the session says so once.
+    server, connection, session = world
+    session.self.join((1, 2, 3), b"x")
+    server.recv()
+    reports: list[ActorNotPresent] = []
+    ended: list[tuple[ActorNotPresent, NotPresentEnd]] = []
+    session.on("not_present", reports.append)
+    session.on("not_present_ended", lambda report, end: ended.append((report, end)))
+    assert session.not_present() is None
+
+    refused = []
+    for _ in range(2):
+        sequence = connection.send_heartbeat((1, 2, 3), ME)
+        refused.append(sequence)
+        server.sock.recvfrom(2048)
+        server.sock.sendto(
+            bytes([MessageType.GENERIC_ERROR, sequence, ErrorCode.UNAUTHORIZED]), server.client
+        )
+        pump_until(
+            session, connection, lambda: connection.stats()["keepalives_refused"] == len(refused)
+        )
+    report = ActorNotPresent(ME, (1, 2, 3), refused[0], False, None)
+    pump_until(session, connection, lambda: reports)
+    assert reports == [report]
+    assert session.not_present() == report
+    # One error for the report, however many keepalives were refused there.
+    assert [(e.kind, e.code, e.sequence) for e in session.errors.recent()] == [
+        ("heartbeat", ErrorCode.UNAUTHORIZED, refused[0])
+    ]
+    assert session.self.last_error() is None  # the refusal is not the actor update's
+
+    connection.send_heartbeat((4, 4, 4), ME)
+    pump_until(session, connection, lambda: ended)
+    assert ended == [(report, NotPresentEnd.MOVED)]
+    assert session.not_present() is None

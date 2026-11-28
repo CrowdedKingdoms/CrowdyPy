@@ -5,8 +5,8 @@ the realtime servers and the Application API for real. Modelled on CrowdyJS's
 This test plays the organization's servers. It opens two fleet sessions with the org token,
 signs four managed players in (the SDK has no wrapper for that on purpose, so the test makes
 the GraphQL request itself, as an organization's server does), carries them, sends and
-receives for them, moves one player from one server to the other, refreshes a session,
-refreshes a carried player's token, and ends everything it opened.
+receives for them, sends their keepalives, moves one player from one server to the other,
+refreshes a session, refreshes a carried player's token, and ends everything it opened.
 
 It runs only when all three of these are set, so it never runs by accident (the variables
 CrowdyJS's and CrowdyCPP's fleet suites read):
@@ -18,8 +18,10 @@ CrowdyJS's and CrowdyCPP's fleet suites read):
   ``fleet:session``.
 
 Optional: ``CROWDY_FLEET_HUB_APP_ID`` (also connect to hubs as the server, with
-``CROWDY_FLEET_HUB_NODE_TYPE``, ``CROWDY_FLEET_HUB_KEY`` and ``CROWDY_FLEET_HUB_METHOD``), and
-``CROWDY_FLEET_CHUNK`` (where the players stand, ``7200,7200,7200`` unless set).
+``CROWDY_FLEET_HUB_NODE_TYPE``, ``CROWDY_FLEET_HUB_KEY`` and ``CROWDY_FLEET_HUB_METHOD``, and
+with ``CROWDY_FLEET_HUB_ORG_TOKEN`` when the hub's app takes another org token than the
+session's), and ``CROWDY_FLEET_CHUNK`` (where the players stand, ``7200,7200,7200`` unless
+set).
 
 What it leaves on the tier: four managed players, ``crowdypy-fleet-e2e-0`` to ``-3``, which
 every run reuses and none deletes; their sign-ins, which last 10 minutes; and the usage of a
@@ -55,7 +57,7 @@ from crowdypy.fleet import (
     FleetReleased,
 )
 from crowdypy.graphql import graphql_endpoint
-from crowdypy.replication import ConnState, Notification
+from crowdypy.replication import KEEPALIVE_ANSWER_WAIT_MS, ActorNotPresent, ConnState, Notification
 from crowdypy.wire import ErrorCode
 
 #: What tests/e2e/conftest.py requires of this module, in place of the CROWDY_E2E_* variables.
@@ -65,11 +67,12 @@ EXTERNAL_IDS = [f"crowdypy-fleet-e2e-{n}" for n in range(4)]
 SIGN_IN_SECONDS = 600
 DAY_MS = 24 * 3_600_000
 
+# Every call that answers an app token names the user it signs in (Application API v2.90.0).
 _MINT = (
     "mutation($i: MintManagedPlayerTokenInput!) "
-    "{ mintManagedPlayerToken(input: $i) { token gameTokenId appId expiresAt } }"
+    "{ mintManagedPlayerToken(input: $i) { token gameTokenId userId appId expiresAt } }"
 )
-_REFRESH = "mutation { refreshAppToken { token gameTokenId appId expiresAt } }"
+_REFRESH = "mutation { refreshAppToken { token gameTokenId userId appId expiresAt } }"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -82,7 +85,8 @@ class Player:
     token: str = field(repr=False)
     game_token_id: int
     uuid: str
-    user_id: int | None = None
+    #: The user the sign-in's answer named; the carry's result names the same.
+    user_id: int
 
 
 @dataclass
@@ -94,6 +98,8 @@ class GameServer:
     actors: list[tuple[Notification, tuple[int, ...] | None]] = field(default_factory=list)
     texts: list[tuple[Notification, tuple[int, ...] | None]] = field(default_factory=list)
     errors: list[tuple[int, Any, bool]] = field(default_factory=list)
+    keepalive_refusals: list[int] = field(default_factory=list)
+    not_present: list[ActorNotPresent] = field(default_factory=list)
     released: list[FleetReleased] = field(default_factory=list)
     carry_results: list[FleetCarryResult] = field(default_factory=list)
     session_released: list[int] = field(default_factory=list)
@@ -104,12 +110,16 @@ class GameServer:
         def moved() -> None:
             self.moves += 1
 
+        def refused(n: Notification, verified: bool) -> None:
+            self.errors.append((n.sequence, n.error_code, verified))
+            if n.keepalive:
+                self.keepalive_refusals.append(n.sequence)
+
         return {
             "actor_update": lambda n, players: self.actors.append((n, players)),
             "text": lambda n, players: self.texts.append((n, players)),
-            "generic_error": lambda n, verified: self.errors.append(
-                (n.sequence, n.error_code, verified)
-            ),
+            "generic_error": refused,
+            "not_present": self.not_present.append,
             "carry_result": self.carry_results.append,
             "released": self.released.append,
             "session_released": self.session_released.append,
@@ -180,8 +190,13 @@ async def test_fleet_sessions_on_a_tier() -> None:
         answer = data["mintManagedPlayerToken"]
         token_length = len(answer["token"])
         assert token_length == 64, "a player's app token is 64 characters"
+        assert str(answer["userId"]).isdigit(), "the sign-in names its user"
         return Player(
-            external_id, answer["token"], int(answer["gameTokenId"]), secrets.token_hex(16)
+            external_id,
+            answer["token"],
+            int(answer["gameTokenId"]),
+            secrets.token_hex(16),
+            int(answer["userId"]),
         )
 
     servers: dict[str, GameServer] = {}
@@ -247,9 +262,10 @@ async def test_fleet_sessions_on_a_tier() -> None:
             result = await server.fleet.carry(FleetPlayerToken(player.token, player.game_token_id))
             assert result.status is FleetCarryOutcome.CARRIED, f"player {i} on {server.name}"
             assert result.player_game_token_id == player.game_token_id
-            assert result.user_id is not None
+            # The user the sign-in named is the user the realtime server carries: a game
+            # server needs no `me` call to know its player.
+            assert result.user_id == player.user_id, f"player {i}'s user id"
             assert result.user_id > 0
-            player.user_id = result.user_id
             carrier[i] = server
             assert server.fleet.carries(player.game_token_id)
         assert len({p.user_id for p in players}) == 4, "four different users"
@@ -281,6 +297,21 @@ async def test_fleet_sessions_on_a_tier() -> None:
         assert not [n for n, _ in x.actors if n.uuid in own_ids], (
             "X was sent none of its own players' state back"
         )
+
+        # 5b. Each carried player's keepalive is accepted where the player has access: none
+        # is refused, so no report is made (for realtime servers v0.51.0, which accept a
+        # keepalive only where the player's actor update would be).
+        for server, i in ((x, 0), (x, 1), (y, 2), (y, 3)):
+            server.fleet.send_heartbeat(players[i].game_token_id, chunk, players[i].uuid)
+        await asyncio.sleep(KEEPALIVE_ANSWER_WAIT_MS / 1000 + 0.5)
+        for server, i in ((x, 0), (x, 1), (y, 2), (y, 3)):
+            standing = server.fleet.not_present(players[i].game_token_id, players[i].uuid)
+            assert standing is None, f"player {i}'s keepalive was refused on {server.name}"
+        for server in (x, y):
+            stats = server.fleet.stats()
+            assert (stats["keepalives_refused"], stats["not_present_reports"]) == (0, 0)
+            assert (server.keepalive_refusals, server.not_present) == ([], [])
+            assert stats["messages_sent_by_type"][26] >= 2, "the keepalives left"
 
         # 6. A spatial text arrives inside a delivery that lists its players.
         text = f"hello-{secrets.token_hex(6)}"
@@ -380,6 +411,7 @@ async def test_fleet_sessions_on_a_tier() -> None:
         fresh = (await as_bearer(staying.token, _REFRESH))["refreshAppToken"]
         staying.token, staying.game_token_id = fresh["token"], int(fresh["gameTokenId"])
         assert staying.game_token_id != previous_id
+        assert int(fresh["userId"]) == staying.user_id, "a refresh names the same user"
         releases_before = len(x.released)
         result = await x.fleet.carry(
             FleetPlayerToken(staying.token, staying.game_token_id, replaces=previous_id)
@@ -401,11 +433,23 @@ async def test_fleet_sessions_on_a_tier() -> None:
             node_type = _env("CROWDY_FLEET_HUB_NODE_TYPE", "lobby")
             key = _env("CROWDY_FLEET_HUB_KEY")
             method = _env("CROWDY_FLEET_HUB_METHOD", "state")
-            hubs = await api.exec.connect_as_server(hub_app)
+            hub_token = _env("CROWDY_FLEET_HUB_ORG_TOKEN")
+            if hub_token and hub_token != _env("CROWDY_FLEET_ORG_TOKEN"):
+                hub_api = crowdypy.AsyncCrowdyClient(http_url=api_url, http_client=http)
+                hub_api.set_token(hub_token)
+            else:
+                hub_api = api
+            hubs = await hub_api.exec.connect_as_server(
+                hub_app, node_type=node_type, key=key or None
+            )
             assert hubs.is_server
+            assert not hubs.last_connect_failure().failed()
             await hubs.call(node_type, key, method)
-            assert staying.user_id is not None
             await hubs.call_as(staying.user_id, node_type, key, method)
+            hub_step = f"ran ({node_type} / {key} / {method})"
+        else:
+            hub_step = "not run (CROWDY_FLEET_HUB_APP_ID is not set)"
+        print(f"fleet e2e: the hub step {hub_step}")
 
         # 11. Every player is released and both sessions are closed.
         for i, server in carrier.items():
@@ -431,6 +475,7 @@ async def test_fleet_sessions_on_a_tier() -> None:
                 0,
             ), f"{server.name} was sent something that was not its own"
             assert server.failures == []
+            assert server.not_present == [], f"{server.name}'s players were present throughout"
     finally:
         if hubs is not None:
             await hubs.close()

@@ -42,6 +42,10 @@ using replication::TokenInfo;
 /// The row type for a connection-state change. Not a wire opcode: the wire never
 /// carries 255, so it cannot collide with a notification type.
 inline constexpr std::uint8_t kStatusRow = 255;
+/// The row types of a not-present report and of its end (Handlers::notPresent and
+/// notPresentEnded). Not wire opcodes either: 254 is the fleet session's named refusal.
+inline constexpr std::uint8_t kNotPresentRow = 253;
+inline constexpr std::uint8_t kNotPresentEndedRow = 252;
 inline constexpr std::size_t kExtras = 4;
 
 // ------------------------------------------------------------------ arguments
@@ -110,6 +114,18 @@ class ProviderBridge final : public replication::ISessionProvider {
     return reply.assignment;
   }
 
+  /// The connection calls this one: what the Python provider said of a refusal (the
+  /// Application API's code, its `retryAfterMs` and its message) goes with the error.
+  Result<Assignment> assignServerOrSayWhy(replication::AssignmentFailure& why) override {
+    Reply reply = ask(kAssign, nullptr);
+    if (reply.code != Errc::Ok) {
+      why = std::move(reply.why);
+      why.error = reply.code;
+      return reply.code;
+    }
+    return reply.assignment;
+  }
+
   Result<TokenInfo> refreshToken() override { return refreshToken(nullptr); }
 
   Result<TokenInfo> refreshToken(const Assignment* current) override {
@@ -141,9 +157,10 @@ class ProviderBridge final : public replication::ISessionProvider {
     answer(id, std::move(reply));
   }
 
-  void answerError(std::uint64_t id, Errc code) {
+  void answerError(std::uint64_t id, Errc code, ApiFailure why = {}) {
     Reply reply;
     reply.code = code == Errc::Ok ? Errc::Rejected : code;
+    reply.why = bounded(std::move(why));
     answer(id, std::move(reply));
   }
 
@@ -171,6 +188,7 @@ class ProviderBridge final : public replication::ISessionProvider {
     Errc code = Errc::Ok;
     Assignment assignment;
     TokenInfo token;
+    ApiFailure why;  ///< an assignment's refusal, as the provider told it
   };
 
   Reply ask(int kind, const Assignment* current) {
@@ -265,7 +283,10 @@ class QueueLogger final : public core::ILogger {
 /// client or server event (eventType) with the event state as the payload, an
 /// actor-left (reason), a channel message or channel audio (channelId) with the sender
 /// in the uuid column, an error (code, then 1 when it arrived inside a signed bundle whose
-/// HMAC held) with the failed send's sequence, a status row (state).
+/// HMAC held, then 1 when it answers a keepalive) with the failed send's sequence, a status
+/// row (state), and a not-present report or its end (verified, the carried player's game
+/// token id or 0, the end's reason or 0) with the actor, the chunk and the first refused
+/// keepalive's sequence in their own columns.
 struct Rows {
   std::vector<std::uint8_t> type;
   std::vector<std::int64_t> appId;
@@ -319,6 +340,17 @@ struct Rows {
     push(static_cast<std::uint8_t>(type), 0, {}, c.senderUuid, c.epochMillis, c.sequence,
          {c.channelId, 0, 0, 0}, c.payload);
   }
+
+  void error(const replication::GenericError& e) {
+    push(static_cast<std::uint8_t>(wire::MessageType::GenericError), 0, {}, nullptr, 0, e.sequence,
+         {static_cast<std::int64_t>(e.code), e.verified ? 1 : 0, e.keepalive ? 1 : 0, 0}, {});
+  }
+
+  /// A not-present report (`end` 0) or its end.
+  void presence(const replication::ActorNotPresent& report, std::uint8_t end) {
+    push(end == 0 ? kNotPresentRow : kNotPresentEndedRow, 0, report.chunk, report.uuid.data(), 0,
+         report.sequence, {report.verified ? 1 : 0, report.playerGameTokenId, end, 0}, {});
+  }
 };
 
 template <typename T>
@@ -366,7 +398,10 @@ class NotificationBatch {
       if (rows_.sequence[i] != sequence) continue;
       const auto type = static_cast<wire::MessageType>(rows_.type[i]);
       if (type == wire::MessageType::GenericError) return static_cast<std::int64_t>(i);
-      if (rows_.type[i] == kStatusRow || type == wire::MessageType::ChannelMessageNotification ||
+      // The session's own rows and the channel rows answer no send: a not-present row
+      // carries the refused keepalive's sequence and the actor, and is not its echo.
+      if (rows_.type[i] >= kNotPresentEndedRow ||
+          type == wire::MessageType::ChannelMessageNotification ||
           type == wire::MessageType::ChannelAudioNotification)
         continue;
       if (std::memcmp(uuidOf(i), uuid.data(), wire::kUuidSize) == 0)
@@ -455,9 +490,12 @@ inline nb::dict stats_dict(const replication::Connection::Stats& s) {
   d["legacy_reconnects_suppressed"] = s.legacyReconnectsSuppressed;
   d["bound_control_acks"] = s.boundControlAcks;
   d["legacy_control_dropped"] = s.legacyControlDropped;
-  // A fleet session's two checks; always 0 on a player's connection, which makes neither.
+  // Notifications dropped before any handler: another app's, and ones nothing signed.
   d["wrong_app"] = s.wrongApp;
   d["unsigned_notifications"] = s.unsignedNotifications;
+  d["keepalives_refused"] = s.keepalivesRefused;
+  d["not_present_reports"] = s.notPresentReports;
+  d["unverified_token_expired"] = s.unverifiedTokenExpired;
   d["last_server_epoch_ms"] = s.lastServerEpochMs;
   nb::dict sentByType;
   nb::dict receivedByType;
@@ -468,6 +506,22 @@ inline nb::dict stats_dict(const replication::Connection::Stats& s) {
   d["messages_sent_by_type"] = sentByType;
   d["messages_received_by_type"] = receivedByType;
   return d;
+}
+
+/// A not-present report as (uuid, (x, y, z), sequence, verified, player_game_token_id).
+inline nb::tuple not_present_tuple(const replication::ActorNotPresent& report) {
+  std::size_t len = report.uuid.size();
+  while (len > 0 && report.uuid[len - 1] == '\0') --len;
+  return nb::make_tuple(nb::str(report.uuid.data(), len),
+                        nb::make_tuple(report.chunk.x, report.chunk.y, report.chunk.z),
+                        report.sequence, report.verified, report.playerGameTokenId);
+}
+
+/// Why the Application API did not do what a connection asked, as (error, code,
+/// retry_after_ms, message): the Errc's name ("Ok" when nothing failed), the API's refusal
+/// code, the wait it named (never above kMaxRetryAfterWaitMs) and its message, one line.
+inline nb::tuple api_failure_tuple(const ApiFailure& why) {
+  return nb::make_tuple(errcName(why.error), why.code, why.retryAfterMs, why.message);
 }
 
 class PyConnection {
@@ -540,6 +594,17 @@ class PyConnection {
   std::tuple<std::string, std::string, int> assignment() const {
     const Assignment a = connection_->assignmentSnapshot();
     return {a.ip4, a.ip6, a.clientPort};
+  }
+
+  nb::tuple lastAssignmentFailure() const {
+    return api_failure_tuple(connection_->lastAssignmentFailure());
+  }
+
+  /// The not-present report that stands for `uuid`, or None.
+  std::optional<nb::tuple> notPresent(nb::handle uuid) const {
+    const auto report = connection_->notPresent(uuid_from(uuid));
+    if (!report) return std::nullopt;
+    return not_present_tuple(*report);
   }
 
   // ----- sends
@@ -857,9 +922,13 @@ class PyConnection {
     h.channelAudio = [this](const replication::ChannelNotification& c) {
       rows_.channel(wire::MessageType::ChannelAudioNotification, c);
     };
-    h.genericError = [this](const replication::GenericError& e) {
-      rows_.push(static_cast<std::uint8_t>(wire::MessageType::GenericError), 0, {}, nullptr, 0,
-                 e.sequence, {static_cast<std::int64_t>(e.code), e.verified ? 1 : 0, 0, 0}, {});
+    h.genericError = [this](const replication::GenericError& e) { rows_.error(e); };
+    h.notPresent = [this](const replication::ActorNotPresent& report) {
+      rows_.presence(report, 0);
+    };
+    h.notPresentEnded = [this](const replication::ActorNotPresent& report,
+                               replication::NotPresentEnd end) {
+      rows_.presence(report, static_cast<std::uint8_t>(end));
     };
     h.status = [this](ConnState s) {
       rows_.push(kStatusRow, 0, {}, nullptr, 0, 0, {static_cast<std::int64_t>(s), 0, 0, 0}, {});

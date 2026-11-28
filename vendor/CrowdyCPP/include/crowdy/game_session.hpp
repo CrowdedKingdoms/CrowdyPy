@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -53,9 +54,16 @@ struct GameSessionOptions {
   replication::Config replication;
   replication::Handlers handlers;
   /// Assignment attempts. Small deployments can answer "no available servers" for a moment
-  /// while server heartbeats lapse; a value above 1 retries after connectRetryDelayMs.
+  /// while server heartbeats lapse; a value above 1 retries after connectRetryDelayMs, or
+  /// after the `retryAfterMs` the Application API named when that is longer (0.95.0). The
+  /// API's wait counts up to kMaxRetryAfterWaitMs (30 s) and no further, so a retry waits
+  /// the longer of connectRetryDelayMs and 30 s at most (connectRetryWaitMs()).
   int connectAttempts = 1;
   int connectRetryDelayMs = 2000;
+  /// How the wait between two attempts is made: called with the milliseconds to wait.
+  /// Unset, startGameSession() sleeps the calling thread. For a caller with a scheduler of
+  /// its own, and for tests.
+  std::function<void(std::int64_t milliseconds)> sleep;
   /// Wait up to this long for the connection to report Connected (it does once the
   /// session-ready wait has passed). 0 returns once the server is assigned, while the state is
   /// still Connecting. With replication.manualPump the wait calls pump(); it never calls
@@ -78,6 +86,7 @@ struct GameSession {
       connection = other.connection;
       token = other.token;
       status = other.status;
+      failure = other.failure;
     }
     return *this;
   }
@@ -88,6 +97,7 @@ struct GameSession {
       connection = std::move(other.connection);
       token = std::move(other.token);
       status = other.status;
+      failure = std::move(other.failure);
     }
     return *this;
   }
@@ -103,6 +113,10 @@ struct GameSession {
   /// the assignment's or the socket's failure, with the client and the Failed connection kept
   /// so the caller can retry connection->connect().
   Status status = Errc::Rejected;
+  /// Why the server assignment failed, when `status` is its failure (0.95.0): the
+  /// Application API's refusal code and `retryAfterMs`. `failure.platformBusy()` means the
+  /// platform was shedding load: wait `failure.retryAfterMs`, then connection->connect().
+  replication::AssignmentFailure failure;
 
   bool ok() const { return status.ok() && client != nullptr && connection != nullptr; }
   /// The app was paused when the token was minted: the session stays, and the replication
@@ -111,6 +125,12 @@ struct GameSession {
   /// The app id as the wire carries it; 0 when the token named none.
   std::int64_t appId() const;
 };
+
+/// How long startGameSession() waits before its next assignment attempt (0.95.0): the longer
+/// of `connectRetryDelayMs` and the wait the Application API named in `failure`, where the
+/// API's wait counts through retryWaitMs(): nothing for 0 or below, and kMaxRetryAfterWaitMs
+/// (30 s) for anything longer. A server's hint cannot hold the caller longer than that.
+std::int64_t connectRetryWaitMs(int connectRetryDelayMs, const replication::AssignmentFailure& failure);
 
 /// Build the per-game client for `token` and open its replication connection. Blocking: the
 /// server assignment is a GraphQL call, and by default it waits for the session to be ready.

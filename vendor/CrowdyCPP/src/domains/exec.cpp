@@ -61,8 +61,15 @@ bool ExecReply::rateLimited() const {
          (status == ExecStatus::Busy && std::string_view(payload).substr(0, kRateLimited.size()) == kRateLimited);
 }
 
+bool ExecReply::platformBusy() const {
+  // The message a refused connect call leaves (dialFailureMessage): "no host for this app:
+  // PLATFORM_BUSY, retry in N ms: ...".
+  constexpr std::string_view kNoHostBusy = "no host for this app: PLATFORM_BUSY";
+  return status == ExecStatus::Unavailable && std::string_view(payload).substr(0, kNoHostBusy.size()) == kNoHostBusy;
+}
+
 std::optional<long> ExecReply::retryAfterMs() const {
-  if (!rateLimited()) return std::nullopt;
+  if (!rateLimited() && !platformBusy()) return std::nullopt;
   constexpr std::string_view kRetryIn = "retry in ";
   const std::string_view text(payload);
   const auto at = text.find(kRetryIn);
@@ -71,12 +78,13 @@ std::optional<long> ExecReply::retryAfterMs() const {
   long ms = 0;
   bool digits = false;
   for (; i < text.size() && text[i] >= '0' && text[i] <= '9'; ++i) {
-    if (ms > 100000000L) return std::nullopt;
-    ms = ms * 10 + (text[i] - '0');
+    // Past the ceiling the digits only say "longer": the count stops there.
+    if (ms <= kMaxRetryAfterWaitMs) ms = ms * 10 + (text[i] - '0');
     digits = true;
   }
   if (!digits || text.substr(i, 3) != " ms") return std::nullopt;
-  return ms;
+  // A gateway's word, and the kit's runtime waits on it: never more than the ceiling.
+  return static_cast<long>(retryWaitMs(ms));
 }
 
 // ---- frames ------------------------------------------------------------------
@@ -266,6 +274,19 @@ bool sameEstate(std::string_view urlA, const std::string& hostA, std::string_vie
   return graphql::isSameEstate(urlA, urlB);
 }
 
+/// A gateway URL as a message may show it (0.95.0, as CrowdyJS 18.41.0): its scheme, host
+/// and port, and nothing else. The authority can carry credentials and the path or the query
+/// a connect token, and a message is logged. What is not an absolute URL is described.
+std::string gatewayName(std::string_view url) {
+  const std::string scheme = schemeOf(url);
+  if (scheme.empty())
+    return "a gateway URL that is not absolute (" + std::to_string(url.size()) + " characters)";
+  std::string_view rest = url.substr(url.find("://") + 3);
+  std::string_view authority = rest.substr(0, rest.find_first_of("/?#"));
+  if (const auto at = authority.rfind('@'); at != std::string_view::npos) authority.remove_prefix(at + 1);
+  return scheme + "://" + serverText(authority, 255);
+}
+
 }  // namespace
 
 std::optional<std::string> execGatewayRefusal(std::string_view gameApiUrl, std::string_view gatewayUrl) {
@@ -276,7 +297,10 @@ std::optional<std::string> execGatewayRefusal(std::string_view gameApiUrl, std::
   if (hasUserinfo(gatewayUrl)) return "it carries credentials";
   const std::string apiScheme = schemeOf(gameApiUrl);
   const auto api = graphql::estateHostname(gameApiUrl);
-  if (apiScheme.empty() || !api) return "the game API URL " + std::string(gameApiUrl) + " is not absolute";
+  // The value is described and never shown: a URL that is not absolute can still carry
+  // credentials, and the reason is logged.
+  if (apiScheme.empty() || !api)
+    return "the Application API URL is not absolute (" + std::to_string(gameApiUrl.size()) + " characters)";
   if (apiScheme == "https" && scheme != "wss") return "a game API on https: hands out wss: gateways only";
   if (sameEstate(gameApiUrl, *api, gatewayUrl, *gateway)) return std::nullopt;
   const auto tier = graphql::estateHostname(kDefaultHttpOrigin);
@@ -484,6 +508,16 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
     gatewayPin_ = std::move(gameApiUrl);
   }
 
+  ExecConnectFailure lastConnectFailure() const {
+    std::lock_guard lock(mu_);
+    return connectFailure_;
+  }
+
+  void explainDialFailures(std::function<ExecConnectFailure()> why) {
+    std::lock_guard lock(mu_);
+    explainDial_ = std::move(why);
+  }
+
   void close() {
     std::vector<std::function<void()>> run;
     std::shared_ptr<graphql::IWebSocketConnection> ws;
@@ -605,9 +639,36 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
     });
   }
 
+  /// What a failed dial tells the calls that waited on it: the text they always got, then
+  /// the Application API's code, its wait (as "retry in N ms", which ExecReply::retryAfterMs
+  /// reads) and its message, when it gave them.
+  /// `why` is bounded (crowdy::bounded) where it is stored, so its code, its wait and its
+  /// message are safe to put in a message whoever filled it in.
+  static std::string dialFailureMessage(const ExecConnectFailure& why) {
+    std::string text = "no host for this app";
+    if (!why.code.empty()) {
+      text += ": " + why.code;
+      if (why.retryAfterMs > 0) text += ", retry in " + std::to_string(why.retryAfterMs) + " ms";
+    }
+    if (!why.message.empty()) text += ": " + why.message;
+    return text;
+  }
+
   void onEndpoint(Result<ExecEndpoint> found) {
     // The Game API's URL is read outside the lock: the client's endpoint has a lock of its own.
     std::optional<std::string> refused;
+    // So is the dial's own account of a failure: the dialer keeps it behind a lock of its own.
+    ExecConnectFailure failure;
+    if (!found.ok()) {
+      std::function<ExecConnectFailure()> explain;
+      {
+        std::lock_guard lock(mu_);
+        explain = explainDial_;
+      }
+      // Whoever explains (ExecAPI's dialer, or a caller's own), what a server said is bounded.
+      if (explain) failure = bounded(explain());
+      failure.error = found.error();
+    }
     if (found.ok()) {
       std::function<std::string()> pin;
       {
@@ -616,7 +677,7 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       }
       if (pin) {
         if (auto why = execGatewayRefusal(pin(), found.value().gatewayUrl)) {
-          refused = "refusing the gateway " + found.value().gatewayUrl + ": " + *why;
+          refused = "refusing the gateway " + gatewayName(found.value().gatewayUrl) + ": " + *why;
         }
       }
     }
@@ -628,11 +689,14 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
       if (closed_) return;
       if (!found.ok()) {
         dialing_ = false;
-        attemptFailedLocked(run, found.error(), "no host for this app");
+        connectFailure_ = failure;
+        attemptFailedLocked(run, found.error(), dialFailureMessage(failure));
       } else if (refused) {
         dialing_ = false;
+        connectFailure_ = bounded(ExecConnectFailure{Errc::NotConnected, {}, 0, *refused});
         attemptFailedLocked(run, Errc::NotConnected, *refused);
       } else {
+        connectFailure_ = ExecConnectFailure{};
         endpoint_ = found.value();
         std::string url = endpoint_.gatewayUrl;
         while (!url.empty() && url.back() == '/') url.pop_back();
@@ -996,6 +1060,8 @@ class ExecConnection::Impl : public std::enable_shared_from_this<Impl> {
   ExecEndpoint endpoint_;
   std::function<std::string()> gatewayPin_;
   std::optional<ExecReply> lastFailure_;
+  ExecConnectFailure connectFailure_;                  ///< the last dial's, under mu_
+  std::function<ExecConnectFailure()> explainDial_;    ///< under mu_
   long backoffMs_;
   std::mt19937 jitter_{std::random_device{}()};
   bool reconnectDue_ = false;
@@ -1111,6 +1177,10 @@ std::string ExecConnection::host() const { return impl_->host(); }
 bool ExecConnection::connected() const { return impl_->connected(); }
 
 std::optional<ExecReply> ExecConnection::lastFailure() const { return impl_->lastFailure(); }
+ExecConnectFailure ExecConnection::lastConnectFailure() const { return impl_->lastConnectFailure(); }
+void ExecConnection::explainDialFailures(std::function<ExecConnectFailure()> why) {
+  impl_->explainDialFailures(std::move(why));
+}
 
 void ExecConnection::pinGateway(std::function<std::string()> gameApiUrl) { impl_->pinGateway(std::move(gameApiUrl)); }
 
@@ -1156,12 +1226,20 @@ void ExecAPI::endpointAsync(std::string appId, std::string nodeType, std::string
             });
 }
 
-ExecDial ExecAPI::dialer(std::string appId, std::string nodeType, std::string key, DialAs as) const {
+/// The Application API's last refusal of a connect call, kept by the dialer for its
+/// connection: an ExecDial answers an Errc alone.
+struct ExecAPI::DialRefusal {
+  std::mutex mu;
+  ExecConnectFailure why;
+};
+
+ExecDial ExecAPI::dialer(std::string appId, std::string nodeType, std::string key, DialAs as,
+                         std::shared_ptr<DialRefusal> refusal) const {
   // Everything the dialer needs is copied in, so a connection may reconnect long
   // after the call that made it returned.
   auto gql = gql_;
-  return [gql, appId = std::move(appId), nodeType = std::move(nodeType), key = std::move(key),
-          as](std::function<void(Result<ExecEndpoint>)> found) {
+  return [gql, appId = std::move(appId), nodeType = std::move(nodeType), key = std::move(key), as,
+          refusal = std::move(refusal)](std::function<void(Result<ExecEndpoint>)> found) {
     const std::string_view doc = as == DialAs::Server      ? kExecConnectAsServerDocument
                                  : as == DialAs::Developer ? gen::exec::kExecConnectAsDeveloperIsolatedDocument
                                                            : gen::exec::kExecConnectIsolatedDocument;
@@ -1172,11 +1250,28 @@ ExecDial ExecAPI::dialer(std::string appId, std::string nodeType, std::string ke
                         : as == DialAs::Developer ? "execConnectAsDeveloper"
                                                   : "execConnect";
     gql->requestAsync(doc, connectVariables(appId, nodeType, key), op,
-                      [found = std::move(found), field](graphql::GraphQLOutcome out) {
+                      [found = std::move(found), field, refusal](graphql::GraphQLOutcome out) {
+                        if (refusal) {
+                          // Before the answer is handed on: the connection reads it then.
+                          std::lock_guard lock(refusal->mu);
+                          refusal->why = graphql::apiFailureOf(out);
+                        }
                         if (!out.ok()) return found(out.status.ok() ? Errc::Rejected : out.status.code);
                         found(endpointFrom(out.data[field]));
                       });
   };
+}
+
+std::shared_ptr<ExecConnection> ExecAPI::dialed(std::string appId, ExecConnectOptions options, DialAs as) const {
+  auto refusal = std::make_shared<DialRefusal>();
+  auto dial = dialer(std::move(appId), options.nodeType, options.key, as, refusal);
+  auto conn = pinned(std::move(dial), std::move(options));
+  conn->explainDialFailures([refusal] {
+    std::lock_guard lock(refusal->mu);
+    return refusal->why;
+  });
+  if (as == DialAs::Server) conn->impl_->markServer();
+  return conn;
 }
 
 std::shared_ptr<ExecConnection> ExecAPI::pinned(ExecDial dial, ExecConnectOptions options) const {
@@ -1190,16 +1285,52 @@ std::shared_ptr<ExecConnection> ExecAPI::pinned(ExecDial dial, ExecConnectOption
 }
 
 std::shared_ptr<ExecConnection> ExecAPI::connect(std::string appId, ExecConnectOptions options) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key);
-  auto conn = pinned(std::move(dial), std::move(options));
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Player);
   conn->connect();
   return conn;
 }
 
+namespace {
+
+/// connect(), answering the connection or the failure with the API's own account of it.
+void connectSayingWhy(std::shared_ptr<ExecConnection> conn,
+                      std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure)> done) {
+  ExecConnection& connection = *conn;
+  connection.connect([conn = std::move(conn), done = std::move(done)](Status s) {
+    if (s.ok()) return done(conn, ExecConnectFailure{});
+    ExecConnectFailure why = conn->lastConnectFailure();
+    if (!why.failed()) {
+      // The dial found a host and the gateway refused or failed: lastFailure() has its words.
+      why.error = s.code;
+      if (auto last = conn->lastFailure()) why.message = serverText(last->message());
+    }
+    done(s.code, std::move(why));
+  });
+}
+
+}  // namespace
+
+void ExecAPI::connectAsync(
+    std::string appId, ExecConnectOptions options,
+    std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure)> done) const {
+  connectSayingWhy(dialed(std::move(appId), std::move(options), DialAs::Player), std::move(done));
+}
+
+void ExecAPI::connectAsDeveloperAsync(
+    std::string appId, ExecConnectOptions options,
+    std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure)> done) const {
+  connectSayingWhy(dialed(std::move(appId), std::move(options), DialAs::Developer), std::move(done));
+}
+
+void ExecAPI::connectAsServerAsync(
+    std::string appId, ExecConnectOptions options,
+    std::function<void(Result<std::shared_ptr<ExecConnection>>, ExecConnectFailure)> done) const {
+  connectSayingWhy(dialed(std::move(appId), std::move(options), DialAs::Server), std::move(done));
+}
+
 void ExecAPI::connectAsync(std::string appId, ExecConnectOptions options,
                            std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key);
-  auto conn = pinned(std::move(dial), std::move(options));
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Player);
   conn->connect([conn, done = std::move(done)](Status s) {
     if (!s.ok()) return done(s.code);
     done(conn);
@@ -1222,16 +1353,14 @@ void ExecAPI::developerEndpointAsync(std::string appId, std::string nodeType, st
 }
 
 std::shared_ptr<ExecConnection> ExecAPI::connectAsDeveloper(std::string appId, ExecConnectOptions options) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key, DialAs::Developer);
-  auto conn = pinned(std::move(dial), std::move(options));
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Developer);
   conn->connect();
   return conn;
 }
 
 void ExecAPI::connectAsDeveloperAsync(std::string appId, ExecConnectOptions options,
                                       std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key, DialAs::Developer);
-  auto conn = pinned(std::move(dial), std::move(options));
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Developer);
   conn->connect([conn, done = std::move(done)](Status s) {
     if (!s.ok()) return done(s.code);
     done(conn);
@@ -1269,18 +1398,14 @@ void ExecAPI::serverEndpointAsync(
 }
 
 std::shared_ptr<ExecConnection> ExecAPI::connectAsServer(std::string appId, ExecConnectOptions options) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key, DialAs::Server);
-  auto conn = pinned(std::move(dial), std::move(options));
-  conn->impl_->markServer();
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Server);
   conn->connect();
   return conn;
 }
 
 void ExecAPI::connectAsServerAsync(std::string appId, ExecConnectOptions options,
                                    std::function<void(Result<std::shared_ptr<ExecConnection>>)> done) const {
-  auto dial = dialer(std::move(appId), options.nodeType, options.key, DialAs::Server);
-  auto conn = pinned(std::move(dial), std::move(options));
-  conn->impl_->markServer();
+  auto conn = dialed(std::move(appId), std::move(options), DialAs::Server);
   conn->connect([conn, done = std::move(done)](Status s) {
     if (!s.ok()) return done(s.code);
     done(conn);
@@ -1378,6 +1503,20 @@ graphql::Json ExecAPI::status(std::string appId) const {
 void ExecAPI::statusAsync(std::string appId, graphql::GraphQLCallback done) const {
   execAsync(gen::exec::kExecAppStatusIsolatedDocument, "execAppStatus", appVariables(appId),
             gen::exec::kExecAppStatusOperationName, std::move(done));
+}
+
+graphql::Json ExecAPI::orgComputeCeiling(std::string orgId) const {
+  graphql::JVal variables;
+  variables["orgId"] = orgId;
+  return exec(gen::exec::kOrgComputeCeilingIsolatedDocument, "orgComputeCeiling", std::move(variables),
+              gen::exec::kOrgComputeCeilingOperationName);
+}
+
+void ExecAPI::orgComputeCeilingAsync(std::string orgId, graphql::GraphQLCallback done) const {
+  graphql::JVal variables;
+  variables["orgId"] = orgId;
+  execAsync(gen::exec::kOrgComputeCeilingIsolatedDocument, "orgComputeCeiling", std::move(variables),
+            gen::exec::kOrgComputeCeilingOperationName, std::move(done));
 }
 
 graphql::Json ExecAPI::activateVersion(std::string appId, int version) const {
@@ -1619,6 +1758,7 @@ graphql::Json ExecAPI::waitForModBuild(std::string appId, std::string buildId, i
       if (!graphql::detail::isDroppedReadException(&retryAfterMs) || std::chrono::steady_clock::now() >= until) {
         throw;
       }
+      // retryAfterMs is the API's hint as isDroppedReadException bounds it (retryWaitMs).
       std::this_thread::sleep_for(std::chrono::milliseconds(std::max<std::int64_t>(intervalMs, retryAfterMs)));
       continue;
     }

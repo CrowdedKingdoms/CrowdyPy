@@ -2,11 +2,14 @@
 
 #include <array>
 #include <atomic>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "crowdy/core/clock.hpp"
 #include "crowdy/core/crypto.hpp"
@@ -54,8 +57,26 @@ class Connection {
   /// After it returns the state is Connecting until the session-ready wait
   /// elapses, then Connected (status callback fires from poll()).
   Status connect();
+  /// Why the last server assignment failed (0.95.0): the first connect(), a later one, or a
+  /// reassignment that left the state Failed. `error` is Errc::Ok when the last assignment
+  /// succeeded or none was made. The Application API's refusal keeps its code and its
+  /// `retryAfterMs` here, so a caller can tell PLATFORM_BUSY (wait that long and connect()
+  /// again) from a refusal. Safe from any thread.
+  AssignmentFailure lastAssignmentFailure() const;
 
-  /// Stop threads, close the socket, state -> Closed.
+  /// The not-present report that stands for `uuid`, if one does (ActorNotPresent, 0.95.0):
+  /// the actor's keepalive was refused UNAUTHORIZED where `chunk` says, and nothing has
+  /// ended the report since. poll() makes and ends reports, so this changes only there and
+  /// in a send that names another chunk for the actor. Safe from any thread.
+  std::optional<ActorNotPresent> notPresent(const core::ActorUuid& uuid) const {
+    return notPresentFor(0, uuid);
+  }
+
+  /// Stop threads, close the socket, state -> Closed. The network thread stops reading at
+  /// the batch in hand (kReceiveBatchDatagrams, 16 datagrams), so this returns within 100
+  /// milliseconds whatever is still arriving, unless the session provider is in the middle
+  /// of a call the network thread made (0.95.0; before, it did not return while datagrams
+  /// arrived faster than they were verified).
   void disconnect();
 
   ConnState state() const { return state_.load(std::memory_order_acquire); }
@@ -252,7 +273,8 @@ class Connection {
 
   /// Manual-pump mode only: perform network work (receive datagrams, run
   /// lifecycle housekeeping) without blocking longer than timeoutMs.
-  /// Returns the number of datagrams processed.
+  /// Returns the number of datagrams processed, kReceivePassDatagrams (1,024) at most: what
+  /// is still queued then is read by the next call (0.95.0).
   std::size_t pump(int timeoutMs = 0);
 
   // ----- Introspection --------------------------------------------------------
@@ -331,19 +353,32 @@ class Connection {
     /// recently (0.83.0): a 22 signs fixed bytes, so a captured one verifies for the
     /// game token's life, and each honoured one moves the player to another server.
     std::uint64_t legacyReconnectsSuppressed = 0;
-    /// A fleet session only (FleetSession::stats()): notifications dropped because they
-    /// named another app than the session's, plain or inside a FLEET_DELIVERY. A fleet
-    /// session is in one app, so state or a communication of another app is never its own,
-    /// however it was signed, and it reaches no handler. THIS SHOULD NEVER HAPPEN: anything
-    /// but 0 is worth reporting to Crowded Kingdoms (the log names the app, the message type
-    /// and the chunk at the first one and at every doubling of the count). Always 0 on a
-    /// player's Connection, which does not make this check.
+    /// Long-spatial notifications dropped because they named another app than this
+    /// connection's (Config::appId), alone, in a bundle or, for a fleet session, inside a
+    /// FLEET_DELIVERY. A connection is in one app, so state or a communication of another
+    /// app is never its own, however it was signed, and it reaches no handler. THIS SHOULD
+    /// NEVER HAPPEN: anything but 0 is worth reporting to Crowded Kingdoms (the log names the
+    /// app, the message type and the chunk at the first one and at every doubling of the
+    /// count). A player's Connection has made this check since 0.95.0; it skips it when
+    /// Config::appId is 0 and for a notification that names no app (0).
     std::uint64_t wrongApp = 0;
-    /// A fleet session only: plain notifications dropped because nothing signed them (no
-    /// HMAC of their own, and not inside a signed bundle whose HMAC held). The realtime
-    /// servers send a fleet session nothing unsigned, so anything but 0 is worth reporting
-    /// too. Always 0 on a player's Connection, which takes such a notification as it is.
+    /// Long-spatial notifications dropped because nothing signed them (no HMAC of their
+    /// own, and not inside a signed bundle whose HMAC held). The realtime servers sign every
+    /// long-spatial notification they send a session, so anything but 0 is worth reporting
+    /// too. A player's Connection has made this check since 0.95.0, unless
+    /// Config::verifyNotifications is off; a fleet session always makes it.
     std::uint64_t unsignedNotifications = 0;
+    /// Keepalives (CLIENT_ACTOR_HEARTBEAT) answered UNAUTHORIZED, every one of them: the
+    /// actor was not present where the keepalive named (ActorNotPresent, 0.95.0). It keeps
+    /// rising while a report stands, as the keepalives keep going out.
+    std::uint64_t keepalivesRefused = 0;
+    /// Not-present reports made (Handlers::notPresent): one per actor and place, however
+    /// many keepalives were refused there.
+    std::uint64_t notPresentReports = 0;
+    /// TOKEN_EXPIRED error frames that nothing verified (GenericError::verified false), on
+    /// a player's Connection (0.95.0). None of them reassigned: the first, and then at most
+    /// one every 30 seconds, asked the session provider for a fresh token instead.
+    std::uint64_t unverifiedTokenExpired = 0;
     std::int64_t lastServerEpochMs = 0;
     /// Messages sent, by wire opcode (actor/voxel/audio/text/event/channel/
     /// heartbeat requests).
@@ -482,7 +517,60 @@ class Connection {
   // fails still consumes a sequence number. That is harmless and deliberate:
   // sequences are correlation, not idempotency, they wrap at 256, and rolling
   // the counter back would hand the same number to a concurrent sender.
-  std::uint8_t nextSequence() { return sequence_.fetch_add(1, std::memory_order_relaxed); }
+  /// The number of the next message: its low byte is the wire's sequence number, and the
+  /// whole of it says whether a later message has taken that byte since (256 further on).
+  std::uint32_t nextSendNumber() { return sendNumber_.fetch_add(1, std::memory_order_relaxed); }
+
+  // ----- Keepalives the server refuses (ActorNotPresent) -----
+  //
+  // A keepalive's refusal names only a sequence number, so each keepalive is remembered
+  // under its number until another message takes it. Only keepalive sends, the refusals of
+  // keepalives and the reports that stand cost anything here: every other send and every
+  // notification pay one relaxed load at most (notPresentCount_).
+  struct KeepaliveSent {
+    bool set = false;
+    std::uint32_t number = 0;    ///< nextSendNumber() of the keepalive
+    std::int64_t sentAtMs = 0;
+    std::int64_t player = 0;     ///< the carried player it was sent for; 0 the session's own
+    core::ActorUuid uuid{};
+    wire::ChunkCoord chunk;
+  };
+  struct NotPresentReport {
+    ActorNotPresent report;
+    std::int64_t lastKeepaliveMs = 0;   ///< when a keepalive for the actor there last left
+    /// When the oldest keepalive there that no refusal has answered left; 0 when there is
+    /// none. kKeepaliveAnswerWaitMs later the keepalive was accepted.
+    std::int64_t unansweredSinceMs = 0;
+  };
+  using PresenceKey = std::pair<std::int64_t, core::ActorUuid>;  ///< (player, actor)
+  /// Any sending thread: a keepalive left.
+  void noteKeepaliveSent(std::uint32_t number, std::int64_t player, const SpatialSend& p);
+  /// Any sending thread, while a report stands: an actor update left.
+  void noteActorUpdateSent(std::int64_t player, const SpatialSend& p);
+  /// poll(): the keepalive that an error frame with this sequence number answers, if the
+  /// last message under the number was one and it left within kKeepaliveAnswerWaitMs.
+  std::optional<KeepaliveSent> keepaliveAnswered(std::uint8_t sequence) const;
+  /// poll(): that keepalive was refused UNAUTHORIZED. Returns the report when this refusal
+  /// made it (the first for the actor at that place), for the handler.
+  std::optional<ActorNotPresent> keepaliveRefused(const KeepaliveSent& sent, std::uint8_t sequence,
+                                                  bool verified);
+  /// poll(): the server sent the actor's own update back from `chunk`.
+  void noteActorEchoed(const core::ActorUuid& uuid, const wire::ChunkCoord& chunk);
+  /// poll(): end the reports whose keepalive was accepted or whose keepalives stopped, and
+  /// hand over every report that ended since the last pass.
+  void presencePass(const Handlers& handlers);
+  /// A new assignment: what was sent to the server the connection left gets no answer.
+  void presenceRestart();
+  std::optional<ActorNotPresent> notPresentFor(std::int64_t player, const core::ActorUuid& uuid) const;
+  void endReportLocked(std::map<PresenceKey, NotPresentReport>::iterator it, NotPresentEnd why);
+  static constexpr std::size_t kMaxNotPresentReports = 4096;
+  mutable std::mutex presenceMutex_;
+  std::array<KeepaliveSent, 256> keepalivesSent_{};                            // presenceMutex_
+  std::map<PresenceKey, NotPresentReport> notPresent_;                         // presenceMutex_
+  std::vector<std::pair<ActorNotPresent, NotPresentEnd>> notPresentEnded_;     // presenceMutex_
+  /// Reports that stand, and reports that ended and wait for poll() to say so.
+  std::atomic<std::size_t> notPresentCount_{0};
+  std::atomic<std::size_t> notPresentEndedCount_{0};
   wire::Token64 tokenSnapshot() const;
 
   Config config_;
@@ -494,6 +582,8 @@ class Connection {
   UdpSocket socket_;
   mutable std::mutex assignmentMutex_;
   Assignment assignment_;
+  AssignmentFailure assignmentFailure_;  ///< under assignmentMutex_
+  Status failAssignment(AssignmentFailure why);
 
   mutable std::mutex tokenMutex_;
   TokenInfo token_;
@@ -507,7 +597,7 @@ class Connection {
 
   core::SpscRing<Event> ring_;
   std::atomic<ConnState> state_{ConnState::Idle};
-  std::atomic<std::uint8_t> sequence_{0};
+  std::atomic<std::uint32_t> sendNumber_{0};
   std::atomic<bool> running_{false};
   std::thread netThread_;
 
@@ -523,10 +613,15 @@ class Connection {
   /// assignment when none has arrived on it yet. A fleet session's silence is measured from
   /// it (FleetSession::checkSilence); a player's watchdog keeps to lastRecvMs_.
   std::atomic<std::int64_t> lastVerifiedMs_{0};
-  /// A fleet session dropped a notification that was not its own (Stats::wrongApp,
+  /// A notification that was not this connection's own was dropped (Stats::wrongApp,
   /// unsignedNotifications): count it, and name it in the log at the first and at every
-  /// doubling of the count. Network thread.
+  /// doubling of the count. Network thread. Out of line, so the receive path stays short.
   void countNotOwn(bool wrongApp, const wire::LongSpatialView& view);
+  /// One of a fleet session's three frames (51, 52, 53): verify it, take its own HMAC off
+  /// `message` when it carries one, and say whether to queue it. Network thread, and out of
+  /// line: a player's connection never gets here.
+  bool admitFleetFrame(Bytes& message, bool signedBundle, const Credentials& creds,
+                       std::int64_t now);
   /// A fleet session's realtime server released it for a reason that is not idleness: tell
   /// the session now (network thread) and queue the frame for its handler (poll()).
   void fleetSessionReleased(std::uint8_t reason);
@@ -536,6 +631,12 @@ class Connection {
   /// Set by the receive path on a verified idle release; housekeeping goes Inactive.
   std::atomic<bool> idleReleased_{false};
   std::atomic<bool> reconnectRequested_{false};
+  /// Set by poll() on an unverified TOKEN_EXPIRED; housekeeping asks the session provider
+  /// for a fresh token, at most once every kTokenCheckIntervalMs (lastTokenCheckMs_, the
+  /// network thread's), and what the provider answers decides what happens.
+  std::atomic<bool> tokenCheckRequested_{false};
+  std::int64_t lastTokenCheckMs_ = 0;
+  bool tokenChecked_ = false;
   /// This assignment's BOUND_CONTROL nonce, drawn in doAssign() and sent with
   /// CLIENT_CAPABILITIES; 0 when no random bytes were available (the bit is not sent).
   std::atomic<std::uint64_t> controlNonce_{0};
@@ -630,6 +731,9 @@ class ReplicationClient {
   struct ConnectResult {
     std::shared_ptr<Connection> connection;
     Status status;
+    /// Why the assignment failed, when `status` is its failure (0.95.0): the Application
+    /// API's refusal code and `retryAfterMs` (Connection::lastAssignmentFailure()).
+    AssignmentFailure failure;
 
     bool ok() const { return status.ok() && connection != nullptr; }
   };

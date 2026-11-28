@@ -235,6 +235,17 @@ _LAZY: dict[str, str] = {
     "FleetPlayerToken": "crowdypy.fleet",
     "FleetReleased": "crowdypy.fleet",
     "FleetSendRefused": "crowdypy.fleet",
+    "fleet_current_server": "crowdypy.domains.fleet_sessions",
+    # CrowdyCPP 0.95.0: a refused keepalive's report, why a connection could not be made, and
+    # the longest wait on a server's hint
+    "ActorNotPresent": "crowdypy.replication",
+    "NotPresentEnd": "crowdypy.replication",
+    "connect_address": "crowdypy.replication",
+    "ApiFailure": "crowdypy.errors",
+    "api_failure_of": "crowdypy.errors",
+    "MAX_RETRY_AFTER_WAIT_MS": "crowdypy.errors",
+    "retry_wait_ms": "crowdypy.errors",
+    "MANAGED_PLAYERS_DELETE_MAX": "crowdypy.domains.managed_players",
 }
 _SUBMODULES = {
     "codecs",
@@ -389,6 +400,7 @@ if TYPE_CHECKING:
     from crowdypy.domains.fleet_sessions import (
         FleetSessionsAPI as FleetSessionsAPI,
     )
+    from crowdypy.domains.fleet_sessions import fleet_current_server as fleet_current_server
     from crowdypy.domains.game_apps import (
         GameAppsAPI as GameAppsAPI,
     )
@@ -400,6 +412,9 @@ if TYPE_CHECKING:
     )
     from crowdypy.domains.input_log import (
         InputLogAPI as InputLogAPI,
+    )
+    from crowdypy.domains.managed_players import (
+        MANAGED_PLAYERS_DELETE_MAX as MANAGED_PLAYERS_DELETE_MAX,
     )
     from crowdypy.domains.managed_players import (
         ManagedPlayerAssertionClaims as ManagedPlayerAssertionClaims,
@@ -548,6 +563,7 @@ if TYPE_CHECKING:
     from crowdypy.errors import (
         MANAGED_PLAYER_NOT_ALLOWED_CODE as MANAGED_PLAYER_NOT_ALLOWED_CODE,
     )
+    from crowdypy.errors import MAX_RETRY_AFTER_WAIT_MS as MAX_RETRY_AFTER_WAIT_MS
     from crowdypy.errors import (
         MINECRAFT_VERIFICATION_FAILED_CODE as MINECRAFT_VERIFICATION_FAILED_CODE,
     )
@@ -584,6 +600,7 @@ if TYPE_CHECKING:
     from crowdypy.errors import (
         WRONG_DATACENTER_CODE as WRONG_DATACENTER_CODE,
     )
+    from crowdypy.errors import ApiFailure as ApiFailure
     from crowdypy.errors import (
         CrowdyAccessRefusal as CrowdyAccessRefusal,
     )
@@ -674,6 +691,7 @@ if TYPE_CHECKING:
     from crowdypy.errors import (
         age_requirement_not_met_of as age_requirement_not_met_of,
     )
+    from crowdypy.errors import api_failure_of as api_failure_of
     from crowdypy.errors import (
         app_limit_reached_of as app_limit_reached_of,
     )
@@ -725,6 +743,7 @@ if TYPE_CHECKING:
     from crowdypy.errors import (
         player_fault_of as player_fault_of,
     )
+    from crowdypy.errors import retry_wait_ms as retry_wait_ms
     from crowdypy.errors import (
         safety_log_required_of as safety_log_required_of,
     )
@@ -812,6 +831,7 @@ if TYPE_CHECKING:
     from crowdypy.rediscover import (
         create_mint_rediscover as create_mint_rediscover,
     )
+    from crowdypy.replication import ActorNotPresent as ActorNotPresent
     from crowdypy.replication import (
         AsyncReplicationConnection as AsyncReplicationConnection,
     )
@@ -824,12 +844,14 @@ if TYPE_CHECKING:
     from crowdypy.replication import (
         NotificationBatch as NotificationBatch,
     )
+    from crowdypy.replication import NotPresentEnd as NotPresentEnd
     from crowdypy.replication import (
         ReplicationConnection as ReplicationConnection,
     )
     from crowdypy.replication import (
         TokenMaterial as TokenMaterial,
     )
+    from crowdypy.replication import connect_address as connect_address
     from crowdypy.session import (
         FileTokenStore as FileTokenStore,
     )

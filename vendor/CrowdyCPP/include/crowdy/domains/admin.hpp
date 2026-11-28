@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -297,7 +298,53 @@ class ManagedPlayersAPI : public detail::AdminDomain {
     execUnwrapAsync(gen::managedPlayers::kDeleteManagedPlayerIsolatedDocument,
                     playerVars(orgId, externalId), {}, std::move(cb));
   }
-  /// Whether an operator turned managed players on for the organization, and its limits; and
+  /// The most players one removeMany() call names.
+  static constexpr std::size_t kRemoveManyMax = 100;
+  /// Refusal text of removeMany for no external ids, or more than kRemoveManyMax.
+  static constexpr const char* kRemoveManyRefusal =
+      "removeMany takes 1 to 100 external ids";
+  /// Delete up to 100 players in one call (CrowdyJS `deleteMany`; 0.95.0, Application API
+  /// v2.90.0). Each is deleted as remove() deletes one, with the same authorization. The
+  /// answer is `{ deleted, notFound, held, players: [{ externalId, outcome }] }`: a count of
+  /// each outcome, and every external id sent, once, in the order it first appeared, with
+  /// its outcome (gen::ManagedPlayerDeletion): `DELETED`, `NOT_FOUND` (the organization has
+  /// no such player; nothing changed) or `LEGAL_HOLD` (a legal hold covers the player or the
+  /// organization, or an open or escalated safety report about the player set one; the
+  /// player is kept as it was). A held player does not fail the call: the others are still
+  /// deleted, so read `held` and the outcomes. An id sent twice is deleted once.
+  ///
+  /// No ids, or more than kRemoveManyMax, is refused before any request, as
+  /// registerSigningKey refuses a private key: blocking as a graphql::CrowdyError with code
+  /// "INVALID_ARGUMENT" (an empty result in a CROWDY_NO_EXCEPTIONS build), async as an
+  /// outcome with status Errc::InvalidArgument. The message names no id.
+  graphql::Json removeMany(std::string_view orgId, const std::vector<std::string>& externalIds) const {
+    if (externalIds.empty() || externalIds.size() > kRemoveManyMax) {
+#ifndef CROWDY_NO_EXCEPTIONS
+      throw graphql::CrowdyError("INVALID_ARGUMENT", removeManyRefusal(externalIds.size()));
+#else
+      return {};
+#endif
+    }
+    return execUnwrap(gen::managedPlayers::kDeleteManagedPlayersIsolatedDocument,
+                      removeManyVars(orgId, externalIds));
+  }
+  void removeManyAsync(std::string_view orgId, const std::vector<std::string>& externalIds,
+                       graphql::GraphQLCallback cb) const {
+    if (externalIds.empty() || externalIds.size() > kRemoveManyMax) {
+      graphql::GraphQLOutcome out;
+      out.status = Errc::InvalidArgument;
+      out.kind = graphql::GraphQLErrorKind::Protocol;
+      out.errorMessage = removeManyRefusal(externalIds.size());
+      deliverAsync(std::move(out), std::move(cb));
+      return;
+    }
+    execUnwrapAsync(gen::managedPlayers::kDeleteManagedPlayersIsolatedDocument,
+                    removeManyVars(orgId, externalIds), {}, std::move(cb));
+  }
+  /// Whether an operator turned managed players on for the organization, and its limits; its
+  /// fleet limits (0.95.0, Application API v2.89.0): `fleetSessionsEnabled` (whether its game
+  /// servers may open fleet sessions), `maxFleetSessions` (sessions held at once, over all
+  /// its apps) and `maxFleetPlayers` (players one session may carry); and
   /// where it stands on the Org-Managed Players Addendum (`termsVersion`, `termsUrl`,
   /// `termsAccepted`, the latest acceptance, and `viewerMayAcceptTerms`: whether the signed-in
   /// user is an admin of the organization who may accept it, in Studio).
@@ -415,6 +462,20 @@ class ManagedPlayersAPI : public detail::AdminDomain {
   }
   graphql::JVal playerVars(std::string_view orgId, std::string_view externalId) const {
     return two("orgId", graphql::JVal(orgId), "externalId", graphql::JVal(externalId));
+  }
+  static graphql::JVal removeManyVars(std::string_view orgId,
+                                      const std::vector<std::string>& externalIds) {
+    graphql::JArray ids;
+    ids.reserve(externalIds.size());
+    for (const std::string& id : externalIds) ids.emplace_back(id);
+    graphql::JVal vars;
+    vars["input"]["orgId"] = orgId;
+    vars["input"]["externalIds"] = graphql::JVal(std::move(ids));
+    return vars;
+  }
+  /// How many ids were given, and none of them: an id can be a person's name.
+  static std::string removeManyRefusal(std::size_t given) {
+    return std::string(kRemoveManyRefusal) + ", and was given " + std::to_string(given);
   }
   /// `publicJwk` as the JSON text the schema takes, when it was given as an object.
   static graphql::JVal withJwkText(const graphql::JVal& input) {

@@ -40,7 +40,9 @@ constexpr std::uint8_t kSessionReleasedRow =
 /// What `extra` holds for the session's own rows: a carry result (playerGameTokenId, userId,
 /// status, wireStatus), a release (playerGameTokenId, userId, reason, wireReason), a session
 /// release (reason, wireReason), a named refusal (playerGameTokenId, userId, code) with the
-/// refused send's sequence, an error (code, verified) and a status row (state).
+/// refused send's sequence, an error (code, verified, keepalive), a status row (state), and a
+/// not-present report or its end (verified, playerGameTokenId, the end's reason or 0) with
+/// the actor, the chunk and the first refused keepalive's sequence in their own columns.
 struct FleetRows {
   Rows rows;
   std::vector<std::uint8_t> listed;
@@ -76,6 +78,17 @@ struct FleetRows {
   /// One of the session's own rows: no app, no chunk, no actor and no payload.
   void own(std::uint8_t type, std::uint8_t sequence, std::array<std::int64_t, kExtras> extras) {
     rows.push(type, 0, {}, nullptr, 0, sequence, extras, {});
+    close(FleetRecipients{});
+  }
+
+  void error(const replication::GenericError& e) {
+    rows.error(e);
+    close(FleetRecipients{});
+  }
+
+  /// A carried player's not-present report (`end` 0) or its end.
+  void presence(const replication::ActorNotPresent& report, std::uint8_t end) {
+    rows.presence(report, end);
     close(FleetRecipients{});
   }
 };
@@ -125,6 +138,7 @@ struct FleetOptions {
   int carryTimeoutMs = 5000;
   int carriesPerSecond = 50;
   int carryBurst = 32;
+  int maxPlayers = 0;
   std::size_t ringCapacity = 4096;
   int socketRecvBufferBytes = 1 << 20;
   int socketSendBufferBytes = 1 << 20;
@@ -168,6 +182,7 @@ class PyFleetSession {
     config.carryTimeoutMs = options.carryTimeoutMs;
     config.carriesPerSecond = options.carriesPerSecond;
     config.carryBurst = options.carryBurst;
+    config.maxPlayers = options.maxPlayers;
     config.transport.manualPump = options.manualPump;
     config.transport.preferIpv6 = options.preferIpv6;
     config.transport.sessionReadyWaitMs = options.sessionReadyWaitMs;
@@ -237,6 +252,28 @@ class PyFleetSession {
   }
 
   bool moveOrdered() const { return fleet_->moveOrdered(); }
+
+  /// What `refreshFleetSession` takes for this session, as (app_id, game_token_id,
+  /// current_server): the server is (ip4, ip6, client_port) with exactly one address set,
+  /// or None when the session was told to move.
+  nb::tuple refreshInput() const {
+    const replication::FleetRefreshInput input = fleet_->refreshInput();
+    nb::object server = nb::none();
+    if (input.currentServer)
+      server = nb::make_tuple(input.currentServer->ip4, input.currentServer->ip6,
+                              input.currentServer->clientPort);
+    return nb::make_tuple(input.appId, input.gameTokenId, server);
+  }
+
+  std::size_t tableLimit() const { return fleet_->tableLimit(); }
+  void setMaxPlayers(int maxPlayers) { fleet_->setMaxPlayers(maxPlayers); }
+
+  /// The not-present report that stands for one of a carried player's actors, or None.
+  std::optional<nb::tuple> notPresent(std::int64_t player, nb::handle uuid) const {
+    const auto report = fleet_->notPresent(player, uuid_from(uuid));
+    if (!report) return std::nullopt;
+    return not_present_tuple(*report);
+  }
   bool refreshDue() const { return fleet_->refreshDue(); }
 
   void setFleetOwnState(bool on) {
@@ -587,6 +624,7 @@ class PyFleetSession {
     d["replaced_id_frames"] = s.replacedIdFrames;
     d["session_releases"] = s.sessionReleases;
     d["send_refusals_named"] = s.sendRefusalsNamed;
+    d["carries_refused_table_full"] = s.carriesRefusedTableFull;
     return d;
   }
 
@@ -642,9 +680,13 @@ class PyFleetSession {
     h.channelAudio = [this](const replication::ChannelNotification& c, FleetRecipients who) {
       rows_.channel(wire::MessageType::ChannelAudioNotification, c, who);
     };
-    h.genericError = [this](const replication::GenericError& e) {
-      rows_.own(static_cast<std::uint8_t>(wire::MessageType::GenericError), e.sequence,
-                {static_cast<std::int64_t>(e.code), e.verified ? 1 : 0, 0, 0});
+    h.genericError = [this](const replication::GenericError& e) { rows_.error(e); };
+    h.notPresent = [this](const replication::ActorNotPresent& report) {
+      rows_.presence(report, 0);
+    };
+    h.notPresentEnded = [this](const replication::ActorNotPresent& report,
+                               replication::NotPresentEnd end) {
+      rows_.presence(report, static_cast<std::uint8_t>(end));
     };
     h.sendRefused = [this](const replication::FleetSendRefused& r) {
       rows_.own(kSendRefusedRow, r.sequence,
@@ -687,6 +729,21 @@ void register_fleet(nb::module_& m) {
   m.attr("FLEET_SESSION_RELEASED_ROW") = kSessionReleasedRow;
   m.attr("FLEET_CARRY_TIMED_OUT") = static_cast<int>(replication::FleetCarryStatus::TimedOut);
   m.attr("FLEET_CARRY_REFUSED") = static_cast<int>(replication::FleetCarryStatus::Refused);
+  m.attr("FLEET_CARRY_TABLE_FULL") = static_cast<int>(replication::FleetCarryStatus::TableFull);
+  m.attr("FLEET_TABLE_MARGIN") = replication::kFleetTableMargin;
+  m.attr("FLEET_MAX_PLAYERS_CEILING") = replication::kFleetMaxPlayersCeiling;
+  m.def(
+      "fleet_current_server",
+      [](const std::string& ip4, const std::string& ip6, int clientPort,
+         bool preferIpv6) -> std::optional<nb::tuple> {
+        const auto current =
+            replication::fleetCurrentServer(Assignment{ip4, ip6, clientPort}, preferIpv6);
+        if (!current) return std::nullopt;
+        return nb::make_tuple(current->ip4, current->ip6, current->clientPort);
+      },
+      nb::arg("ip4"), nb::arg("ip6"), nb::arg("client_port"), nb::arg("prefer_ipv6") = false,
+      "refreshFleetSession's currentServer for a server, as (ip4, ip6, client_port) with "
+      "exactly one address set; None for a server with no address or no port.");
   m.attr("FLEET_SILENCE_TIMEOUT_MS") = replication::kFleetSilenceTimeoutMs;
   m.attr("FLEET_MIN_SILENCE_TIMEOUT_MS") = replication::kFleetMinSilenceTimeoutMs;
   m.attr("FLEET_REFUSAL_WINDOW_MS") = replication::kFleetRefusalWindowMs;
@@ -724,7 +781,8 @@ void register_fleet(nb::module_& m) {
              int sessionReadyWaitMs, std::int64_t advertiseIntervalMs, bool ownMediaEcho,
              bool fleetOwnState, std::int64_t silenceTimeoutMs, int carryResendMs,
              int carryTimeoutMs, int carriesPerSecond, int carryBurst, std::size_t ringCapacity,
-             int recvBuffer, int sendBuffer, bool bundleSends, int bundleWindowMs) {
+             int recvBuffer, int sendBuffer, bool bundleSends, int bundleWindowMs,
+             int maxPlayers) {
             FleetOptions o;
             o.appId = appId;
             o.manualPump = manualPump;
@@ -743,6 +801,7 @@ void register_fleet(nb::module_& m) {
             o.socketSendBufferBytes = sendBuffer;
             o.bundleSends = bundleSends;
             o.bundleWindowMs = bundleWindowMs;
+            o.maxPlayers = maxPlayers;
             new (self) PyFleetSession(o, token, gameTokenId, expiresAtMs, ip4, ip6, clientPort);
           },
           nb::arg("app_id"), nb::arg("token"), nb::arg("game_token_id"),
@@ -755,7 +814,7 @@ void register_fleet(nb::module_& m) {
           nb::arg("carries_per_second") = 50, nb::arg("carry_burst") = 32,
           nb::arg("ring_capacity") = 4096, nb::arg("socket_recv_buffer_bytes") = 1 << 20,
           nb::arg("socket_send_buffer_bytes") = 1 << 20, nb::arg("bundle_sends") = true,
-          nb::arg("bundle_window_ms") = 1)
+          nb::arg("bundle_window_ms") = 1, nb::arg("max_players") = 0)
       .def("open", &PyFleetSession::open)
       .def("close", &PyFleetSession::close)
       .def_prop_ro("state", &PyFleetSession::state)
@@ -768,6 +827,12 @@ void register_fleet(nb::module_& m) {
            nb::arg("game_token_id"), nb::arg("expires_at_ms"), nb::arg("ip4"), nb::arg("ip6"),
            nb::arg("client_port"))
       .def_prop_ro("move_ordered", &PyFleetSession::moveOrdered)
+      .def("refresh_input", &PyFleetSession::refreshInput,
+           "(app_id, game_token_id, current_server): the server as (ip4, ip6, client_port) "
+           "with one address set, or None after a move was ordered.")
+      .def_prop_ro("table_limit", &PyFleetSession::tableLimit)
+      .def("set_max_players", &PyFleetSession::setMaxPlayers, nb::arg("max_players"))
+      .def("not_present", &PyFleetSession::notPresent, nb::arg("player"), nb::arg("uuid"))
       .def("refresh_due", &PyFleetSession::refreshDue)
       .def("set_fleet_own_state", &PyFleetSession::setFleetOwnState, nb::arg("on"))
       .def_prop_ro("fleet_own_state", &PyFleetSession::fleetOwnState)

@@ -20,6 +20,16 @@ class ISessionProvider {
   /// API: installs this client's UDP session on the chosen server.
   virtual Result<Assignment> assignServer() = 0;
 
+  /// assignServer(), also saying why when it fails (0.95.0): the Application API's refusal
+  /// code and `retryAfterMs`, which a caller needs to tell "busy, try again in a moment"
+  /// from a refusal. The connection calls this one. The default forwards to assignServer()
+  /// and reports its error alone, so existing providers keep compiling.
+  virtual Result<Assignment> assignServerOrSayWhy(AssignmentFailure& why) {
+    Result<Assignment> assigned = assignServer();
+    if (!assigned.ok()) why.error = assigned.error();
+    return assigned;
+  }
+
   /// Rotate the app-scoped token (refreshAppToken). Returns the new token
   /// material; the implementation must also update its GraphQL bearer.
   ///

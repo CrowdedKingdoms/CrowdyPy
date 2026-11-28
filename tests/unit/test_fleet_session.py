@@ -26,6 +26,8 @@ from crowdypy.domains.portal import AppTokenResponse
 from crowdypy.errors import CrowdyRealtimeError, CrowdyReplicationError
 from crowdypy.fleet import (
     CARRY_RESULT,
+    TABLE_MARGIN,
+    ActorNotPresent,
     AsyncFleetSession,
     FleetBatchSend,
     FleetCarryOutcome,
@@ -36,8 +38,10 @@ from crowdypy.fleet import (
     FleetReleased,
     FleetSendRefused,
     FleetSession,
+    NotPresentEnd,
+    fleet_current_server,
 )
-from crowdypy.replication import STATUS, Assignment, ConnState
+from crowdypy.replication import NOT_PRESENT, NOT_PRESENT_ENDED, STATUS, Assignment, ConnState
 from crowdypy.wire import DecayRate, ErrorCode, MessageType
 
 FLEET_TOKEN = "fleet-token-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -1211,19 +1215,27 @@ def test_the_session_follows_capability_changes(server: FakeServer) -> None:
         fleet.close()
 
 
-def test_a_short_silence_timeout_is_raised_to_one_that_passes(server: FakeServer) -> None:
-    # CrowdyCPP holds the capabilities interval to a third of the timeout and gives each
-    # capabilities message 1,000 ms to be acknowledged, so a timeout near its own minimum of
-    # 3,000 ms never passes: the session raises a shorter one to 4,500.
-    assert fleet_module.MIN_SILENCE_TIMEOUT_MS == 4_500
-    assert [fleet_module._silence(ms) for ms in (0, -1, 1, 3_000, 4_500, 45_000)] == [
-        0,
-        0,
-        4_500,
-        4_500,
-        4_500,
-        45_000,
-    ]
+def test_the_silence_timeout_keeps_crowdycpps_own_minimum(server: FakeServer) -> None:
+    # CrowdyCPP 0.95.0 passes at every value from its minimum of 3,000 ms, so the session
+    # adds no floor of its own (0.40.0 raised a shorter one to 4,500). A timeout of exactly
+    # 3,000 ms, which never passed with CrowdyCPP 0.94, orders the move.
+    assert fleet_module.MIN_SILENCE_TIMEOUT_MS == 3_000
+    assert not hasattr(fleet_module, "_silence")
+    fleet = FleetSession(server.answer(), **{**QUIET, "silence_timeout_ms": 3_000})
+    fleet.connect()
+    try:
+        started = time.monotonic()
+        server.recv()
+        poll_until(fleet, lambda: fleet.move_ordered, timeout=9.0)
+        # Between the timeout and one capabilities interval (1,000 ms) later.
+        assert 2.9 <= time.monotonic() - started < 8.0
+        assert fleet.refresh_due()
+    finally:
+        fleet.close()
+    # 0 switches it off, as a negative number does.
+    for off in (0, -1):
+        quiet = FleetSession(server.answer(), **{**QUIET, "silence_timeout_ms": off})
+        quiet.close()
 
 
 # ---- the asyncio session ----
@@ -1314,7 +1326,8 @@ async def test_silence_orders_a_move_with_no_event_to_wake_the_loop(server: Fake
         assert not fleet.move_ordered
         assert not fleet.refresh_due()
         await asyncio.wait_for(ordered.wait(), 10)
-        assert 4.4 <= time.monotonic() - started < 9.0
+        # A timeout below CrowdyCPP's minimum is raised to it: 3,000 ms.
+        assert 2.9 <= time.monotonic() - started < 9.0
         assert fleet.move_ordered
         assert fleet.refresh_due()
         assert fleet.refresh_input() == {"appId": "7", "gameTokenId": "9001"}
@@ -1342,3 +1355,187 @@ def test_status_rows_are_the_connections(server: FakeServer) -> None:
         assert [row.state for row in rows] == [ConnState.CONNECTING, ConnState.CONNECTED]
     finally:
         fleet.close()
+
+
+# ---- CrowdyCPP 0.95.0: the table's limit, a refused keepalive, and currentServer ----
+
+
+def test_a_carry_past_the_tables_limit_ends_table_full_with_nothing_sent(
+    server: FakeServer,
+) -> None:
+    seen = Seen()
+    fleet = FleetSession(
+        server.answer(maxPlayers=1),
+        handlers=seen.handlers(),
+        **{**QUIET, "carry_timeout_ms": 60_000},
+    )
+    fleet.connect()
+    try:
+        read_capabilities(server.recv())
+        poll_until(fleet, lambda: fleet.state == ConnState.CONNECTED)
+        assert TABLE_MARGIN == 32
+        assert fleet.table_limit == 1 + TABLE_MARGIN
+        # The table fills with carries that wait for their answer.
+        for player in range(1, fleet.table_limit + 1):
+            fleet.carry_nowait(FleetPlayerToken(token_for(player), player))
+        assert len(fleet.players()) == fleet.table_limit
+        sent_before = fleet.stats()["messages_sent_by_type"].get(MessageType.FLEET_CARRY, 0)
+
+        result = fleet.carry(FleetPlayerToken(token_for(999), 999))
+        assert result == FleetCarryResult(999, None, FleetCarryOutcome.TABLE_FULL, None)
+        assert not result.carried
+        assert seen.of("carry_result") == [(result,)]
+        assert len(fleet.players()) == fleet.table_limit
+        stats = fleet.stats()
+        assert stats["carries_refused_table_full"] == 1
+        # Nothing was sent for it: only the carries that were already waiting leave.
+        assert all(row.game_token_id != 999 for row in fleet.players())
+        assert stats["messages_sent_by_type"].get(MessageType.FLEET_CARRY, 0) >= sent_before
+
+        # A carry for a player the table already holds is never refused this way.
+        fleet.carry_nowait(FleetPlayerToken(token_for(1), 1))
+        settle(fleet)
+        assert fleet.stats()["carries_refused_table_full"] == 1
+
+        # A player who left makes room.
+        fleet.release(2)
+        fleet.carry_nowait(FleetPlayerToken(token_for(999), 999))
+        settle(fleet)
+        assert fleet.stats()["carries_refused_table_full"] == 1
+        assert any(row.game_token_id == 999 for row in fleet.players())
+
+        # A refresh's answer may name another max_players: the limit follows.
+        fleet.apply_refresh(server.answer(maxPlayers=4))
+        assert (fleet.max_players, fleet.table_limit) == (4, 4 + TABLE_MARGIN)
+    finally:
+        fleet.close()
+
+
+def test_the_tables_limit_counts_from_max_players(server: FakeServer) -> None:
+    for max_players, limit in ((256, 288), (None, 1_056), (0, 1_056), (5_000, 1_056)):
+        fleet = FleetSession(server.answer(maxPlayers=max_players), **QUIET)
+        try:
+            assert fleet.table_limit == limit
+        finally:
+            fleet.close()
+
+
+def test_a_carried_players_refused_keepalive_is_reported_once(server: FakeServer) -> None:
+    # For realtime servers v0.51.0: a keepalive is accepted only where the player's actor
+    # update would be, so a player with no access there has every keepalive refused.
+    seen = Seen()
+    fleet = open_connected(server, seen)
+    refusal = ErrorCode.UNAUTHORIZED
+    try:
+        carry_as(fleet, server)
+        assert fleet.not_present(PLAYER_ID, ACTOR) is None
+
+        # A refusal that arrived alone verifies nothing: a fleet session reports none.
+        first = fleet.send_heartbeat(PLAYER_ID, (1, 2, 3), ACTOR)
+        server.recv()
+        server.send(bytes([MessageType.GENERIC_ERROR, first, refusal]))
+        poll_until(fleet, lambda: len(seen.of("generic_error")) == 1)
+        (error, verified) = seen.of("generic_error")[0]
+        assert (error.keepalive, verified) == (True, False)
+        assert seen.of("not_present") == []
+        assert fleet.not_present(PLAYER_ID, ACTOR) is None
+
+        # Inside a bundle the fleet token signed, it is the report: once.
+        second = fleet.send_heartbeat(PLAYER_ID, (1, 2, 3), ACTOR)
+        server.recv()
+        server.send(signed_bundle([bytes([MessageType.GENERIC_ERROR, second, refusal])]))
+        poll_until(fleet, lambda: len(seen.of("not_present")) == 1)
+        report = ActorNotPresent(ACTOR, (1, 2, 3), second, True, PLAYER_ID)
+        assert seen.of("not_present") == [(report,)]
+        assert fleet.not_present(PLAYER_ID, ACTOR) == report
+        assert fleet.not_present(PLAYER_ID, OTHER) is None
+        (error, verified) = seen.of("generic_error")[1]
+        assert (error.keepalive, error.error_code, verified) == (True, refusal, True)
+        # A keepalive's UNAUTHORIZED never reaches send_refused.
+        assert seen.of("send_refused") == []
+
+        third = fleet.send_heartbeat(PLAYER_ID, (1, 2, 3), ACTOR)
+        server.recv()
+        server.send(signed_bundle([bytes([MessageType.GENERIC_ERROR, third, refusal])]))
+        poll_until(fleet, lambda: len(seen.of("generic_error")) == 3)
+        assert len(seen.of("not_present")) == 1
+        stats = fleet.stats()
+        assert (stats["keepalives_refused"], stats["not_present_reports"]) == (3, 1)
+
+        # The session carries the player as before, and orders nothing.
+        assert fleet.carries(PLAYER_ID)
+        assert not fleet.move_ordered
+        assert seen.of("released") == seen.of("move_ordered") == []
+
+        # The player's next keepalive names another chunk: the report ends.
+        fleet.send_heartbeat(PLAYER_ID, (9, 9, 9), ACTOR)
+        poll_until(fleet, lambda: len(seen.of("not_present_ended")) == 1)
+        assert seen.of("not_present_ended") == [(report, NotPresentEnd.MOVED)]
+        assert fleet.not_present(PLAYER_ID, ACTOR) is None
+    finally:
+        fleet.close()
+
+
+def test_not_present_rows_are_the_sessions_own(server: FakeServer) -> None:
+    fleet = open_connected(server)
+    try:
+        carry_as(fleet, server)
+        sequence = fleet.send_heartbeat(PLAYER_ID, (1, 2, 3), ACTOR)
+        server.recv()
+        server.send(
+            signed_bundle([bytes([MessageType.GENERIC_ERROR, sequence, ErrorCode.UNAUTHORIZED])])
+        )
+        rows: list[Any] = []
+        deadline = time.monotonic() + 3
+        while len(rows) < 2 and time.monotonic() < deadline:
+            fleet.wait(0.05)
+            rows.extend(fleet.poll())
+        assert [(event.type, players) for event, players in rows] == [
+            (MessageType.GENERIC_ERROR, None),
+            (NOT_PRESENT, None),
+        ]
+        report = rows[1][0].not_present
+        assert report == ActorNotPresent(ACTOR, (1, 2, 3), sequence, True, PLAYER_ID)
+        fleet.send_heartbeat(PLAYER_ID, (2, 2, 2), ACTOR)
+        rows = []
+        while not rows and time.monotonic() < deadline:
+            fleet.wait(0.05)
+            rows.extend(fleet.poll())
+        assert [(event.type, event.not_present_end) for event, _ in rows] == [
+            (NOT_PRESENT_ENDED, NotPresentEnd.MOVED)
+        ]
+    finally:
+        fleet.close()
+
+
+def test_a_refresh_names_the_one_address_the_session_connected_to(server: FakeServer) -> None:
+    ip4, ip6, port = "203.0.113.10", "2001:db8::10", 7777
+
+    def answer(**server_fields: Any) -> dict[str, Any]:
+        return server.answer(server={"clientPort": port, **server_fields})
+
+    cases: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = [
+        ({"ip4": ip4, "ip6": None}, {}, {"ip4": ip4, "clientPort": port}),
+        ({"ip4": ip4, "ip6": ip6}, {}, {"ip4": ip4, "clientPort": port}),
+        ({"ip4": ip4, "ip6": ip6}, {"prefer_ipv6": True}, {"ip6": ip6, "clientPort": port}),
+        # A server with an ip6 alone: an Application API from v2.90.0 takes it.
+        ({"ip4": None, "ip6": ip6}, {}, {"ip6": ip6, "clientPort": port}),
+    ]
+    for fields, options, current in cases:
+        fleet = FleetSession(answer(**fields), **{**QUIET, **options})
+        try:
+            assert fleet.refresh_input() == {
+                "appId": str(APP_ID),
+                "gameTokenId": str(FLEET_ID),
+                "currentServer": current,
+            }
+            # The function names the same address the session does.
+            prefer = bool(options.get("prefer_ipv6"))
+            assert fleet_current_server(fleet.current_server, prefer) == current
+            native = fleet_module._r.fleet_current_server(
+                fields["ip4"] or "", fields["ip6"] or "", port, prefer
+            )
+            assert native == (current.get("ip4", ""), current.get("ip6", ""), port)
+        finally:
+            fleet.close()
+    assert fleet_module._r.fleet_current_server("", "", port, False) is None
